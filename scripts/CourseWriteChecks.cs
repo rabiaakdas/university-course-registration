@@ -211,6 +211,7 @@ try
     finally { await Sql("ALTER TABLE dbo.Courses DROP CONSTRAINT CK_Day5_TestOnly;"); }
     Pass("Unexpected DB error = sanitized 500 Problem Details even in Development");
     await RelatedWriteChecks.Run(Db, Send, Sql, SqlFile, StopApi, StartApi);
+    await CatalogChecks.Run(Db, Send);
     await Run("pwsh", "-NoProfile", "-File", "scripts/verify-http.ps1", "-Port", (port+1).ToString());
 }
 finally

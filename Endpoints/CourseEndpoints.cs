@@ -11,7 +11,8 @@ public static class CourseEndpoints
     {
         app.MapGet("/courses", async (UniversityDbContext db, CancellationToken ct) =>
             Results.Ok(await db.Courses.OrderBy(c => c.Id)
-                .Select(c => new { c.Id, c.Code, c.Name }).ToListAsync(ct)));
+                .Select(c => new CourseListItemDto(c.Id, c.Code, c.Name)).ToListAsync(ct)));
+        app.MapGet("/courses/catalog", CourseCatalogEndpoint.GetAsync);
         app.MapGet("/courses/{id:int}", GetAsync);
         app.MapPost("/courses", CreateAsync);
         app.MapPut("/courses/{id:int}", UpdateAsync);

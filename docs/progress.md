@@ -339,3 +339,62 @@ AsNoTracking; filtreli ve sayfalı katalog.
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişinde
 `git log --format=%H --grep="^feat: create academic terms and course offerings$"`
 ile bulunur. Gerçek push sonucu son raporda bildirilir; hash için ek commit yoktur.
+
+## Gün 7
+
+**Konu:** LINQ → SQL, IQueryable/IEnumerable, projection, DTO ve AsNoTracking.
+
+**Başlangıç:** Yerel/uzak main 0da70385908bc67bedde4eae04fc6ade12983a34;
+çalışma ağacı temiz, uygulanabilir AGENTS.md yok. SDK 10.0.401, EF SQL Server,
+Design ve dotnet-ef 10.0.14 korundu. Mevcut SQL_Latin1_General_CP1_CI_AS collation
+salt okunur sorguyla doğrulandı. Paket/model/şema değişikliği yok; migration eklenmedi.
+
+**Somut değişiklik:** Ayrı GET /courses/catalog; search Trim + Code/Name Contains,
+isteğe bağlı pozitif credits eşitliği; page=1/pageSize=20, 1–100 sınırı ve güvenli
+long offset hesabı. Alan hataları birlikte 400, desteklenmeyen offset 400.
+CourseListItemDto eski liste ve katalogda ortak; liste biçimi/üç alanı korundu.
+CourseCatalogResponse items/page/pageSize/totalCount taşır. Filtreli IQueryable'dan
+sırayla CountAsync ve OrderBy/Skip/Take/Select/ToListAsync; CancellationToken iletilir.
+Entity taşımayan DTO için AsNoTracking gerekmedi, PUT tracking'i değiştirilmedi.
+
+**Gerçek doğrulamalar:**
+
+- Restore/build: başarılı, 0 uyarı/0 hata. has-pending-model-changes: fark yok.
+- Mevcut runner ayrı university_registration_tests_day6_0fc6cd84b97545edb1ffe8c22ca57d91
+  DB'sinde çalıştı (day6 öneki mevcut güvenlik işaretiyle bilinçli korundu).
+  Önceki SQL kısıt, ders/dönem/açılış HTTP, yarış ve SaveChanges regresyonları geçti.
+- Katalog için 53 sayfalanan + 5 literal/aksan örneği oluşturuldu. Varsayılanlar,
+  yalnız kod/yalnız ad, kredi, AND, Trim/boş arama, eşleşmeme, Id sırası, altı
+  sayfada sınırlar/toplam/eksiksiz ve tekrarsız gezinme, sayfa aşımı geçti.
+- page/pageSize/credits aralıkları, birden çok alan hatası, skip taşması, yanlış
+  sayı biçimleri ve Int32 üst/alt taşmaları gerçek HTTP'de 400 verdi. Büyük ama
+  desteklenen offset boş 200 döndü. DTO alanları tam id/code/name; Credits yok.
+- catalog rotası ve int detay rotası birlikte çalıştı; eski /courses sayfasız dizi
+  olarak kaldı. Üç eski GET sözleşmesi test ve uygulama DB'sinde geçti.
+- `%`, `_`, apostrof literal Contains; küçük/büyük harf eşleşmesi ve aksan ayrımı
+  gerçek DB/HTTP'de doğrulandı. Collation değiştirilmedi.
+- Production katalog handler'ı test context'iyle çağrıldı; ReaderExecutedAsync
+  tam iki tamamlanan gerçek SQL komutu gözledi. İkisinde filtreli WHERE; ilkinde
+  COUNT, ikincide ORDER BY Id/OFFSET/FETCH ve yalnız Id/Code/Name seçimi doğrulandı.
+  Arama/kredi/sayfalama parametreleri incelendi; SQL'e girdi birleştirilmedi,
+  satır başına ek sorgu oluşmadı. SQL/parametreler log dosyasına yazılmadı.
+  Geçersiz parametrede DB sorgusu yoktu. ToQueryString tek kanıt olarak kullanılmadı.
+- Temiz context'lerde normal Course entity sorgusu 1 entry, AsNoTracking 0,
+  saf DTO 0, entity içeren anonim projection 1 entry verdi. AsNoTracking nesnesini
+  değiştirip SaveChanges çağırmak 0 yazma yaptı; ayrı context DB adının korunduğunu
+  doğruladı. Yalnızca testin kaydı kullanıldı; önceki tracking deneyi kopyalanmadı.
+- Finally katalog kayıtlarını kendi Id'leriyle temizledi; dış runner ilişkili
+  kayıtları temizleyip süreçleri kapattı. Son salt okunur test DB kontrolü 2/2/3
+  seed kaydı gösterdi. Uygulama/laboratuvar DB'sine test veya migration yazması yok.
+
+**Eksik/sınır:** Bugünün kontrollerinde engel yok. COUNT ve items ayrı sorgu;
+eşzamanlı değişiklikte aynı anın görünümü garanti edilmez. Transaction eklenmedi.
+Offset maliyeti/veri değişirken kayma ve Contains'in ölçek sınırları belgeli;
+benchmark, index/execution plan/full-text/keyset çalışması yapılmadı.
+
+**Sıradaki gün:** Çoktan çoğa ilişki ve ilişki entity'si; öğrenci, ders kaydı ve
+temel kayıt işlemi.
+
+**Commit/push:** Bu kaydı içeren kimlik
+`git log --format=%H --grep="^feat: add filtered and paginated course catalog$"`
+ile bulunur. Gerçek push sonucu son raporda verilir; hash için ek commit üretilmez.

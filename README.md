@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk altı gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yedi gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -616,3 +616,79 @@ Test DB seed ile tutulur; otomatik DROP yapılmaz. Lost update, kontenjan tüket
 ve ileri transaction/isolation konusu bu kapsamda çözülmez.
 
 [6. gün öğrenme notu](docs/day6-related-writes.md) · [ADR 0006](docs/adr/0006-related-writes.md)
+
+## 7. gün: Filtreli ve sayfalı ders kataloğu
+
+`GET /courses/catalog` ayrı bir endpoint'tir. Eski `GET /courses` bütün dersleri
+Id sıralı JSON dizisi ve yalnızca id/code/name ile döndürmeye devam eder.
+Detay, POST, PUT, dönem ve açılış sözleşmeleri korunur. Şema/model/paket değişmedi;
+bu gün için yeni migration yoktur.
+
+| Parametre | Varsayılan ve kural |
+|---|---|
+| search | İsteğe bağlı; Trim; boşsa filtre yok. Code **veya** Name içinde literal metin arar. |
+| credits | İsteğe bağlı pozitif int; tam eşitlik. Aramayla birlikte AND uygulanır. |
+| page | 1; en az 1. |
+| pageSize | 20; 1–100. |
+
+```powershell
+curl.exe -i "http://127.0.0.1:5080/courses/catalog?search=CSE201&credits=4&page=1&pageSize=20"
+```
+
+Başlangıç verileriyle örnek yanıt:
+
+```json
+{"items":[{"id":1,"code":"CSE201","name":"Veri Yapıları"}],"page":1,"pageSize":20,"totalCount":1}
+```
+
+`totalCount`, sayfanın uzunluğu değil bütün filtrelenmiş sonucun sayısıdır.
+Eşleşme yoksa 200/boş items/0; geçerli ama son sayfayı aşan istekte 200/boş items
+ve gerçek totalCount döner. Liste öğesine Credits eklenmez.
+
+Geçersiz aralıklar birlikte alan bazlı 400 ValidationProblem döner. Offset hesabı
+long ile yapılır; int.MaxValue üstündeki Skip 400/page hatasıdır. Sayısal biçim
+ve Int32 taşması binding aşamasında 400 Problem Details verir. Sıfır/negatif
+değerler varsayılana çevrilmez. Search için ilave uzunluk/karakter kuralı yoktur.
+
+Mevcut `SQL_Latin1_General_CP1_CI_AS` collation korunur: büyük/küçük harfe duyarsız,
+aksana duyarlıdır. `%`, `_` ve apostrof Contains içinde literal olarak aranır;
+LINQ parametreleri SQL metnine birleştirilmez. Bu `string.Contains` aramasıdır,
+SQL Server full-text CONTAINS altyapısı değildir. Her ölçekte hızlı veya index
+dostu olduğuna dair iddia/benchmark yoktur.
+
+Filtreler IQueryable üzerinde kurulur; aynı filtreli sorgudan önce CountAsync,
+ardından OrderBy(Id)/Skip/Take/DTO projection/ToListAsync çalışır. Aynı scoped
+context'te iki sorgu sırayla await edilir. Bunlar ayrı SQL sorgularıdır; eşzamanlı
+yazmalarda count ve items aynı anın garantili görüntüsü değildir. Transaction
+eklenmedi. Offset büyüdükçe maliyet artabilir; sayfalar arasında veri değişirse
+kayma olabilir. Id sırası sabit veri üzerinde deterministiktir.
+
+`CourseListItemDto` yalnızca üç alan taşır; entity içermez. Saf projection zaten
+Course entity'si izlemez; kataloğa AsNoTracking eklenmedi. AsNoTracking karşılaştırması
+yalnızca testte entity sorgusuyla yapılır; genel tracking ayarı ve PUT değişmedi.
+
+### Doğrulama
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+dotnet ef migrations has-pending-model-changes
+pwsh -File scripts/verify-http.ps1
+pwsh -File scripts/verify-course-writes.ps1
+```
+
+Mevcut runner `CatalogChecks.cs` kontrolünü de çalıştırır; yeni test framework'ü
+yoktur. Mevcut `university_registration_tests_day6_<guid>` izole DB adlandırması
+ve sahiplik işareti korunur; adın day6 olması 7. gün kontrollerini dışlamaz.
+Katalog için 53 sayfalanan kayıt ve 5 literal/aksan örneği eklenir. Katalog finally
+bloğu yalnızca bu kayıtlara ait Id'leri temizler; dış runner ilişkili test verilerini
+ve süreçleri temizler. Uygulama/laboratuvar DB'sine test yazması yapılmaz.
+
+SQL kanıtı production handler'ını test context'iyle gerçekten çalıştıran
+`ReaderExecutedAsync` interceptor'ıdır. Tamamlanan COUNT ve sayfa komutlarında
+WHERE, ORDER BY, OFFSET/FETCH, üç sütun ve parametreler kontrol edilir; iki komut
+olması satır başına sorgu olmadığını gösterir. HTTP testleri ayrıca gerçek API
+sürecinde yapılır. SQL/parametreler yalnızca bellekte incelenir, çıktı dosyası veya
+snapshot commit edilmez; alias/parametre adlarının birebir eşleşmesi aranmaz.
+
+[7. gün öğrenme notu](docs/day7-querying.md) · [ADR 0007](docs/adr/0007-course-catalog.md)
