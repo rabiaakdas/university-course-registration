@@ -213,6 +213,7 @@ try
     await RelatedWriteChecks.Run(Db, Send, Sql, SqlFile, StopApi, StartApi);
     await CatalogChecks.Run(Db, Send);
     await EnrollmentChecks.Run(Db, Send, StopApi, StartApi, SqlFile);
+    await BatchEnrollmentChecks.Run(Db, Send, StopApi, StartApi);
     await Run("pwsh", "-NoProfile", "-File", "scripts/verify-http.ps1", "-Port", (port+1).ToString());
 }
 finally

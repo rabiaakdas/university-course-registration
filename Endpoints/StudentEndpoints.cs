@@ -17,6 +17,7 @@ public static class StudentEndpoints
             return student is null ? NotFound() : Results.Ok(student);
         });
         app.MapGet("/students/{id:int}/enrollments", ListEnrollmentsAsync);
+        app.MapPost("/students/{id:int}/enrollments/batch", BatchEnrollmentEndpoint.CreateAsync);
     }
 
     public static async Task<IResult> CreateAsync(CreateStudentRequest request, UniversityDbContext db, CancellationToken ct)

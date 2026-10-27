@@ -471,3 +471,77 @@ kayıt değişikliklerini birlikte kaydetme.
 **Commit/push:** Bu kaydı içeren kimlik
 `git log --format=%H --grep="^feat: add students and basic course enrollment$"`
 ile bulunur. Push sonucu son raporda verilir; hash için ek commit oluşturulmaz.
+
+## Gün 9
+
+**Konu:** ACID, commit/rollback, varsayılan SaveChanges transaction'ı ve açık transaction.
+
+**Başlangıç:** Yerel/uzak main e5ace9efcc0877069d52dbfc45d7bd96c4a5557f;
+çalışma ağacı temiz, uygulanabilir AGENTS.md yok. Mevcut kayıt/hata/DTO düzeni ve
+6. günün A/B SaveChanges deneyleri incelendi. App bağlantısında MARS=false;
+UseSqlServer dışında retry yapılandırması yok. Bağlantı değerleri yazdırılmadı.
+SDK 10.0.401 ve mevcut EF 10.0.14 paket/araçları korundu.
+
+**Değişiklik:** POST /students/{id:int}/enrollments/batch. Önce liste yapısı
+(1–50, pozitif, tekrarsız), sonra öğrenci, toplu açılış ve toplu mevcut kayıt
+kontrolleri. 50 teknik sınırdır. Ortak sunucu UTC zamanı, AddRange ve tek
+SaveChangesAsync. İstek sıralı EnrollmentResponse items zarfı; hayalî Location
+yok. İlgili mevcut unique/FK eşleyicisi kullanılır. Üretimde BeginTransaction,
+retry, yeni tablo veya migration yok. Önceki deney aynı dosyada C/D ile genişledi.
+
+**Gerçek doğrulamalar:**
+
+- Restore/build başarılı, 0 uyarı/0 hata. Model/snapshot farkı yok.
+- Mevcut izole runner university_registration_tests_day6_e61cafc7644a4ec7b27a674fa6c4c895
+  üzerinde bütün eski SQL, ders/katalog/dönem/açılış/öğrenci/tekli kayıt ve seed
+  regresyonlarını çalıştırdı; geçti. Uygulama DB'sindeki üç GET kontrolü de geçti.
+- Geçerli batch gerçek HTTP'de 201; doğru items alanları, istek sırası, ortak
+  UTC zaman aralığı, çalışan detay GET'leri ve öğrenci listesi. Üst tablo sayıları
+  değişmedi; restart sonrası DB ve HTTP'den kayıtlar görüldü. Location yok.
+- **Ön kontrol kanıtı:** Null/boş/tekrar/pozitif olmayan/51 öğeli liste ve yanlış
+  JSON türleri 400. Yapı bozuksa olmayan öğrenci için de önce 400; geçerli yapıda
+  olmayan öğrenci 404. Eksik açılış 400; mevcut seçimlerden biri kayıtlıysa 409.
+  Yeni context okumalarında önceki kayıtlar korundu, yeni/kısmi kayıt oluşmadı.
+  Bu kontroller yazma atomikliği kanıtı olarak sunulmadı.
+- 50 öğe sınırında production handler gerçek DB ile 201 verdi. Interceptor üç
+  toplu ön kontrol SELECT'i gördü; satır başına sorgu yok. INSERT komutlarının
+  toplam sayısı provider'a bağlı bırakıldı. Geçersiz yapıda DB sorgusu yoktu.
+- **Gerçek yazma hatası kanıtı:** Test context'i üretim batch handler'ını çalıştırdı.
+  SavingChanges interceptor'ı ön kontrollerden sonra başka context'te rakip çifti
+  commit etti. Yalnız testte MaxBatchSize(1) ile ilk INSERT'in başarıyla yürüdüğü
+  gözlendi; sonraki gerçek unique hatası 409 oldu. Yeni context'te batch'in ilk
+  kaydı yoktu, rakibin kesinleşmiş kaydı kaldı. Failed tracker Added tutuyordu;
+  yeniden SaveChanges çağrılmadı. Üretim batching ayarı/test parametresi eklenmedi.
+- Öğrenci/açılış ön kontrolden sonra ayrı ayrı kaldırılarak gerçek save FK
+  hataları çalıştırıldı; doğru alan 400 ve yeni context'te sıfır batch kaydı.
+
+**Dört transaction deneyinin gerçek sonuçları (mevcut Course CHECK örneği):**
+
+| Deney | Yeni context'te sonuç |
+|---|---|
+| A: İki yeni kayıt, tek SaveChanges, gerçek CHECK hatası | İkisi de yok |
+| B: İki bağımsız SaveChanges, ikincisi CHECK hatası | İlk var, ikinci yok |
+| C: Açık transaction, ilk save başarılı, ikinci CHECK hatası, tam rollback | İkisi de yok |
+| D: Açık transaction, iki başarılı save, commit | İkisi de var |
+
+C'de hata sonrası aynı transaction'da ilk kayıt vardı; savepoint ile tam rollback
+ayrımı gözlendi. Rollback tracker'ı temizlemedi. Bağımsız okumalar commit/rollback
+sonrasında yapıldı; başka bağlantının commit öncesi hemen boş döneceği varsayılmadı.
+MARS=false, execution strategy RetriesOnFailure=false, SupportsSavepoints=true
+runtime kontrolleri geçti. Cleanup CancellationToken.None kullanır; rollback hatası
+ayrı kaydedilir ve asıl hata korunur. Transaction nesneleri await using ile dispose
+edilir. Cleanup rollback hatası ayrıca enjekte edilmedi.
+
+**Temizlik/sınırlar:** Finally yalnız test Enrollment'ları ve üst test kayıtlarını
+FK sırasıyla temizledi; dış runner eski deneyleri ve süreçleri temizledi. Son DB
+sayısı 2/2/3/0/0. Kullanıcı/app/lab verilerine deney yazması veya şema değişikliği
+yok. Test DB seed ile tutuldu, sequence boşlukları doldurulmadı. Kontenjan/akademik
+kurallar, yetkilendirme, isolation karşılaştırması ve genel retry/idempotency yok.
+Commit sonrası yanıt kaybı commit'in olmadığını kanıtlamaz. Bugünkü kontrollerde
+engel yok; rollback temizliğinin hata yolu ve disk/elektrik arızası test edilmedi.
+
+**Sıradaki gün:** Unit/integration test ve davranış doğrulama.
+
+**Commit/push:** Bu kaydı içeren kimlik
+`git log --format=%H --grep="^feat: add atomic batch enrollment$"`
+ile bulunur. Gerçek push sonucu son raporda bildirilir; hash için ek commit yoktur.

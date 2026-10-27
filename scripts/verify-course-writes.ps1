@@ -7,11 +7,12 @@ $project = [System.Security.SecurityElement]::Escape((Join-Path $root 'Universit
 $related = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'RelatedWriteChecks.cs'))
 $catalog = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CatalogChecks.cs'))
 $enrollment = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'EnrollmentChecks.cs'))
+$batch = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'BatchEnrollmentChecks.cs'))
 $source = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CourseWriteChecks.cs'))
 @"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
-  <ItemGroup><ProjectReference Include="$project" /><Compile Include="$source" /><Compile Include="$related" /><Compile Include="$catalog" /><Compile Include="$enrollment" /><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="$project" /><Compile Include="$source" /><Compile Include="$related" /><Compile Include="$catalog" /><Compile Include="$enrollment" /><Compile Include="$batch" /><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
 </Project>
 "@ | Set-Content (Join-Path $work 'Checks.csproj') -Encoding utf8
 dotnet run --project (Join-Path $work 'Checks.csproj') -- $root

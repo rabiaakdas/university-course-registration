@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk sekiz gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk dokuz gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -818,3 +818,99 @@ ve kullanıcı verilerine test yazması yapılmaz. Test DB seed ile tutulur, oto
 DROP yoktur; sequence boşlukları doldurulmaz.
 
 [8. gün öğrenme notu](docs/day8-enrollment.md) · [ADR 0008](docs/adr/0008-explicit-enrollment.md)
+
+## 9. gün: Atomik toplu kayıt
+
+`POST /students/{id:int}/enrollments/batch` öğrencinin seçimlerini **ya tümüyle
+oluşturur ya hiçbirini oluşturmaz**. Öğrenci yalnızca URL'den alınır:
+
+```http
+POST /students/1/enrollments/batch
+Content-Type: application/json
+
+{"courseOfferingIds":[3,1]}
+```
+
+Örnek 201 yanıtı (üretilen Id ve zamanlar değişir):
+
+```json
+{"items":[
+  {"id":501,"studentId":1,"courseOfferingId":3,"createdAtUtc":"2026-10-27T13:00:00+00:00"},
+  {"id":502,"studentId":1,"courseOfferingId":1,"createdAtUtc":"2026-10-27T13:00:00+00:00"}
+]}
+```
+
+Öğeler istek sırasındadır; her biri mevcut `/enrollments/{id:int}` adresinden
+okunur. Batch kaynağı oluşturulmaz ve hayalî batch Location verilmez. Öğrenci
+kayıt listesinde tamamı görünür. Id ve CreatedAtUtc istemciden alınmaz.
+
+- Liste zorunlu, 1–50 pozitif ve birbirinden farklı kimlik. **50 teknik istek
+  sınırıdır**, akademik ders/kredi sınırı değildir. Tekrarlar ayıklanmaz, 400 döner.
+- Yapı/alan hataları önce 400 ValidationProblem; yanlış JSON türü binding 400.
+- Yapı geçerli, öğrenci yoksa 404. Herhangi bir açılış yoksa courseOfferingIds
+  alanında 400; hiçbir ekleme yok.
+- Seçimlerden birine mevcut kayıt varsa bütün istek 409 ile reddedilir. Mevcut
+  kayıt korunur; diğer seçimler için yeni kayıt oluşmaz.
+- Tam başarı, SaveChanges tamamlandıktan sonra 201. Beklenen save unique hatası
+  409; ilgili FK hatası tekli akıştaki studentId/courseOfferingId alanıyla 400.
+  Diğer hatalar mevcut güvenli merkezi 500 mekanizmasına gider.
+
+Ön kontroller üç toplu sorgudur: öğrenci, seçilen açılış kimlikleri, seçilen mevcut
+kayıtlar. Her açılış için ayrı sorgu yoktur. Ardından ortak UTC zamanıyla yalnızca
+yeni Enrollment'lar AddRange edilir ve **tek SaveChangesAsync** çağrılır.
+Üretim endpoint'inde BeginTransaction gerekmedi. Ön kontroller yarış garantisi
+değildir; kayıt anındaki DB kısıtları ve EF'nin atomik yazma sınırı esas korumadır.
+Başarısız context yeniden kaydedilmez, rakip transaction'ın kaydı silinmez.
+
+Kontenjan tüketimi, ön koşul, kredi sınırı, saat çakışması, danışman onayı, bırakma
+ve yetkilendirme hâlâ yoktur. Genel retry/idempotency garantisi eklenmedi.
+Başarılı commit sonrasında HTTP yanıtı kaybolursa kayıtlar yine oluşmuş olabilir.
+
+### Çalıştırma ve gerçek doğrulama
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+dotnet ef migrations has-pending-model-changes
+pwsh -File scripts/verify-http.ps1
+pwsh -File scripts/verify-course-writes.ps1
+dotnet run --project .\UniversityRegistration.csproj --no-build --urls http://127.0.0.1:5080
+```
+
+Şema/model değişmedi; migration üretilmedi. Paket/araç sürümleri korundu.
+Mevcut app bağlantısında MARS kapalı, otomatik retry yapılandırması yok; test
+context'inde de MARS=false, RetriesOnFailure=false ve SupportsSavepoints=true
+kontrol edildi. Ayarlar değiştirilmedi. Daha sonra MARS/retry açılması bu deneyin
+koşullarını değiştirir; mevcut açık transaction örneklerini körlemesine taşımayın.
+
+`RelatedWriteChecks.Tracking` içindeki mevcut A/B deneylerine C/D eklendi:
+
+| Deney | Gerçek DB sonucu (yeni context) |
+|---|---|
+| A: Tek SaveChanges, ikinci kayıtta CHECK ihlali | İki yeni kayıt da yok |
+| B: Bağımsız iki SaveChanges, ikinci hata | İlk kayıt var, ikinci yok |
+| C: Açık transaction, iki SaveChanges, ikinci hata, tam rollback | İkisi de yok |
+| D: Açık transaction, iki başarılı SaveChanges, commit | İkisi de var |
+
+C'de ikinci save hatasından sonra aynı transaction içinde ilk kayıt hâlâ görüldü;
+savepoint'ten dönmek dış transaction'ı geri almak değildir. Tam rollback sonrası
+yeni context ilk kaydı bulamadı. Rollback tracker'ı temizlemedi. Temizlik token'ı
+CancellationToken.None; rollback hataları ayrıca tür adıyla kaydedilir ve asıl
+hata korunur. Transaction'lar await using ile dispose edilir. Rollback temizliğinin
+kendisine hata enjekte edilmedi; başarılı rollback ve commit yolları çalıştırıldı.
+
+`BatchEnrollmentChecks` gerçek HTTP'de başarı/ret, sıralama, detay/listeler,
+restart ve DB durumunu kontrol eder. Ön kontrol retleri atomiklik kanıtı sayılmaz.
+Ayrı test context'inde production batch handler'ı çalıştırılarak ön kontrolden
+sonra rakip çift commit edildi. **Testte** MaxBatchSize(1) ile bir INSERT'in
+başarıyla yürütülüp sonraki unique hatasında geri alındığı görüldü; rakip kayıt
+kaldı. Üretim batching ayarı değişmedi. FK save hataları da kısmi kayıt bırakmadı.
+Provider'ın toplam INSERT komut sayısına sabit beklenti konmadı; 50 öğede sadece
+üç ön kontrol SELECT'i doğrulandı.
+
+Mevcut GUID adlı izole DB ve tüm regresyonlar kullanılır. Finally yalnız testin
+kayıtlarını Enrollment → öğrenci/açılış sırasıyla temizler; dış runner eski deney
+verilerini ve API süreçlerini temizler. DB seed ile tutulur. Kullanıcı/app/lab
+verilerine deney yazması yapılmaz; sequence boşlukları geri doldurulmaz.
+
+[9. gün öğrenme notu](docs/day9-transactions.md) · [ADR 0009](docs/adr/0009-atomic-batch.md)

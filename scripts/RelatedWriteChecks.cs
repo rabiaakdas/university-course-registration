@@ -161,11 +161,13 @@ static class RelatedWriteChecks
             await db.Courses.Select(c=>new {c.Id,c.Name}).ToListAsync();
             Check(!db.ChangeTracker.Entries().Any(),"Projection tracked entities");
         }
-        async Task Fail(UniversityDbContext db)
+        async Task<DbUpdateException> Fail(UniversityDbContext db)
         {
+            DbUpdateException failure;
             try {await db.SaveChangesAsync();throw new Exception("Expected credits CHECK");}
-            catch(DbUpdateException ex) {Check(ex.InnerException is SqlException {Number:547} sql && sql.Message.Contains("CK_Courses_Credits_Positive"),"Wrong failure class");}
+            catch(DbUpdateException ex) {Check(ex.InnerException is SqlException {Number:547} sql && sql.Message.Contains("CK_Courses_Credits_Positive"),"Wrong failure class");failure=ex;}
             Check(db.ChangeTracker.Entries().Any(e=>e.State==EntityState.Added),"Failure unexpectedly cleared tracker");
+            return failure;
         }
         await using(var db=factory())
         {
@@ -179,6 +181,54 @@ static class RelatedWriteChecks
             db.Courses.Add(new(){Code="D6_SEPARATE_BAD",Name="Bad",Credits=0}); await Fail(db);
         }
         await using(var read=factory()) Check(await read.Courses.AnyAsync(c=>c.Code=="D6_SEPARATE_OK") && !await read.Courses.AnyAsync(c=>c.Code=="D6_SEPARATE_BAD"),"Separate SaveChanges boundary");
+        // Extend the existing A/B experiment with C/D; do not duplicate it elsewhere.
+        await using(var db=factory())
+        {
+            Check(!new SqlConnectionStringBuilder(db.Database.GetConnectionString()).MultipleActiveResultSets,"Expected MARS off");
+            Check(!db.Database.CreateExecutionStrategy().RetriesOnFailure,"Unexpected retry strategy");
+            await using var transaction=await db.Database.BeginTransactionAsync();
+            Check(transaction.SupportsSavepoints,"Expected SQL Server savepoints with MARS off");
+            try
+            {
+                db.Courses.Add(new(){Code="D6_TX_ROLL_OK",Name="First save",Credits=1}); await db.SaveChangesAsync();
+                db.Courses.Add(new(){Code="D6_TX_ROLL_BAD",Name="Second save",Credits=0});
+                var writeFailure=await Fail(db);
+                // Fail checked the real CHECK error. Its savepoint did not undo the first save.
+                Check(await db.Courses.AsNoTracking().AnyAsync(c=>c.Code=="D6_TX_ROLL_OK"),"First save should still exist inside transaction");
+                try {await transaction.RollbackAsync(CancellationToken.None);}
+                catch(Exception cleanup)
+                {
+                    Console.Error.WriteLine("Rollback failed after expected write failure: "+cleanup.GetType().Name);
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(writeFailure).Throw();
+                }
+                Check(db.ChangeTracker.Entries().Any(),"Rollback unexpectedly cleared tracker");
+            }
+            catch
+            {
+                try {await transaction.RollbackAsync(CancellationToken.None);}
+                catch(Exception cleanup) {Console.Error.WriteLine("Rollback cleanup failed: "+cleanup.GetType().Name);}
+                throw; // Preserve the primary failure, not the cleanup exception.
+            }
+        }
+        await using(var read=factory()) Check(!await read.Courses.AnyAsync(c=>c.Code.StartsWith("D6_TX_ROLL_")),"Outer rollback left first save");
+        await using(var db=factory())
+        {
+            await using var transaction=await db.Database.BeginTransactionAsync();
+            try
+            {
+                db.Courses.Add(new(){Code="D6_TX_COMMIT_1",Name="First",Credits=1}); await db.SaveChangesAsync();
+                db.Courses.Add(new(){Code="D6_TX_COMMIT_2",Name="Second",Credits=1}); await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                try {await transaction.RollbackAsync(CancellationToken.None);}
+                catch(Exception cleanup) {Console.Error.WriteLine("Rollback cleanup failed: "+cleanup.GetType().Name);}
+                throw;
+            }
+        }
+        await using(var read=factory()) Check(await read.Courses.CountAsync(c=>c.Code.StartsWith("D6_TX_COMMIT_"))==2,"Explicit commit lost rows");
+        Console.WriteLine("PASS: transactions A=neither, B=first persists, C=outer rollback neither, D=commit both; savepoint preserves first until full rollback; MARS off/retry off");
         Console.WriteLine("PASS: Detached/Added/Unchanged/Modified/Deleted; independent DB reads; projection empty tracker; single-save rollback vs separate-save persistence; failed tracker retains Added");
     }
 }
