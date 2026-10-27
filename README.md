@@ -1,15 +1,17 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk üç gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk dört gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
-şema ile kısıtları öğrenmek.
+şema ile kısıtları öğrenmek; EF Core ile ders listesini ayrı uygulama DB'sinden okumak.
 Proje tek bir ASP.NET Core Minimal API'dir.
 
 ## Ön koşullar ve çalıştırma
 
 .NET 10 LTS kullanılır; doğrulanan SDK sürümü **10.0.401**, hedef framework
 `net10.0`'dır. `global.json` aynı özellik bandındaki kararlı düzeltme sürümlerine
-izin verir. Harici NuGet paketi yoktur.
+izin verir. EF Core SQL Server/Design ve repo içi `dotnet-ef` sürümü **10.0.14**.
+LocalDB ve `sqlcmd` gereklidir. İlk çalıştırmadan önce aşağıdaki **4. gün kurulum**
+adımlarıyla uygulama DB'sine migration ve seed uygulayın.
 [Microsoft destek bilgisi](https://learn.microsoft.com/en-us/dotnet/core/releases-and-support)
 .NET 10'un Kasım 2028'e kadar desteklendiğini belirtir.
 
@@ -40,17 +42,18 @@ Kimlik doğrulama gerekmez. Beklenen JSON:
 ]
 ```
 
-API verileri sabit ve bellektedir; API'nin veritabanı bağlantısı veya kalıcılığı
-yoktur. 3. gün SQL laboratuvarı aşağıda ayrı anlatılır.
+4. günde `/courses` uygulama DB'sinden okur. `/academic-terms` ve
+`/course-offerings` geçici olarak sabit bellek verisinden dönmeye devam eder.
+3. gün laboratuvarı ayrı kalır; API ona bağlanmaz.
 
 ## İstek akışının kod karşılığı
 
 `Program.cs` içindeki `MapGet`, `GET /courses` isteğini karşılar.
-Endpoint'in uygulama işlemi sabit ders listesini döndürmektir.
+Endpoint'in uygulama işlemi ders listesini veritabanından okumaktır.
 `Results.Ok`, 200 durum kodlu başarılı JSON yanıtını oluşturur.
-Henüz ayrı iş kuralı veya veri erişim katmanı yoktur. Bellekteki `Course`
-nesnelerinden anonim yanıt nesnelerine açık alan seçimi yapılır; `Credits`
-modelde bulunur ama `/courses` yanıtına eklenmez.
+`UniversityDbContext`, DI üzerinden request kapsamında alınır. `OrderBy` ve
+`Select` sorguyu tanımlar; `ToListAsync(cancellationToken)` SQL'i çalıştırır.
+Anonim yanıtta yalnızca id/code/name seçilir; `Credits` yanıta eklenmez.
 
 ## 1. gün değişiklik ve doğrulama notu
 
@@ -141,8 +144,8 @@ Karar kaydı: [0002](docs/adr/0002-course-term-offering-separation.md).
 
 ## 3. gün: Ayrı SQL laboratuvarı
 
-**API hâlâ bellekteki verileri kullanır; DB bağlantısı, EF Core, provider paketi
-ve migration eklenmedi.** API komutları yukarıdaki gibidir.
+**3. gün sonunda** API bellekteydi. **4. günde yalnızca `/courses` ayrı uygulama
+DB'sine taşındı.** Aşağıdaki SQL laboratuvarı API'nin veri kaynağı değildir.
 
 Seçilen ve gerçek deneylerde kullanılan sunucu: SQL Server LocalDB
 `(localdb)\MSSQLLocalDB`, sürüm **17.0.4025.3**, Express Edition (64-bit).
@@ -245,3 +248,115 @@ doğrulama yok; PostgreSQL üzerinde deney yapılmadı, seçilen hedef LocalDB'd
 
 [Öğrenme notu](docs/day3-relational-notes.md) ·
 [ADR 0003](docs/adr/0003-relational-lab.md)
+
+## 4. gün: EF Core ile uygulama DB'si
+
+**Güncel kaynaklar:** `/courses` → `university_registration_app`;
+`/academic-terms` ve `/course-offerings` → `Program.cs` içindeki örnek koleksiyonlar.
+`offeringCourseSamples` yalnızca açılış yanıtındaki ders adlarını sağlar. DB'de
+ders adı değişirse açılış yanıtı bugün bu değişikliği takip etmez; bu geçici sınırdır.
+`university_registration_lab` 3. gün laboratuvarı olarak korunur.
+
+### Araçlar ve bağlantı
+
+.NET SDK 10.0.401/net10.0, SQL Server LocalDB 17.0.4025.3 ve EF Core 10.0.14
+kullanıldı. `Microsoft.EntityFrameworkCore.SqlServer`, `Microsoft.EntityFrameworkCore.Design`
+ve kökteki `dotnet-tools.json` içindeki dotnet-ef aynı sürümdedir. Design paketi
+PrivateAssets=all'dır; genel dotnet araçları değiştirilmedi.
+
+SQL istemcisinin dolaylı Pkcs 9.0.11 bağımlılığı restore sırasında NU1902/NU1903
+uyarısı verdi. `System.Security.Cryptography.Pkcs` 10.0.14 doğrudan referansı
+bu gerçek bağımlılık açığını gidermek içindir; son restore/build uyarısız geçti.
+[Microsoft güvenlik duyurusu](https://github.com/dotnet/announcements/issues/468)
+ve [EF 10/.NET 10 uyumu](https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-10.0/whatsnew)
+kontrol edildi.
+
+`appsettings.json` içindeki `ConnectionStrings:UniversityDatabase` parolasız
+yerel geliştirme ayarıdır: mevcut MSSQLLocalDB, uygulama DB'si ve Windows kimlik
+doğrulaması. Yerel geliştirme sertifikası için TrustServerCertificate kullanılır;
+bu ayar üretim bağlantı politikası değildir. Tam bağlantıyı loglamayın.
+Gerekirse `ConnectionStrings__UniversityDatabase` ortam değişkeniyle geçersiz
+kılın; hassas değerleri repoya veya komut geçmişine yazmayın. Eksik/boş bağlantı
+açık hata verir; belleğe fallback yoktur.
+
+Tasarım zamanı EF aracı aynı `Program.cs` yapılandırmasını ve DI kaydını kullanır;
+ayrı factory yoktur. Komutları proje kökünde, LocalDB sahibi Windows hesabıyla
+çalıştırın. Migration öncesinde bağlantı hedefinin uygulama DB'si olduğunu kontrol
+edin; laboratuvara yönlendirmeyin. Bu çalışmanın başında uygulama DB adı yoktu;
+mevcut bir DB ile karşılaşırsanız önce tabloları ve `__EFMigrationsHistory`'yi inceleyin.
+
+### Kurulum ve tekrar çalıştırma
+
+```powershell
+cd C:\Users\rabia\OneDrive\Desktop\universite
+dotnet tool restore
+dotnet restore
+dotnet build --no-restore
+# Mevcut migration'ı uygulamadan önce üretilen SQL'i inceleyin:
+dotnet ef migrations script 0 InitialUniversitySchema --output sql/app/initial-migration.tmp
+dotnet ef database update
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/seed.sql
+dotnet run --project .\UniversityRegistration.csproj --no-build --urls http://127.0.0.1:5080
+```
+
+Her komutun başarılı olmasını bekleyin; hatada sonraki adıma geçmeyin.
+İlk migration zaten kaynak kontrolündedir; normal kurulumda yeniden üretmeyin.
+Bu çalışmada `dotnet ef migrations add InitialUniversitySchema --output-dir Data/Migrations`
+ile üretildi. Migration **oluşturmak** DB'yi değiştirmez; `database update` ayrı
+uygulama adımıdır. Başlangıçta otomatik migration/seed, EnsureCreated veya
+EnsureDeleted yoktur. DB silme/yeniden oluşturma işlemi yapılmaz.
+
+`sql/app/seed.sql` tek transaction ile üst kayıtları önce ekler. Beklenen kimlikte
+aynı değer varsa atlar; farklı değer varsa açık hata verir ve hiçbir kaydı ezmez.
+İkinci çalıştırmada yeni satır eklenmedi. Eksik seed kayıtlarını ekler; ilgisiz
+mevcut kayıtları silmez. Bilerek değiştirdiğiniz seed değerinde hata almanız normaldir.
+
+### Mapping ve migration kararı
+
+`Data/UniversityDbContext.cs` üç DbSet ve küçük `OnModelCreating` eşlemesini içerir.
+Kimlikler `ValueGeneratedNever` ile açık verilir; SQL'de IDENTITY yoktur.
+Metinler nvarchar, tarihler date; CHECK/NOT NULL kuralları laboratuvarla aynıdır.
+İki ilişki NoAction'dır. Üretilen SQL'de ON DELETE/UPDATE yazılmaması SQL Server'ın
+NO ACTION varsayılanını kullanır; gerçek FK metadata'sı ve deneylerle doğrulandı.
+
+Code ve ders/dönem/şube birleşimi için `HasIndex(...).IsUnique()` kullanıldı.
+Laboratuvardaki UQ constraint yerine uygulamada UX unique index vardır: aynı
+benzersizlik korunur, SQL hata numarası 2627 yerine 2601 olur. Bu alanlar başka
+bir ilişkinin hedef anahtarı olmadığı için alternate key semantiği eklenmedi.
+EF'nin AcademicTermId FK index'i de üretildi; CourseId ayrıca indexlenmez,
+birleşik index'in ilk sütunudur. Mevcut CI_AS collation ve Türkçe metinler korunur.
+[EF index ve CHECK API'leri](https://learn.microsoft.com/en-us/ef/core/modeling/indexes),
+[alternate key ayrımı](https://learn.microsoft.com/en-us/ef/core/modeling/keys).
+
+Up, Down, designer/snapshot ve üretilen ileri SQL incelendi. İleri SQL yalnızca
+üç model tablosunu, kısıt/indexleri ve migration geçmişini oluşturur. Down bu üç
+tabloyu kaldırır; veri yedeği değildir ve bu çalışmada uygulanmadı. CLI ayrıca
+yeni uygulama DB'sini oluşturup SQL Server için READ_COMMITTED_SNAPSHOT açtı.
+
+### Doğrulama
+
+```powershell
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
+pwsh -File scripts/verify-http.ps1 -VerifyDatabaseSource
+```
+
+Uygulama SQL doğrulaması gerçek sütun/tür/uzunluk/NULL/IDENTITY/default, PK,
+unique index, CHECK ve migration geçmişini inceler. 3. günün deneyleri
+`sql/shared/verify-constraints.sql` içinde tek kaynaktır; lab/app sarmalayıcıları
+yalnızca hedef korumasını ve unique hata kodu/adlarını seçer. App doğrulaması
+laboratuvara yazmaz. Deney değişiklikleri rollback edilir.
+
+Gerçek sonuçlar: migration uygulandı; ikinci update bekleyen migration bulmadı;
+model/snapshot farkı yok. Seed iki kez çalıştı, sonuç 2/2/3 kayıt. Şema ve ortak
+23 numaralı kontrol geçti. Restore/build 0 hata, 0 uyarı. HTTP betiği üç endpoint'in
+sözleşmesini, sıralamayı ve Credits'in görünmediğini doğruladı. İsteğe bağlı
+`-VerifyDatabaseSource` modu ders 1 adını önce beklenen değere karşı kontrol edip
+geçici adla **commit eder**; HTTP'de görür, finally içinde güvenle geri yükler ve
+HTTP'den yeniden doğrular. Beklenmeyen değerleri ezmez. Ardından uygulamayı yeniden
+başlatır ve 8 eşzamanlı GET isteğini kontrol eder. Bunların hepsi geçti; tüm geçici
+API süreçleri kapandı. Bu, kontenjan/concurrency garantisi değildir.
+Boş bağlantıyla başlatma kontrolü de açık hata ile reddedildi; fallback yapılmadı.
+
+[4. gün öğrenme notu](docs/day4-ef-core-notes.md) · [ADR 0004](docs/adr/0004-ef-core-course-read.md)

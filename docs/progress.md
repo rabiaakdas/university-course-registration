@@ -145,3 +145,59 @@ Laboratuvar temel seed ile yerinde bırakıldı. PostgreSQL üzerinde test yapı
 **Commit/push takibi:** Bu kaydı ekleyen commit Git geçmişinde
 `git log --format=%H --grep="^feat: add relational schema and constraint checks$"`
 ile bulunabilir. Hedef origin/main; gerçekleşen push sonucu son raporda verilir.
+
+## Gün 4
+
+**Konu/kavramlar:** EF Core, DbSet/IQueryable, scoped DbContext yaşam süresi ve
+thread-safety, sıralı await, Fluent API mapping, migration/model snapshot,
+ValueGeneratedNever, unique index/constraint ayrımı, SQL seed ve okuma projeksiyonu.
+
+**Başlangıç:** Yerel/uzak main `847f1b47a299fd44d12681d752fdc3160c9269bb`;
+çalışma ağacı temizdi. Laboratuvarın gerçek tablo, sütun, kısıt ve NO ACTION
+metadata'sı okundu. Uygulama DB adı mevcut değildi. SDK 10.0.401 ve LocalDB
+17.0.4025.3 doğrulandı; uygulanabilir AGENTS.md bulunmadı.
+
+**Somut değişiklikler:** UniversityDbContext, üç DbSet ve OnModelCreating;
+AddDbContext scoped kayıt; /courses için Id sıralı, id/code/name projeksiyonlu
+ToListAsync(CancellationToken). Diğer endpoint'lerin bellek kaynağı açık ayrıldı.
+EF SQL Server/Design ve repo içi dotnet-ef 10.0.14 eklendi. Gerçek NU1902/NU1903
+uyarısını gidermek için dolaylı Pkcs bağımlılığı 10.0.14 ile sabitlendi.
+Parolasız yerel uygulama ayarı; initial migration, kontrollü SQL seed ve şema
+kontrolü eklendi. 3. gün kısıt deneyleri kopyalanmadan ortak SQL'e taşındı.
+HTTP betiği DB kaynağı kanıtı, restart ve eşzamanlı isteklerle genişletildi.
+
+**Gerçek doğrulamalar:**
+
+- Up/Down, designer/snapshot ve ileri SQL uygulama öncesi incelendi. Yalnızca
+  beklenen üç model tablosu, index/kısıtlar ve migration geçmişi vardı.
+- `20261027110911_InitialUniversitySchema` ayrı university_registration_app
+  DB'sine uygulandı. İkinci database update: bekleyen migration yok.
+- has-pending-model-changes: model/snapshot farkı yok. Geçmiş kaydı EF tarafından
+  10.0.14 ile yazıldı. EnsureCreated/EnsureDeleted kullanılmadı, Down uygulanmadı.
+- Gerçek DB sütun türü/uzunluğu, NOT NULL, IDENTITY olmaması, default olmaması,
+  PK, iki unique index, CHECK, NO ACTION ve migration geçmişi kontrolü geçti.
+- SQL seed iki kez çalıştı; ikinci eklemelerde 0 satır, toplam 2 ders/2 dönem/3
+  açılış. Ortak 23 numaralı davranış kontrolü ve son rollback/içerik kontrolü geçti.
+- Restore/build başarılı: 0 hata, 0 uyarı. Yerel tool restore başarılı.
+- Boş bağlantı ortam değişkeniyle başlatma deneyi açık yapılandırma hatasıyla
+  reddedildi; belleğe fallback yapılmadı.
+- Üç endpoint gerçek HTTP'de 200/application-json ve beklenen içerik döndürdü;
+  /courses tam iki ders, Id sırası ve yalnızca id/code/name alanlarıyla doğrulandı.
+- Ders 1'in beklenen adı kontrol edilip geçici ad SQL'de commit edildi; yeni ad
+  HTTP'de görüldü. finally içinde eski değer geri yüklendi ve HTTP'de doğrulandı.
+- API yeniden başlatıldı; DB okuması ve 8 eşzamanlı GET isteği geçti. Tüm geçici
+  API süreçleri kapatıldı. Bu bir kontenjan/concurrency garantisi değildir.
+- Son salt okunur kontrolde uygulama adı geri dönmüş, laboratuvar 2/2/3 kayıtla
+  korunmuştu. Laboratuvara migration/seed veya deney yazması yapılmadı.
+
+**Açık noktalar/sınırlar:** Bugünün doğrulamasında engel yok. Academic terms ve
+course offerings bellekten çalışır; DB ders adı değişikliği açılış yanıtına henüz
+yansımaz. DB erişimi için LocalDB sahibi Windows hesabı gerekir. Yeni CRUD,
+SaveChanges yazma akışı veya kapsamlı validation eklenmedi.
+
+**Sıradaki gün:** Girdi doğrulama, iş kuralı, DB kısıtı ve HTTP hata ayrımı;
+ders oluşturma/düzenleme.
+
+**Commit/push:** Bu kaydı içeren commit kimliği Git geçmişinde
+`git log --format=%H --grep="^feat: persist course catalog with EF Core$"`
+ile bulunur. Hedef origin/main; push sonucu gerçekleştiğinde son raporda verilir.

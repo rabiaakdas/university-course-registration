@@ -1,9 +1,16 @@
+using Microsoft.EntityFrameworkCore;
+using UniversityRegistration.Data;
 using UniversityRegistration.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+var connectionString = builder.Configuration.GetConnectionString("UniversityDatabase");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
+builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
 var app = builder.Build();
 
-var courses = new Course[]
+// Geçici olarak yalnızca /course-offerings yanıtını zenginleştiren bellek verisi.
+var offeringCourseSamples = new Course[]
 {
     new() { Id = 1, Code = "CSE201", Name = "Veri Yapıları", Credits = 4 },
     new() { Id = 2, Code = "CSE203", Name = "Veritabanı Yönetimi", Credits = 3 }
@@ -22,18 +29,19 @@ var courseOfferings = new CourseOffering[]
     new() { Id = 3, CourseId = 1, AcademicTermId = 2, SectionCode = "A", Capacity = 35 }
 };
 
-app.MapGet("/courses", () => Results.Ok(courses.Select(course => new
+app.MapGet("/courses", async (UniversityDbContext db, CancellationToken cancellationToken) =>
 {
-    course.Id,
-    course.Code,
-    course.Name
-})));
+    var courses = await db.Courses.OrderBy(course => course.Id)
+        .Select(course => new { course.Id, course.Code, course.Name })
+        .ToListAsync(cancellationToken);
+    return Results.Ok(courses);
+});
 
 app.MapGet("/academic-terms", () => Results.Ok(academicTerms));
 
 app.MapGet("/course-offerings", () => Results.Ok(courseOfferings.Select(offering =>
 {
-    var course = courses.Single(course => course.Id == offering.CourseId);
+    var course = offeringCourseSamples.Single(course => course.Id == offering.CourseId);
     var term = academicTerms.Single(term => term.Id == offering.AcademicTermId);
 
     return new
