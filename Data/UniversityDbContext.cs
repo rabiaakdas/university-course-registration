@@ -8,6 +8,8 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<AcademicTerm> AcademicTerms => Set<AcademicTerm>();
     public DbSet<CourseOffering> CourseOfferings => Set<CourseOffering>();
+    public DbSet<Student> Students => Set<Student>();
+    public DbSet<Enrollment> Enrollments => Set<Enrollment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,5 +48,28 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_CourseOfferings_Courses");
         offering.HasOne<AcademicTerm>().WithMany().HasForeignKey(x => x.AcademicTermId)
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_CourseOfferings_AcademicTerms");
+
+        modelBuilder.HasSequence<int>("StudentIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
+        var student = modelBuilder.Entity<Student>();
+        student.ToTable("Students");
+        student.HasKey(x => x.Id).HasName("PK_Students");
+        student.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[StudentIds]", "DF_Students_Id");
+        student.Property(x => x.StudentNumber).IsRequired().HasMaxLength(30).IsUnicode();
+        student.Property(x => x.FullName).IsRequired().HasMaxLength(200).IsUnicode();
+        student.HasIndex(x => x.StudentNumber).IsUnique().HasDatabaseName("UX_Students_StudentNumber");
+
+        modelBuilder.HasSequence<int>("EnrollmentIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
+        var enrollment = modelBuilder.Entity<Enrollment>();
+        enrollment.ToTable("Enrollments");
+        enrollment.HasKey(x => x.Id).HasName("PK_Enrollments");
+        enrollment.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[EnrollmentIds]", "DF_Enrollments_Id");
+        enrollment.Property(x => x.StudentId).IsRequired();
+        enrollment.Property(x => x.CourseOfferingId).IsRequired();
+        enrollment.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset").IsRequired();
+        enrollment.HasIndex(x => new { x.StudentId, x.CourseOfferingId }).IsUnique().HasDatabaseName("UX_Enrollments_Student_Offering");
+        enrollment.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Enrollments_Students");
+        enrollment.HasOne<CourseOffering>().WithMany().HasForeignKey(x => x.CourseOfferingId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Enrollments_CourseOfferings");
     }
 }

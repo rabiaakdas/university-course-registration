@@ -398,3 +398,76 @@ temel kayıt işlemi.
 **Commit/push:** Bu kaydı içeren kimlik
 `git log --format=%H --grep="^feat: add filtered and paginated course catalog$"`
 ile bulunur. Gerçek push sonucu son raporda verilir; hash için ek commit üretilmez.
+
+## Gün 8
+
+**Konu:** Çoktan çoğa ilişki ve açık ilişki entity'si.
+
+**Başlangıç:** Yerel/uzak main 6614f1e149a1236d76c4eacf31d06babde5e76e6;
+çalışma ağacı temiz, uygulanabilir AGENTS.md yok. SDK 10.0.401, EF SQL Server,
+Design ve yerel dotnet-ef 10.0.14 korundu. Uygulama DB'sinde yeni tablo adları
+yoktu; mevcut 2 ders/2 dönem/3 açılış ve veri checksum'ları kaydedildi.
+
+**Somut değişiklik:** Student ve Enrollment modelleri/DbSet/mapping; iki sequence,
+ayrı PK'ler, öğrenci numarası unique ve öğrenci-açılış birleşik unique, zorunlu
+FK'ler/NO ACTION, CreatedAtUtc datetimeoffset. Student POST/detay, Enrollment
+POST/detay ve öğrencinin JOIN/projection kayıt listesi. İstek/yanıt DTO'ları,
+Trim/alan doğrulaması ve dar 2601/547 hata eşlemesi. Yalnız yeni entity Add edilir;
+UTC zamanı sunucudan, Id'ler sequence'den gelir. Mevcut ders/açılış eşlemeleri
+korundu. Yeni genel öğrenci listesi veya PUT/DELETE yoktur.
+
+**Gerçek doğrulamalar:**
+
+- Restore/build başarılı, 0 uyarı/0 hata. Yeni paket yok.
+- Up/Down, designer/snapshot ve üretilen SQL incelendi. İleri SQL sadece iki
+  yeni tablo, iki sequence/default, PK/FK/unique ve gereken ilişki index'ini ekler.
+  Down yeni tabloları kaldırır; uygulanmadı, geri alma testi yapılmadı.
+- 20261027123407_AddStudentsAndEnrollments açık komutla yalnızca
+  university_registration_app üzerinde uygulandı. Tekrar update: bekleyen yok;
+  model/snapshot farkı yok. Başlangıçtaki 2/2/3 kayıt ve checksum'lar korundu.
+- Gerçek şema kontrolü: nvarchar uzunlukları/NOT NULL, datetimeoffset/NOT NULL,
+  PK, FK hedef/sütunları, NO ACTION, unique, sequence/default ve IDENTITY olmaması
+  geçti. Uygulama seed'i iki kez çalıştı, örnek satır çoğalmadı.
+- Mevcut runner ayrı university_registration_tests_day6_f5c3f7ef308846e8a16ee293ca84cf69
+  DB'sinde tüm önceki ders/katalog/dönem/açılış, tracking, SQL kısıt ve yarış
+  regresyonlarını çalıştırdı; geçti. Mevcut day6 DB öneki/işareti korundu.
+- Öğrenci 201/Location/detay; Trim, baştaki sıfırlar ve harf biçimi korundu.
+  Aynı adla farklı numaralar kabul edildi. CI collation'a göre aynı numara 409;
+  null/boş/boşluk/uzun alanlar toplu 400; reddedilen isteklerde satır artmadı.
+- Bir öğrenci aynı dersin A/B açılışlarına, iki öğrenci aynı açılışa kaydoldu.
+  Student/CourseOffering sayıları değişmedi. 201/Location/detay alanları ve
+  sunucu UTC zamanı istek öncesi/sonrası aralığında doğrulandı; istemciden gönderilen
+  Id/zaman kullanılmadı. Restart sonrası öğrenci ve kayıt kalıcılığı geçti.
+- Tekrar çift 409; geçersiz/olmayan FK'ler alan 400; eksik detaylar 404; var olan
+  öğrencinin boş kayıt listesi 200/[]; olmayan öğrencinin listesi 404. JOIN listesi
+  doğru ders/dönem/şube ve Id sırası verdi. Altı aynı çift POST: bir 201/beş 409,
+  DB'de tek satır. Bu kontenjan veya genel idempotency garantisi değildir.
+- Doğrudan gerçek tekrar çift ve hatalı FK eklemeleri reddedildi. Test context
+  interceptor'ı ön kontrolden sonra rakip öğrenci/çift ekleyip ilgili üst kaydı
+  silerek dört gerçek save hata dalını ayrıca çalıştırdı: numara/çift 409,
+  Student/Offering FK doğru alan 400. Üretime test kancası eklenmedi.
+- İlgisiz kredi CHECK 547, ders kodu unique 2601 ve PK 2627 yeni eşleyicide
+  kayıt hatası sayılmadı. Mevcut güvenli 500 regresyonu geçti. Bağlı öğrenci ve
+  açılış DELETE denemeleri gerçek FK 547 ile reddedildi; üç ilgili satır korundu.
+- ReaderExecuted interceptor'ı kayıt listesi için sabit iki gerçek sorgu gördü:
+  öğrenci varlığı + üç JOIN'li filtreli/sıralı projection. N+1 yok, DTO tracker boş.
+  Geçersiz alanlı yeni POST'larda DB sorgusu yoktu. Seed kayıtlar varken tekrar
+  çalıştırıldı, öğrenciler/kayıtlar korundu.
+- Finally Enrollment → test öğrenci/açılış sırasıyla temizledi, dış runner diğer
+  test verilerini ve geçici süreçleri kapattı. Son test DB sayıları 2/2/3/0/0.
+  Uygulama DB'sine test öğrenci/kaydı yazılmadı. Laboratuvarın üç tablosu ve 2/2/3
+  örnekleri ayrı kaldı; laboratuvara migration/seed/test yazması yapılmadı.
+
+**Açık sınırlar:** Bugünkü kontrollerde engel yok; Down uygulanmadı. Kontenjan
+kontrolü/tüketimi, ön koşul, kredi sınırı, saat çakışması, farklı şube yasağı,
+danışman onayı, durum geçişi ve bırakma yok. Student iş profilidir, Identity hesabı
+değildir. Kimlik doğrulama/yetkilendirme yok; StudentId kabulü güvenli self-servis
+değildir. SQL mesajındaki nesne adı/sıra bağımlılığı belgeli; bilinmeyen hata
+merkezi 500'e bırakılır. Test DB'leri seed ile tutulur, sequence boşlukları normaldir.
+
+**Sıradaki gün:** ACID, commit/rollback, EF varsayılan/açık transaction; bağlı
+kayıt değişikliklerini birlikte kaydetme.
+
+**Commit/push:** Bu kaydı içeren kimlik
+`git log --format=%H --grep="^feat: add students and basic course enrollment$"`
+ile bulunur. Push sonucu son raporda verilir; hash için ek commit oluşturulmaz.

@@ -9,8 +9,8 @@ INSERT @Columns VALUES
     (N'CourseOfferings',N'Id',N'int',4),(N'CourseOfferings',N'CourseId',N'int',4),
     (N'CourseOfferings',N'AcademicTermId',N'int',4),
     (N'CourseOfferings',N'SectionCode',N'nvarchar',20),(N'CourseOfferings',N'Capacity',N'int',4);
-IF (SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped=0)<>4
-    THROW 51000, 'Expected three application tables and migration history.', 1;
+IF (SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped=0)<>6
+    THROW 51000, 'Expected five application tables and migration history.', 1;
 IF EXISTS (SELECT 1 FROM @Columns e
     LEFT JOIN sys.tables t ON t.name=e.TableName AND SCHEMA_NAME(t.schema_id)=N'dbo'
     LEFT JOIN sys.columns c ON c.object_id=t.object_id AND c.name=e.ColumnName
@@ -54,3 +54,4 @@ IF (SELECT COUNT(*) FROM sys.foreign_keys WHERE name IN (N'FK_CourseOfferings_Co
     AND delete_referential_action=0 AND update_referential_action=0 AND is_disabled=0 AND is_not_trusted=0)<>2
     THROW 51000, 'Expected two trusted NO ACTION foreign keys.', 1;
 PRINT 'PASS: schema, three sequence defaults, NO ACTION foreign keys, migration history.';
+:r sql/app/verify-enrollment-schema.sql

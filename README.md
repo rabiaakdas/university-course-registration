@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yedi gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk sekiz gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -692,3 +692,129 @@ sürecinde yapılır. SQL/parametreler yalnızca bellekte incelenir, çıktı do
 snapshot commit edilmez; alias/parametre adlarının birebir eşleşmesi aranmaz.
 
 [7. gün öğrenme notu](docs/day7-querying.md) · [ADR 0007](docs/adr/0007-course-catalog.md)
+
+## 8. gün: Öğrenci ve temel ders kaydı
+
+Student bir **iş profilidir**, parola/token/Identity hesabı değildir. Bu API'de
+kimlik doğrulama ve yetkilendirme yoktur. İstemciden StudentId kabul eden bu
+geliştirme akışı güvenli öğrenci self-servisi olarak kullanılmamalıdır.
+
+Enrollment, öğrenci ile **ders açılışı** arasındaki açık ilişki entity'sidir.
+Bir öğrenci birçok açılışa, bir açılış birçok öğrenciye bağlanır. Kayıt zamanı
+ilişkiye aittir. İki zorunlu FK, ayrı Id ve UNIQUE(StudentId, CourseOfferingId)
+vardır. Aynı dersin farklı şubeleri farklı açılışlardır ve bugün kabul edilir.
+
+| Endpoint | Başarı / hata |
+|---|---|
+| POST /students | 201 + Location; alan 400, kullanılan numara 409 |
+| GET /students/{id:int} | 200; yoksa 404 |
+| POST /enrollments | 201 + Location; alan/olmayan FK 400, tekrar çift 409 |
+| GET /enrollments/{id:int} | 200; yoksa 404 |
+| GET /students/{id:int}/enrollments | 200 dizi; öğrencinin kaydı yoksa boş; öğrenci yoksa 404 |
+
+```http
+POST /students
+Content-Type: application/json
+
+{"studentNumber":"001234","fullName":"Rabia Nur Akdaş"}
+```
+
+```json
+{"id":1,"studentNumber":"001234","fullName":"Rabia Nur Akdaş"}
+```
+
+İki metin Trim edilir; boş/null/boşluk kabul edilmez. Numara en fazla 30, ad soyad
+en fazla 200 karakterdir. Numara metindir; sıfırlar ve harf biçimi korunur, rakam
+regex'i yoktur. FullName benzersiz değildir. Numara benzersizliği mevcut
+SQL_Latin1_General_CP1_CI_AS collation'a uyar: harfe duyarsız, aksana duyarlı.
+Örneğin `0008Ab` saklanır, `0008ab` ikinci öğrenci olarak kabul edilmez.
+
+```http
+POST /enrollments
+Content-Type: application/json
+
+{"studentId":1,"courseOfferingId":1}
+```
+
+```json
+{"id":1,"studentId":1,"courseOfferingId":1,"createdAtUtc":"2026-10-27T12:00:00+00:00"}
+```
+
+Id ve zaman örnektir; gerçek öğrenci/açılış kimliklerini kullanın. CreatedAtUtc
+sunucuda DateTimeOffset.UtcNow ile üretilir; istemcinin Id/zamanı istek sözleşmesinde
+yoktur. Pozitif kimlikler, iki üst kaydın varlığı ve çift benzersizliği kontrol
+edilir. Sadece yeni Enrollment Add edilir; mevcut üst kayıtlar yeniden eklenmez.
+SaveChangesAsync tamamlanınca 201 ve çalışan detay Location döner.
+
+Öğrencinin kayıt listesi örneği:
+
+```json
+[{"id":1,"courseOfferingId":1,"courseCode":"CSE201","courseName":"Veri Yapıları","termName":"2026-2027 Güz","sectionCode":"A","createdAtUtc":"2026-10-27T12:00:00+00:00"}]
+```
+
+Liste Enrollment.Id artan sırasındadır; öğrenci varlık sorgusundan sonra tek
+SQL JOIN/projection çalışır. Sabit iki sorgu N+1 değildir; her satır için sorgu
+yoktur. DTO'lar entity içermez. Genel öğrenci listesi ve yeni PUT/DELETE yoktur.
+
+**Bugünkü sınır:** Kontenjan kontrolü/tüketimi, ön koşul, kredi sınırı, saat
+çakışması, farklı şubeye kayıt engeli, danışman onayı, durum geçişi ve bırakma yoktur.
+Aynı çifte eşzamanlı isteklerde tek kayıt koruması, kontenjan veya genel idempotency
+garantisi değildir. Ön kontrol kayıt anını garanti etmez; son koruma DB kısıtıdır.
+
+### Migration ve hata eşlemesi
+
+`20261027123407_AddStudentsAndEnrollments` iki yeni tabloyu ve ayrı StudentIds/
+EnrollmentIds sequence/default'larını oluşturur. Yeni boş tablolar için başlangıç
+1'dir; istek başına MAX+1 yoktur. Mevcut tablolar/kimlikler korunur. CreatedAtUtc
+zorunlu datetimeoffset, metinler nvarchar'dır. İki FK NO ACTION; kayıt varken
+öğrenci/açılış silinemez. Birleşik unique index StudentId ile başladığından EF'nin
+ayrıca oluşturduğu ilişki index'i CourseOfferingId üzerindedir.
+
+Dar hata eşlemesi: 2601 + Students/UX_Students_StudentNumber → öğrenci 409;
+2601 + Enrollments/UX_Enrollments_Student_Offering → kayıt 409; 547 + ilgili
+FK_Enrollments_Students veya FK_Enrollments_CourseOfferings → doğru alan 400.
+Diğer unique/PK/CHECK/altyapı hataları bu sonuçlara zorlanmaz. Sağlayıcı ayrı kısıt
+adı alanı sunmadığı için mesajın tırnaklı nesne adlarına/sırasına bağımlılık sürer;
+bilinmeyen biçim mevcut güvenli merkezi 500'e gider. Ham hata istemciye verilmez.
+
+Proje kökünde, API yazıcılarını durdurarak:
+
+```powershell
+dotnet tool restore
+dotnet restore
+dotnet build --no-restore
+dotnet ef migrations script GenerateTermAndOfferingIds AddStudentsAndEnrollments --output sql/app/day8-migration.tmp
+# Up/Down ve SQL'i inceledikten sonra, yalnızca uygulama DB'sine:
+dotnet ef database update
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/seed.sql
+dotnet ef migrations has-pending-model-changes
+dotnet run --project .\UniversityRegistration.csproj --no-build --urls http://127.0.0.1:5080
+```
+
+SDK 10.0.401 ve EF paket/araç 10.0.14 değişmedi. Mevcut güvenli Windows bağlantı
+ayarı kullanılır; secret eklenmedi. Laboratuvar hedef değildir. Startup migration
+yoktur. Down yeni kayıt tablolarını kaldırır ve içlerindeki veriyi kaybettirir;
+incelendi, uygulanmadı. İlk migration'lar değiştirilmedi.
+
+### Gerçek doğrulama ve temizlik
+
+```powershell
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
+pwsh -File scripts/verify-http.ps1
+pwsh -File scripts/verify-course-writes.ps1
+```
+
+Mevcut runner yeni `EnrollmentChecks.cs` kontrollerini de çalıştırır; izole
+`university_registration_tests_day6_<guid>` yaklaşımı korunur. Öğrenci/kayıt HTTP,
+UTC zaman aralığı, restart, gerçek save yarışı, NO ACTION, SQL sorgu sayısı ve
+mevcut bütün regresyonlar test edilir. Üretim endpoint'lerine test kancası eklenmez.
+Yeni öğrenciler SQL seed'e eklenmedi; seed tekrarları öğrenci/kayıt verilerini
+değiştirmez. Şema doğrulaması yeni metadata betiğini içerir.
+
+Finally önce test Enrollment'larını, sonra yalnızca test öğrencilerini ve testin
+oluşturduğu açılışı temizler; dış runner diğer testleri/süreçleri temizler. Yeni
+DB'de test öğrencileri D8_ numaraları ve bilinen `0008Ab` ile ayırt edilir. Uygulama
+ve kullanıcı verilerine test yazması yapılmaz. Test DB seed ile tutulur, otomatik
+DROP yoktur; sequence boşlukları doldurulmaz.
+
+[8. gün öğrenme notu](docs/day8-enrollment.md) · [ADR 0008](docs/adr/0008-explicit-enrollment.md)

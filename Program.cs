@@ -33,5 +33,7 @@ app.UseStatusCodePages(async context => await Results.Problem(statusCode: contex
 app.MapCourseEndpoints();
 app.MapAcademicTermEndpoints();
 app.MapCourseOfferingEndpoints();
+app.MapStudentEndpoints();
+app.MapEnrollmentEndpoints();
 
 app.Run();
