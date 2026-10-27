@@ -201,3 +201,64 @@ ders oluşturma/düzenleme.
 **Commit/push:** Bu kaydı içeren commit kimliği Git geçmişinde
 `git log --format=%H --grep="^feat: persist course catalog with EF Core$"`
 ile bulunur. Hedef origin/main; push sonucu gerçekleştiğinde son raporda verilir.
+
+## Gün 5
+
+**Konu/kavramlar:** Binding, girdi doğrulama, iş kuralı ve DB kısıtı ayrımı;
+istek/entity/yanıt sözleşmeleri, Add/SaveChanges, izlenen nesnenin düzenlenmesi,
+400/404/409/500 Problem Details, sequence ile kimlik üretimi ve yarış koşulları.
+
+**Başlangıç:** Yerel/uzak main 5803ef5948597aa73086cb54f4d53576230c650c,
+temiz çalışma ağacı. SDK 10.0.401, EF paketleri ve yerel araç 10.0.14 korundu.
+LocalDB 17.0.4025.3; gerçek UX_Courses_Code ve SQL_Latin1_General_CP1_CI_AS
+incelendi. Collation değiştirilmedi; uygulanabilir AGENTS.md bulunmadı.
+
+**Somut değişiklik:** POST /courses, GET /courses/{id:int}, PUT /courses/{id:int};
+küçük istek kayıtları, ortak normalizasyon/doğrulama, endpoint eşleme sınıfı.
+Liste yanıtı üç alanla kaldı; detay/yazma yanıtı credits içerir. PUT kendi kaydını
+çakışmadan dışlar, kontroller geçince izlenen nesneyi değiştirir. Dar kapsamlı
+SQL 2601 + dbo.Courses/UX_Courses_Code tanıma ve merkezi güvenli hata yanıtı eklendi.
+GenerateCourseIds migration'ı CourseIds sequence/default ve üretilen EF kimliği
+getirdi; diğer model kimlikleri ve ilk migration değiştirilmedi.
+
+**Gerçek doğrulamalar:**
+
+- Restore/build başarılı, 0 hata ve 0 uyarı. Son integration çalışması güncel kodu
+  yeniden derledi. Paket yükseltmesi yapılmadı.
+- Up/Down, snapshot ve ileri SQL incelendi. Migration yalnızca uygulama DB'sine
+  uygulandı; tekrar update bekleyen migration bulmadı, model/snapshot farkı yok.
+  Mevcut kayıtlar korundu. Down incelendi ancak çalıştırılmadı.
+- Uygulama DB metadata kontrolü ve iki seed çalıştırması geçti; seed kayıt
+  çoğaltmadı. Lab'a migration veya deney yazması yapılmadı.
+- Ayrı, her çalıştırmada yeni ve işaretli test DB'sinde eski şemaya Id=500 eklendi;
+  migration kaydı korudu ve yeni kimlik 500'den büyük üretildi. Şema, iki seed
+  çalıştırması ve mevcut ortak 23 SQL kısıt deneyi geçti.
+- Üç eski GET sözleşmesi hem uygulama DB'sinde hem ek ders bulunan test DB'sinde
+  geçti. Liste yalnızca id/code/name, sıralı; ek kayıtlar artık hata sayılmaz.
+- Gerçek HTTP POST 201/Location/DB satırı/detay ve listede görünme; restart sonrası
+  kalıcılık; PUT 200/aynı Id/sabit satır sayısı ve kendi koduyla düzenleme geçti.
+- Çakışan POST/PUT 409 ve veri korunması, normalizasyon, null/boş/boşluk/uzun
+  alanlar ve pozitif olmayan kredi için toplu 400, bozuk JSON ve string Credits
+  için 400, olmayan kayıtlar için 404 geçti. Geçersiz POST'ta DB okuması yok.
+- Sekiz eşzamanlı farklı POST ayrı kimlikler aldı; aynı normalize kodda bir 201
+  ve yedi 409, tek kayıt oluştu. Ayrıca test interceptor'ı ön kontrolden sonra
+  gerçek rakip kayıt ekleyerek SaveChanges hata sınıflandırma dalını doğruladı.
+- Gerçek PK 2627 ve başka unique index 2601 hataları kod çakışması sayılmadı.
+  Test DB'sine geçici CHECK ile oluşturulan beklenmeyen hata HTTP'de hassas
+  ayrıntısız 500 döndü; CHECK kaldırıldı.
+- Finally test kayıtlarını temizledi ve geçici API süreçlerini kapattı. Ayrı
+  test DB'leri seed ile tutuldu; sequence boşlukları kapatılmadı. Son tam çalışma:
+  university_registration_tests_day5_35d283ec87ad43f681bcf8aca820b5c2.
+
+**Açık noktalar/sınırlar:** Bugünkü kontrollerde engel yok. SQL sağlayıcısı index
+adını ayrı alan sunmadığından dar hata tanıma mesajdaki tırnaklı adların sırasına
+bağımlıdır; bilinmeyen biçim 409 yapılmaz. Ön kontrol rezervasyon değildir.
+Eşzamanlı düzenlemede lost update henüz çözülmez. Diğer iki liste bellekten çalışır.
+Migration/seed sırasında yazıcılar durdurulmalıdır. Test DB'leri otomatik silinmez.
+
+**Sıradaki gün:** İlişkili veri yazma, change tracking ve SaveChanges; dönem
+oluşturma ve ders açılışı.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişinde
+`git log --format=%H --grep="^feat: add validated course creation and updates$"`
+ile bulunur. Push sonucu gerçekleşmeden başarılı kabul edilmez; son raporda verilir.

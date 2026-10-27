@@ -37,5 +37,17 @@ INSERT dbo.CourseOfferings (Id,CourseId,AcademicTermId,SectionCode,Capacity)
 SELECT e.Id,e.CourseId,e.AcademicTermId,e.SectionCode,e.Capacity FROM @Offerings e
 WHERE NOT EXISTS (SELECT 1 FROM dbo.CourseOfferings a WHERE a.Id=e.Id);
 
+-- Stop writers for this development seed too. Explicit seed IDs do not consume
+-- sequence values. Only advance; never rewind or attempt to fill gaps.
+DECLARE @maximum bigint;
+SELECT @maximum=COALESCE(MAX(CONVERT(bigint,Id)),0) FROM dbo.Courses WITH (TABLOCKX,HOLDLOCK);
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseIds'))
+    THROW 51000, 'Apply GenerateCourseIds before seeding.', 1;
+IF @maximum >= 2147483647 THROW 51000, 'Course Id int range exhausted.', 1;
+IF (SELECT CONVERT(bigint,current_value) FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseIds')) <= @maximum
+BEGIN
+    DECLARE @sql nvarchar(200)=N'ALTER SEQUENCE dbo.CourseIds RESTART WITH '+CONVERT(nvarchar(20),@maximum+1);
+    EXEC sys.sp_executesql @sql;
+END;
 COMMIT;
 PRINT 'PASS: seed inserted missing rows only; existing values matched.';

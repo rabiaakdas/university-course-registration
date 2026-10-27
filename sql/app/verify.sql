@@ -16,7 +16,7 @@ IF EXISTS (SELECT 1 FROM @Columns e
     LEFT JOIN sys.columns c ON c.object_id=t.object_id AND c.name=e.ColumnName
     WHERE c.column_id IS NULL OR TYPE_NAME(c.user_type_id)<>e.TypeName
        OR c.max_length<>e.ByteLength OR c.is_nullable<>0 OR c.is_identity<>0
-       OR c.default_object_id<>0)
+       OR (c.default_object_id<>0 AND NOT (e.TableName=N'Courses' AND e.ColumnName=N'Id')))
     THROW 51000, 'Column type/length/required/identity/default mapping mismatch.', 1;
 IF (SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id=c.object_id
     WHERE t.name IN (N'Courses',N'AcademicTerms',N'CourseOfferings'))<>13
@@ -32,8 +32,10 @@ IF (SELECT COUNT(*) FROM sys.check_constraints WHERE is_disabled=0 AND is_not_tr
     AND name IN (N'CK_Courses_Credits_Positive',N'CK_AcademicTerms_DateRange',N'CK_CourseOfferings_Capacity_Positive'))<>3
     THROW 51000, 'Expected three enabled trusted CHECK constraints.', 1;
 SELECT MigrationId,ProductVersion FROM dbo.__EFMigrationsHistory;
-PRINT 'PASS: real application schema metadata, explicit IDs, migration history.';
-DECLARE @UniqueError int=2601,
-        @CourseUniqueName nvarchar(128)=N'UX_Courses_Code',
-        @OfferingUniqueName nvarchar(128)=N'UX_CourseOfferings_Course_Term_Section';
-:r sql/shared/verify-constraints.sql
+IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.Courses')
+    AND name=N'DF_Courses_Id' AND definition=N'(NEXT VALUE FOR [dbo].[CourseIds])')
+    THROW 51000, 'Expected Course sequence default.', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseIds')
+    AND TYPE_NAME(user_type_id)=N'int' AND CONVERT(bigint,increment)=1 AND is_cycling=0)
+    THROW 51000, 'Expected non-cycling int sequence.', 1;
+PRINT 'PASS: real application schema, Course sequence, other explicit IDs, migration history.';

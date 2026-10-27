@@ -1,13 +1,35 @@
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Data;
 using UniversityRegistration.Models;
+using UniversityRegistration.Endpoints;
+using Microsoft.AspNetCore.Diagnostics;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("UniversityDatabase");
 if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddProblemDetails();
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
+// SQL exceptions can include rejected user values; log only safe metadata centrally.
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.None);
 var app = builder.Build();
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    SuppressDiagnosticsCallback = _ => true,
+    ExceptionHandler = async context =>
+    {
+        var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        app.Logger.LogError("Unhandled {ExceptionType}; trace {TraceId}", error?.GetType().Name, context.TraceIdentifier);
+        await Results.Problem(statusCode: 500, title: "İstek işlenirken beklenmeyen bir hata oluştu.")
+            .ExecuteAsync(context);
+    }
+});
+app.UseStatusCodePages(async context => await Results.Problem(statusCode: context.HttpContext.Response.StatusCode)
+    .ExecuteAsync(context.HttpContext));
 
 // Geçici olarak yalnızca /course-offerings yanıtını zenginleştiren bellek verisi.
 var offeringCourseSamples = new Course[]
@@ -29,13 +51,7 @@ var courseOfferings = new CourseOffering[]
     new() { Id = 3, CourseId = 1, AcademicTermId = 2, SectionCode = "A", Capacity = 35 }
 };
 
-app.MapGet("/courses", async (UniversityDbContext db, CancellationToken cancellationToken) =>
-{
-    var courses = await db.Courses.OrderBy(course => course.Id)
-        .Select(course => new { course.Id, course.Code, course.Name })
-        .ToListAsync(cancellationToken);
-    return Results.Ok(courses);
-});
+app.MapCourseEndpoints();
 
 app.MapGet("/academic-terms", () => Results.Ok(academicTerms));
 

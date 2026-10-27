@@ -22,6 +22,9 @@ namespace UniversityRegistration.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence<int>("CourseIds", "dbo")
+                .HasMin(1L);
+
             modelBuilder.Entity("UniversityRegistration.Models.AcademicTerm", b =>
                 {
                     b.Property<int>("Id")
@@ -51,7 +54,9 @@ namespace UniversityRegistration.Data.Migrations
             modelBuilder.Entity("UniversityRegistration.Models.Course", b =>
                 {
                     b.Property<int>("Id")
-                        .HasColumnType("int");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValueSql("NEXT VALUE FOR [dbo].[CourseIds]", "DF_Courses_Id");
 
                     b.Property<string>("Code")
                         .IsRequired()

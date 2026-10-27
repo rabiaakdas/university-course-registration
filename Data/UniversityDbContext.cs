@@ -11,10 +11,12 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasSequence<int>("CourseIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var course = modelBuilder.Entity<Course>();
         course.ToTable("Courses", table => table.HasCheckConstraint("CK_Courses_Credits_Positive", "[Credits] > 0"));
         course.HasKey(x => x.Id).HasName("PK_Courses");
-        course.Property(x => x.Id).ValueGeneratedNever();
+        course.Property(x => x.Id).ValueGeneratedOnAdd()
+            .HasDefaultValueSql("NEXT VALUE FOR [dbo].[CourseIds]", "DF_Courses_Id");
         course.Property(x => x.Code).IsRequired().HasMaxLength(20).IsUnicode();
         course.Property(x => x.Name).IsRequired().HasMaxLength(200).IsUnicode();
         course.Property(x => x.Credits).IsRequired();

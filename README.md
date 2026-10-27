@@ -1,8 +1,8 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk dört gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk beş gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
-şema ile kısıtları öğrenmek; EF Core ile ders listesini ayrı uygulama DB'sinden okumak.
+şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir.
 
 ## Ön koşullar ve çalıştırma
@@ -48,7 +48,7 @@ Kimlik doğrulama gerekmez. Beklenen JSON:
 
 ## İstek akışının kod karşılığı
 
-`Program.cs` içindeki `MapGet`, `GET /courses` isteğini karşılar.
+`Program.cs`, `CourseEndpoints.MapCourseEndpoints` ile ders rotalarını kaydeder.
 Endpoint'in uygulama işlemi ders listesini veritabanından okumaktır.
 `Results.Ok`, 200 durum kodlu başarılı JSON yanıtını oluşturur.
 `UniversityDbContext`, DI üzerinden request kapsamında alınır. `OrderBy` ve
@@ -293,7 +293,7 @@ dotnet tool restore
 dotnet restore
 dotnet build --no-restore
 # Mevcut migration'ı uygulamadan önce üretilen SQL'i inceleyin:
-dotnet ef migrations script 0 InitialUniversitySchema --output sql/app/initial-migration.tmp
+dotnet ef migrations script 0 --output sql/app/migrations.tmp
 dotnet ef database update
 sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/seed.sql
 dotnet run --project .\UniversityRegistration.csproj --no-build --urls http://127.0.0.1:5080
@@ -314,7 +314,8 @@ mevcut kayıtları silmez. Bilerek değiştirdiğiniz seed değerinde hata alman
 ### Mapping ve migration kararı
 
 `Data/UniversityDbContext.cs` üç DbSet ve küçük `OnModelCreating` eşlemesini içerir.
-Kimlikler `ValueGeneratedNever` ile açık verilir; SQL'de IDENTITY yoktur.
+4. günde tüm kimlikler açıktı. 5. günde Course.Id sequence/default ile üretilir;
+diğer iki model `ValueGeneratedNever` olarak kaldı. SQL'de IDENTITY yoktur.
 Metinler nvarchar, tarihler date; CHECK/NOT NULL kuralları laboratuvarla aynıdır.
 İki ilişki NoAction'dır. Üretilen SQL'de ON DELETE/UPDATE yazılmaması SQL Server'ın
 NO ACTION varsayılanını kullanır; gerçek FK metadata'sı ve deneylerle doğrulandı.
@@ -339,7 +340,7 @@ yeni uygulama DB'sini oluşturup SQL Server için READ_COMMITTED_SNAPSHOT açtı
 dotnet ef database update
 dotnet ef migrations has-pending-model-changes
 sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
-pwsh -File scripts/verify-http.ps1 -VerifyDatabaseSource
+pwsh -File scripts/verify-http.ps1
 ```
 
 Uygulama SQL doğrulaması gerçek sütun/tür/uzunluk/NULL/IDENTITY/default, PK,
@@ -352,7 +353,7 @@ Gerçek sonuçlar: migration uygulandı; ikinci update bekleyen migration bulmad
 model/snapshot farkı yok. Seed iki kez çalıştı, sonuç 2/2/3 kayıt. Şema ve ortak
 23 numaralı kontrol geçti. Restore/build 0 hata, 0 uyarı. HTTP betiği üç endpoint'in
 sözleşmesini, sıralamayı ve Credits'in görünmediğini doğruladı. İsteğe bağlı
-`-VerifyDatabaseSource` modu ders 1 adını önce beklenen değere karşı kontrol edip
+4. gündeki `-VerifyDatabaseSource` modu ders 1 adını önce beklenen değere karşı kontrol edip
 geçici adla **commit eder**; HTTP'de görür, finally içinde güvenle geri yükler ve
 HTTP'den yeniden doğrular. Beklenmeyen değerleri ezmez. Ardından uygulamayı yeniden
 başlatır ve 8 eşzamanlı GET isteğini kontrol eder. Bunların hepsi geçti; tüm geçici
@@ -360,3 +361,131 @@ API süreçleri kapandı. Bu, kontenjan/concurrency garantisi değildir.
 Boş bağlantıyla başlatma kontrolü de açık hata ile reddedildi; fallback yapılmadı.
 
 [4. gün öğrenme notu](docs/day4-ef-core-notes.md) · [ADR 0004](docs/adr/0004-ef-core-course-read.md)
+
+## 5. gün: Doğrulanan ders oluşturma ve düzenleme
+
+Güncel ders endpoint'lerinin tamamı uygulama DB'sini kullanır. Dönem ve açılış
+listeleri hâlâ bellekten çalışır. DELETE yoktur. Paket/araç sürümleri değiştirilmedi.
+4. günün örnek ders adını değiştiren test modu kaldırıldı; DB kaynağı kanıtı artık
+yalnızca yeni test kayıtlarıyla ve izole DB'de yapılır.
+
+| İstek | Başarı yanıtı | Hata durumları |
+| --- | --- | --- |
+| GET /courses | 200; Id sıralı id/code/name dizisi | Beklenmeyen hata: 500 |
+| GET /courses/{id:int} | 200; id/code/name/credits | Yoksa 404 Problem Details |
+| POST /courses | 201; id/code/name/credits ve çalışan detay URL'sine Location | 400 alan/binding hatası, 409 kod çakışması |
+| PUT /courses/{id:int} | 200; aynı id, güncel id/code/name/credits | Önce bulunamazsa 404, sonra 400/409 |
+
+CreateCourseRequest ve UpdateCourseRequest yalnızca nullable Code/Name ve int
+Credits alır. Entity veya Id alınmaz; PUT kimliği URL'dendir. JSON'daki bilinmeyen
+Id alanı kullanılıp mevcut kaydın üstüne yazılmaz. PUT üç düzenlenebilir alanın
+tamamını gerektirir; eksik alan null/0 olarak doğrulamadan geçmez.
+
+PowerShell örneği (Id sunucu tarafından üretilir):
+
+```powershell
+$body = @{ code = ' cse205 '; name = ' Algoritmalar '; credits = 4 } | ConvertTo-Json
+$course = Invoke-RestMethod http://127.0.0.1:5080/courses -Method Post -ContentType 'application/json' -Body $body
+Invoke-RestMethod "http://127.0.0.1:5080/courses/$($course.id)"
+$update = @{ code = 'CSE205'; name = 'Algoritma Analizi'; credits = 5 } | ConvertTo-Json
+Invoke-RestMethod "http://127.0.0.1:5080/courses/$($course.id)" -Method Put -ContentType 'application/json' -Body $update
+```
+
+Örnek oluşturma yanıtı (3 yalnızca örnek kimliktir):
+
+```json
+{ "id": 3, "code": "CSE205", "name": "Algoritmalar", "credits": 4 }
+```
+
+Code Trim + ToUpperInvariant, Name yalnızca Trim uygulanarak saklanır. Boş/null/
+boşluk kod ve ad, temizlenmiş 20/200 sınırını aşan alanlar ve Credits <= 0
+reddedilir. Ek kredi üst sınırı veya regex yoktur. Birbirinden bağımsız hatalar
+`ValidationProblem` içinde `errors.code/name/credits` anahtarlarıyla birlikte döner.
+JSON sayı alanı strict'tir: `"credits":"3"` dahi sayı türü olmadığı için 400'dür.
+Geçersiz POST alanları DB sorgulanmadan reddedilir; PUT önce varlığı kontrol eder.
+
+Kod ön kontrolü DB'nin mevcut `SQL_Latin1_General_CP1_CI_AS` karşılaştırmasına
+uyar: büyük/küçük harfe duyarsız, aksana duyarlıdır. Collation değiştirilmedi.
+PUT kendi Id'sini çakışma sorgusundan dışlar. Ön kontrol rezervasyon değildir;
+araya başka istek girebilir. Son koruma `UX_Courses_Code` unique index'idir.
+
+Kayıt anındaki 409 eşlemesi yalnızca SqlException.Errors içindeki **2601** ve
+ilk iki tırnaklı tanımlayıcının **dbo.Courses / UX_Courses_Code** olması halinde
+yapılır. 2627 PK, diğer unique index ve CHECK/FK hataları kod çakışması sayılmaz.
+SqlError yapılandırılmış index adı sunmadığından isim kontrolü mesajın tırnaklı
+tanımlayıcı sırasına bağımlıdır. Yerel sunucunun gerçek hata biçimiyle doğrulandı;
+bilinmeyen dil/biçim 409'a zorlanmaz, 500 olarak merkezi mekanizmaya bırakılır.
+Bu sınırlama provider hata numarasının güvenilirliğiyle karıştırılmamalıdır.
+
+Beklenmeyen hatalar merkezi UseExceptionHandler/Problem Details ile genel 500
+üretir; ham SQL, exception mesajı, stack veya bağlantı bilgisi dönmez. Sunucu logu
+yalnızca exception türü ve trace kimliğini kaydeder; değer içerebilen EF command/
+update hata logları bastırılmıştır. İptaller iş kuralı hatasına çevrilmez.
+
+### Sequence migration ve seed
+
+**Migration ve geliştirme seed'i sırasında API dahil tüm yazıcıları durdurun.**
+`20261027113628_GenerateCourseIds`, mevcut Courses tablosunu silmez/yeniden kurmaz.
+`dbo.CourseIds` int sequence ve `DF_Courses_Id` default'u ekler; EF ValueGeneratedOnAdd
+ile kaydedilen Id'yi alır. Migration gerçek MAX(Id)'yi transaction/table lock içinde
+okuyup başlangıcı üstüne koyar, int taşmasını reddeder. Bu yalnızca bakım sırasında
+başlangıç seçimi; isteklerde MAX+1 veya süreç içi sayaç kullanılmaz. Dinamik SQL'e
+yalnızca doğrulanmış bigint'ten dönüştürülen sayı girer, kullanıcı girdisi girmez.
+Sequence boşlukları normaldir; başarısız işlemler/rollback/cache boşluk bırakabilir.
+
+```powershell
+dotnet tool restore
+dotnet restore
+dotnet build --no-restore
+dotnet ef migrations script InitialUniversitySchema GenerateCourseIds --output sql/app/day5-migration.tmp
+# SQL'i inceleyip yazıcıların kapalı olduğundan emin olduktan sonra:
+dotnet ef database update
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/seed.sql
+dotnet ef migrations has-pending-model-changes
+dotnet run --project .\UniversityRegistration.csproj --no-build --urls http://127.0.0.1:5080
+```
+
+Seed aynı değerleri atlar, farklı mevcut değeri ezmez. Açık seed kimlikleri sequence
+tüketmediğinden seed gerektiğinde sequence'i maksimum kimliğin üstüne **yalnızca
+ilerletir**; geri sarmaz veya boşluk doldurmaz. İkinci çalıştırma kayıt çoğaltmaz.
+AcademicTerm/CourseOffering kimlikleri açık kalır; kapasitede DEFAULT yoktur.
+Down önce default'u, sonra sequence'i kaldırır; kayıtları silmez. Down bu çalışmada
+uygulanmadı. İlk migration değiştirilmedi; startup migration eklenmedi.
+
+### Gerçek doğrulama
+
+```powershell
+pwsh -File scripts/verify-http.ps1
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
+pwsh -File scripts/verify-course-writes.ps1
+```
+
+GET betiği salt okunurdur: ilk iki örneği doğrular, ek dersleri hata saymaz;
+tüm liste öğelerinde yalnızca id/code/name ve sıralama kontrol edilir.
+Yazma betiği her çalıştırmada `university_registration_tests_day5_<guid>` adında
+yeni LocalDB oluşturur; mevcut DB'yi kullanmaz/silmez. Kaynak kontrolünde test
+projesi veya test framework yoktur; küçük C# integration kontrolü `obj/day5-checks`
+altında geçici konsol projesiyle derlenir. Gerçek API süreçleri başlatılır.
+
+Test, önce eski migration'a Id=500 ekleyip yeni migration'ın bu kaydı koruduğunu
+ve sonraki oluşturmanın daha büyük Id aldığını doğrular. Seed iki kez, şema ve
+ortak kısıt deneyleri izole DB'de çalışır. `sql/app/verify.sql` artık salt okunur
+metadata kontrolüdür; eski 23 deney `sql/app/verify-constraints.sql` üzerinden
+yalnızca işaretlenmiş taze test DB'sinde çalışır.
+
+POST/Location/detay/listede görünme, restart sonrası kalıcılık, PUT aynı Id ve
+kendi kodu, çakışmada korunma, toplu alan hataları, binding 400 ve bulunamayan 404
+geçti. Sekiz farklı eşzamanlı POST benzersiz Id aldı; aynı kod yarışında bir 201
+ve yedi 409 görüldü. Bu yarış tek başına catch dalı kanıtı sayılmadı: test context'ine
+özel SaveChangesInterceptor, ön kontrolden sonra ayrı context ile rakip kaydı
+commit ederek **gerçek SaveChanges hatası → 409 dalını** ayrıca doğruladı.
+Üretim endpoint'inde test gecikmesi/anahtarı yoktur. Gerçek PK ve başka unique index
+hataları yanlış sınıflandırılmadı; yalnızca test DB'sindeki geçici CHECK hatası,
+Development ortamında dahi hassas ayrıntısız 500 verdi.
+
+Finally, yalnızca testin D5_ kodlu kayıtlarını temizler ve API süreçlerini kapatır.
+Test DB seed ile tutulur; sequence boşlukları kapatılmaz. App/lab örnekleri
+değiştirilmez. Yeni kurulumlar için önce migration/seed gerekir. İleri eşzamanlı
+düzenleme/lost update çözümü, silme ve kayıt/kontenjan işlemleri kapsam dışındadır.
+
+[5. gün öğrenme notu](docs/day5-validation-and-errors.md) · [ADR 0005](docs/adr/0005-course-writes.md)
