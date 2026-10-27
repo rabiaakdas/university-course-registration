@@ -16,7 +16,16 @@ using UniversityRegistration.Endpoints;
 using UniversityRegistration.Models;
 
 var root = args[0];
-var database = "university_registration_tests_day6_" + Guid.NewGuid().ToString("N");
+var mode = args.Length > 1 ? args[1] : "full";
+var reverse = args.Length > 2 && bool.Parse(args[2]);
+var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "unit" or "core")
+{
+    try { CoreBehaviorChecks.Unit(probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+    if (mode == "unit") return;
+}
+var database = (mode == "core" ? "university_registration_tests_day10_" : "university_registration_tests_day6_") + Guid.NewGuid().ToString("N");
 var connection = new SqlConnectionStringBuilder
 {
     DataSource = @"(localdb)\MSSQLLocalDB", InitialCatalog = database,
@@ -24,7 +33,7 @@ var connection = new SqlConnectionStringBuilder
 }.ConnectionString;
 var options = new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(connection).Options;
 UniversityDbContext Db() => new(options);
-void Check(bool condition, string label) { if (!condition) throw new Exception(label); }
+void Check(bool condition, string label) { if (!condition) throw new BehaviorFailure(label); }
 void Pass(string label) => Console.WriteLine("PASS: " + label);
 async Task Sql(string sql) { await using var db = Db(); await db.Database.ExecuteSqlRawAsync(sql); }
 async Task<int> Count() { await using var db = Db(); return await db.Courses.CountAsync(); }
@@ -63,7 +72,7 @@ async Task StartApi()
     api.BeginOutputReadLine(); api.BeginErrorReadLine();
     for (var i = 0; i < 50; i++)
     {
-        Check(!api.HasExited, "API exited before readiness");
+        if (api.HasExited) throw new InvalidOperationException("API exited before readiness");
         try { using var response = await client.GetAsync("/courses"); if (response.IsSuccessStatusCode) return; }
         catch (HttpRequestException) { }
         await Task.Delay(200);
@@ -93,14 +102,48 @@ void DetailFields(JsonNode node) => Check(string.Join(',', node.AsObject().Selec
 
 // Refuse to reuse any existing database. The generated name is not user input.
 var master = new SqlConnectionStringBuilder(connection) { InitialCatalog = "master" };
-await using (var checkConnection = new SqlConnection(master.ConnectionString))
+try
 {
+    Check(master.DataSource == @"(localdb)\MSSQLLocalDB" &&
+        System.Text.RegularExpressions.Regex.IsMatch(database, @"^university_registration_tests_day(6|10)_[a-f0-9]{32}$"), "Unsafe test target");
+    await using var checkConnection = new SqlConnection(master.ConnectionString);
     await checkConnection.OpenAsync();
     using var check = checkConnection.CreateCommand(); check.CommandText = "SELECT DB_ID(@name)";
     check.Parameters.AddWithValue("@name", database);
     Check(await check.ExecuteScalarAsync() is DBNull, "Test DB name already exists");
 }
+catch (Exception ex)
+{
+    Console.Error.WriteLine("ENVIRONMENT: LocalDB prerequisite/unused test target; type=" + ex.GetType().Name);
+    Environment.ExitCode = 2;
+    return;
+}
 Console.WriteLine("Test DB: " + database);
+if (mode == "core")
+{
+    try
+    {
+        await using (var db = Db()) await db.Database.MigrateAsync();
+        await StartApi();
+        await CoreBehaviorChecks.Run(Db, Send, reverse);
+        await using var verify = Db();
+        Check(await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
+            && await verify.CourseOfferings.CountAsync() == 0 && await verify.AcademicTerms.CountAsync() == 0
+            && await verify.Courses.CountAsync() == 0, "Core fixture residue");
+        Check(!verify.Database.HasPendingModelChanges(), "Model/snapshot mismatch");
+        Check(!(await verify.Database.GetPendingMigrationsAsync()).Any(), "Pending migration");
+        Console.WriteLine("PASS: empty test tables; migration/model alignment");
+    }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; }
+    catch (CleanupFailure) { Environment.ExitCode = 3; }
+    catch (Exception ex) { Console.Error.WriteLine("ENVIRONMENT/EXECUTION: " + ex.GetType().Name); Environment.ExitCode = 2; }
+    finally
+    {
+        try { StopApi(); Console.WriteLine("PASS: API process stopped"); }
+        catch (Exception ex) { Console.Error.WriteLine("CLEANUP process: " + ex.GetType().Name); Environment.ExitCode = Environment.ExitCode == 0 ? 3 : Environment.ExitCode; }
+    }
+    return;
+}
 try
 {
     await using (var db = Db())

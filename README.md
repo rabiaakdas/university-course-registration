@@ -914,3 +914,21 @@ verilerini ve API süreçlerini temizler. DB seed ile tutulur. Kullanıcı/app/l
 verilerine deney yazması yapılmaz; sequence boşlukları geri doldurulmaz.
 
 [9. gün öğrenme notu](docs/day9-transactions.md) · [ADR 0009](docs/adr/0009-atomic-batch.md)
+
+## 10. gün — Test sınırları ve seçilebilir çekirdek
+
+Ürün endpoint'leri ve şema değişmedi. Mevcut konsol çalıştırıcısında `-Mode unit`
+DB'siz doğrulama, `-Mode core` birim + üç bağımsız gerçek HTTP/LocalDB kayıt
+senaryosu, `-Mode full` önceki geniş regresyonları seçer. Yeni framework/paket yok.
+
+```powershell
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core -Reverse
+```
+
+[Test haritası, ön koşullar, komutlar, izolasyon ve öğrenme notu](docs/testing.md).
+Core benzersiz ve önceden bulunmadığı doğrulanan test DB'sini kullanır; test
+kayıtlarını finally ile temizler, API sürecini kapatır, boş şemayı inceleme için
+tutar. App/lab verilerine dokunmaz. Başarısız alt komut başarısız exit code üretir.
+[ADR 0010](docs/adr/0010-selectable-behavior-checks.md).

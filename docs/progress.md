@@ -545,3 +545,55 @@ engel yok; rollback temizliğinin hata yolu ve disk/elektrik arızası test edil
 **Commit/push:** Bu kaydı içeren kimlik
 `git log --format=%H --grep="^feat: add atomic batch enrollment$"`
 ile bulunur. Gerçek push sonucu son raporda bildirilir; hash için ek commit yoktur.
+
+## Gün 10 — Unit/integration ve davranış doğrulama
+
+**İnceleme:** Mevcut gerçek HTTP/LocalDB runner ve Course/Related/Catalog/
+Enrollment/Batch kontrolleri okundu. Kısa envanter `docs/testing.md` içindedir.
+Başarı/tekrar önceki geniş akışta vardı; ayrı senaryo seçimi, her istekte yeni
+context ile tam kayıt korunması ve saf doğrulama seçimi eksikti.
+
+**Yeni/iyileştirilen:** `CoreBehaviorChecks` gerçek CourseInput.Validate üzerinde
+pozitif olmayan kredi, null/boş/boşluk, normalizasyon/ad temizliği ve birlikte
+alan hatalarını DB'siz kontrol eder. Üç bağımsız HTTP fixture'ı: başarı 201 +
+Location/detail + DB FK/zaman/sayı farkı; gerçekten olmayan açılış 400 + ilgili
+alan; tekrar 409 + tam bir çift. Retlerde ve başarıda başlangıç kayıtlarının
+kimlik/zaman/FK değerleri yeni context üzerinden korunur. Parent sayıları değişmez.
+Fixture'lar üretilmiş kimliklerle çalışır, sıraya veya seed'e dayanmaz.
+
+**Yeniden kullanılan:** Mevcut HTTP istemcisi, bounded readiness polling, API süreç
+yaşam döngüsü, geçici konsol projesi ve bütün geniş regresyonlar korundu. Fault,
+concurrency, katalog SQL ve transaction deneyleri kopyalanmadı. PowerShell unit/
+core/full seçer ve başarısız alt komut kodunu iletir. Framework/paket/ürün kodu/
+model/migration değişikliği yok. Karar ADR 0010'da.
+
+**Gerçek sonuçlar:** Restore/build başarılı (0 uyarı/0 hata). Birim modu geçti.
+İlk test kaynağı derlemesindeki yerel değişken adı çakışması düzeltildi; başarısız
+ilk deneme geçiş sayılmadı. Son hâliyle iki ardışık core koşusu başarılı:
+
+- Normal sıra: `university_registration_tests_day10_445e27c47af846918fe523faee7a8cba`.
+- Ters sıra: `university_registration_tests_day10_d64bca45b5b046438ab4de5e408cb92e`.
+
+Her koşuda üç senaryo ve finally temizliği geçti; beş tablo boş, pending migration
+ve model/snapshot farkı yok, API süreci kapandı. Önceki çekirdek denemeleri de
+başarılıydı. `-Mode unit -ProbeFailure` beklenen assertion'ı üretti ve üst komut
+exit 1 döndürdü; kalıcı başarısız test yok.
+
+Full regresyon `university_registration_tests_day6_37f2e592a9de4273963c51f10a41e81d`
+üzerinde geçti: seed tekrarı, 23 SQL kısıt deneyi, ders yazma/okuma, dönem/açılış,
+katalog gerçek SQL/tracking, öğrenci/kayıt, batch ön kontrol ve gerçek save hatası,
+dört transaction deneyi. Eski full takımı yeniden yazılmadı. Çalışan API süreci
+kalıntısı görülmedi. SDK 10.0.401, LocalDB 17.0.4025.3; paketler değiştirilmedi.
+
+**İzolasyon/sınırlar:** App/lab mutasyonu yapılmadı. Core yalnız bu koşunun
+kimliklerini FK sırasıyla temizler; test DB şeması tutulur, sequence sıfırlanmaz.
+Full DB seed ile kalır. Assertion, ortam/çalıştırma ve temizlik ayrı raporlanır;
+cleanup hatası asıl hatayı gizlemez. Cleanup hata yoluna fault enjekte edilmedi;
+Down çalıştırılmadı. İki geçiş tüm olası hataların yokluğu değildir. Birim testleri
+SQL/HTTP kanıtı değildir. Kontenjan/akademik uygunluk/yetkilendirme uygulanmadı.
+
+**Sıradaki gün:** SOLID'in pratik sınırları, composition ve gereksiz soyutlama;
+kayıt sorumluluklarını değerlendirme.
+
+**Commit/push:** Kaydı içeren commit `git log --format=%H --grep="^test: strengthen enrollment behavior checks$"`
+ile bulunur. Push sonucu son raporda verilir; hash için ikinci commit yoktur.
