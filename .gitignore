@@ -20,3 +20,8 @@ appsettings.Local.json
 *.bak
 .DS_Store
 Thumbs.db
+*.mdf
+*.ndf
+*.ldf
+*.dump
+*.bacpac
