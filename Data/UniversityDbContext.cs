@@ -22,18 +22,20 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
         course.Property(x => x.Credits).IsRequired();
         course.HasIndex(x => x.Code).IsUnique().HasDatabaseName("UX_Courses_Code");
 
+        modelBuilder.HasSequence<int>("AcademicTermIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var term = modelBuilder.Entity<AcademicTerm>();
         term.ToTable("AcademicTerms", table => table.HasCheckConstraint("CK_AcademicTerms_DateRange", "[EndsOn] >= [StartsOn]"));
         term.HasKey(x => x.Id).HasName("PK_AcademicTerms");
-        term.Property(x => x.Id).ValueGeneratedNever();
+        term.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[AcademicTermIds]", "DF_AcademicTerms_Id");
         term.Property(x => x.Name).IsRequired().HasMaxLength(100).IsUnicode();
         term.Property(x => x.StartsOn).HasColumnType("date").IsRequired();
         term.Property(x => x.EndsOn).HasColumnType("date").IsRequired();
 
+        modelBuilder.HasSequence<int>("CourseOfferingIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var offering = modelBuilder.Entity<CourseOffering>();
         offering.ToTable("CourseOfferings", table => table.HasCheckConstraint("CK_CourseOfferings_Capacity_Positive", "[Capacity] > 0"));
         offering.HasKey(x => x.Id).HasName("PK_CourseOfferings");
-        offering.Property(x => x.Id).ValueGeneratedNever();
+        offering.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[CourseOfferingIds]", "DF_CourseOfferings_Id");
         offering.Property(x => x.CourseId).IsRequired();
         offering.Property(x => x.AcademicTermId).IsRequired();
         offering.Property(x => x.SectionCode).IsRequired().HasMaxLength(10).IsUnicode();

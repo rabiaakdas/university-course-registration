@@ -1,9 +1,10 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk beş gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk altı gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
-Proje tek bir ASP.NET Core Minimal API'dir.
+Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
+endpoint'leri DB kullanır; dönem ve açılış oluşturma da desteklenir.
 
 ## Ön koşullar ve çalıştırma
 
@@ -42,8 +43,8 @@ Kimlik doğrulama gerekmez. Beklenen JSON:
 ]
 ```
 
-4. günde `/courses` uygulama DB'sinden okur. `/academic-terms` ve
-`/course-offerings` geçici olarak sabit bellek verisinden dönmeye devam eder.
+6. günde `/courses`, `/academic-terms` ve `/course-offerings` uygulama DB'sinden
+okunur; sabit bellek listeleri kaldırıldı.
 3. gün laboratuvarı ayrı kalır; API ona bağlanmaz.
 
 ## İstek akışının kod karşılığı
@@ -72,6 +73,8 @@ Karar kaydı: [0001](docs/adr/0001-simple-api-start.md).
 Öğrenme ve açık noktalar: [İlerleme](docs/progress.md).
 
 ## 2. gün: Ders, dönem ve açılış
+
+Bu bölüm 2. günün tarihsel durumudur; güncel akış 6. gün bölümündedir.
 
 `Models/Course.cs` dersin kimliğini, kodunu, adını ve kredisini tutar.
 `Models/AcademicTerm.cs` dönemin kimliğini, adını ve `DateOnly` tarihlerini tutar.
@@ -364,6 +367,9 @@ Boş bağlantıyla başlatma kontrolü de açık hata ile reddedildi; fallback y
 
 ## 5. gün: Doğrulanan ders oluşturma ve düzenleme
 
+Bu bölüm 5. günün durumunu kaydeder. 6. günde diğer listeler de DB'ye taşındı ve
+kimlikleri sequence oldu; güncel test DB öneki day6'dır.
+
 Güncel ders endpoint'lerinin tamamı uygulama DB'sini kullanır. Dönem ve açılış
 listeleri hâlâ bellekten çalışır. DELETE yoktur. Paket/araç sürümleri değiştirilmedi.
 4. günün örnek ders adını değiştiren test modu kaldırıldı; DB kaynağı kanıtı artık
@@ -489,3 +495,124 @@ değiştirilmez. Yeni kurulumlar için önce migration/seed gerekir. İleri eşz
 düzenleme/lost update çözümü, silme ve kayıt/kontenjan işlemleri kapsam dışındadır.
 
 [5. gün öğrenme notu](docs/day5-validation-and-errors.md) · [ADR 0005](docs/adr/0005-course-writes.md)
+
+## 6. gün: İlişkili yazma ve change tracking
+
+Bütün liste ve detay endpoint'leri artık `university_registration_app` DB'sinden
+okur. `/course-offerings`, üç tabloyu SQL'e çevrilen iki JOIN ile birleştirir;
+ders/dönem adı değişikliği sonraki okumada görünür. Bellek listeleri kaldırıldı.
+Listeler Id sıralıdır; mevcut JSON alanları korunur. DbContext request kapsamında
+scoped kalır, aynı context'te DB işlemleri sırayla await edilir.
+
+| Endpoint | Sonuç |
+|---|---|
+| POST /academic-terms | 201, dönem yanıtı ve çalışan detay Location |
+| GET /academic-terms/{id:int} | 200 veya 404 Problem Details |
+| POST /course-offerings | 201, JOIN alanları ve çalışan detay Location |
+| GET /course-offerings/{id:int} | 200 veya 404 Problem Details |
+
+Örnek istekler (kimlik istemciden alınmaz):
+
+```http
+POST /academic-terms
+Content-Type: application/json
+
+{"name":"  2027 Yaz  ","startsOn":"2027-07-01","endsOn":"2027-08-31"}
+```
+
+Örnek yanıt (üretilen Id değişebilir):
+
+```json
+{"id":3,"name":"2027 Yaz","startsOn":"2027-07-01","endsOn":"2027-08-31"}
+```
+
+```http
+POST /course-offerings
+Content-Type: application/json
+
+{"courseId":1,"academicTermId":3,"sectionCode":" a ","capacity":40}
+```
+
+```json
+{"id":4,"courseId":1,"courseCode":"CSE201","courseName":"Veri Yapıları","academicTermId":3,"termName":"2027 Yaz","sectionCode":"A","capacity":40}
+```
+
+İkinci istekte ilk yanıtın gerçek Id'sini kullanın. Dönem ve açılış oluşturmak
+**ayrı işlemlerdir**: açılış başarısız olursa önceden oluşturulan dönem kalır.
+İlişkili ders/dönem yeniden Add edilmez; yalnızca açılışın FK değerleri atanır.
+
+Dönem adı Trim, zorunlu ve en fazla 100 karakterdir. İki tarih zorunludur;
+EndsOn >= StartsOn (aynı gün kabul). Dönem adı benzersizliği/tarih sınırı eklenmedi.
+Şube Trim + ToUpperInvariant, zorunlu ve en fazla 10 karakter; iki FK kimliği ve
+kapasite pozitif olmalıdır. Ders/dönem bulunmazsa ilgili alan hatası döner.
+Alan hataları birlikte 400 ValidationProblem; bozuk tarih JSON binding aşamasında
+400 Problem Details; aynı ders/dönem/şube 409; bilinmeyen sistem hatası güvenli 500.
+
+Ön kontrol kayıt ayırmaz. Son koruma DB FK/CHECK/unique index'leridir. Kayıt anında
+yalnızca 2601 + `dbo.CourseOfferings`/`UX_CourseOfferings_Course_Term_Section`
+409'a; 547 + `FK_CourseOfferings_Courses` veya `FK_CourseOfferings_AcademicTerms`
+ilgili alan 400'üne eşlenir. Diğer CHECK/FK hataları bu eşlemeye girmez. SQL Server
+yapılandırılmış kısıt adı sunmadığı için tırnaklı isimlerin mesajdaki sırası hâlâ
+bağımlılıktır. Gerçek yerel sunucuda doğrulandı; bilinmeyen biçim 500'e bırakılır.
+Mevcut CI_AS collation ve ders kodu hata eşlemesi değişmedi.
+
+### Migration, seed ve çalıştırma
+
+SDK 10.0.401, EF SQL Server/Design/dotnet-ef 10.0.14, LocalDB 17.0.4025.3 korundu.
+Yeni migration: `20261027120003_GenerateTermAndOfferingIds`. Ayrı
+`AcademicTermIds` ve `CourseOfferingIds` sequence/default'ları mevcut gerçek
+MAX(Id)'nin üstünden başlar; mevcut satırlar ve FK'ler korunur. Bu bakım adımındaki
+başlangıç hesabıdır; isteklerde MAX+1 kullanılmaz. Course stratejisi değişmedi.
+Sequence boşlukları normaldir; rollback kimlik tahsisini geri almış sayılmaz.
+
+**Migration ve seed öncesinde bütün yazıcıları durdurun.** Proje kökünde:
+
+```powershell
+dotnet tool restore
+dotnet restore
+dotnet build --no-restore
+dotnet ef migrations script GenerateCourseIds GenerateTermAndOfferingIds --output sql/app/day6-migration.tmp
+# Üretilen SQL'i inceleyin; migration oluşturmak/script üretmek DB'yi değiştirmez.
+dotnet ef database update
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/seed.sql
+dotnet ef migrations has-pending-model-changes
+dotnet run --project .\UniversityRegistration.csproj --no-build --urls http://127.0.0.1:5080
+```
+
+Bağlantı mevcut `ConnectionStrings:UniversityDatabase` ayarı/ortam değişkeninden
+alınır; Windows kimlik doğrulaması kullanılır. Parola gerekmez; secret commit etmeyin.
+Laboratuvar DB'si migration hedefi değildir. Startup migration yoktur. Seed aynı
+örnekleri çoğaltmaz, farklı mevcut değeri ezmek yerine hata verir; üç sequence'i
+yalnızca gerektiğinde ileri hizalar. Down varsayılanları önce, sequence'leri sonra
+kaldırır; incelendi fakat uygulanmadı, geri alma testi yapıldığı iddia edilmez.
+
+### Tekrar çalıştırılabilir kontroller
+
+```powershell
+pwsh -File scripts/verify-http.ps1
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
+pwsh -File scripts/verify-course-writes.ps1
+```
+
+Son komut mevcut ders yazma regresyonunu ve `RelatedWriteChecks.cs` içindeki
+6. gün/Tracking deneylerini birlikte çalıştırır. Her seferinde benzersiz
+`university_registration_tests_day6_<guid>` DB'si oluşturur; mevcut DB'yi yeniden
+kullanmaz. Yeni test framework'ü yoktur; geçici konsol projesi obj altında kalır.
+İlk şemaya 500/600/700 kimlikli ilişkili kayıtlar koyarak migration'ın yalnızca
+seed varsaymadığını da kontrol eder. Ortak SQL kısıt deneyleri kopyalanmaz.
+
+HTTP alanları, tarihler, 201/Location, normalizasyon, 400/404/409, paralel kimlikler,
+aynı birleşimde tek kayıt, restart, JOIN'de DB adları ve seed tekrarı doğrulanır.
+Test interceptor'ları yalnızca test context'inde ön kontrolden sonra gerçek rakip
+kayıt veya üst kayıt silinmesi oluşturarak save hata dallarını çalıştırır; üretim
+API'sine debug endpoint/gecikme anahtarı eklenmez. Tracking deneyinin gerçek DB
+okumaları ayrı context'lerden yapılır; başarısız context yeniden kullanılmaz.
+
+Finally önce test açılışlarını, sonra test dönem ve derslerini temizler; süreçleri
+kapatır. Her DB yeni ve teste özel olduğundan 700 üzerindeki açılışlar testin
+ürettiği kayıtlardır; 700 migration sentinel'idir. D6_ dönem/dersleri ve eski
+regresyonun D5_ dersleri kaldırılır. Kullanıcı/app/lab kayıtlarına dokunulmaz.
+Test DB seed ile tutulur; otomatik DROP yapılmaz. Lost update, kontenjan tüketimi
+ve ileri transaction/isolation konusu bu kapsamda çözülmez.
+
+[6. gün öğrenme notu](docs/day6-related-writes.md) · [ADR 0006](docs/adr/0006-related-writes.md)

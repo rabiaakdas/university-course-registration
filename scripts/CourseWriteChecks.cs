@@ -16,7 +16,7 @@ using UniversityRegistration.Endpoints;
 using UniversityRegistration.Models;
 
 var root = args[0];
-var database = "university_registration_tests_day5_" + Guid.NewGuid().ToString("N");
+var database = "university_registration_tests_day6_" + Guid.NewGuid().ToString("N");
 var connection = new SqlConnectionStringBuilder
 {
     DataSource = @"(localdb)\MSSQLLocalDB", InitialCatalog = database,
@@ -105,9 +105,12 @@ try
 {
     await using (var db = Db())
         await db.GetService<IMigrator>().MigrateAsync("20261027110911_InitialUniversitySchema");
-    await Sql("EXEC sys.sp_addextendedproperty @name=N'UniversityRegistrationTests', @value=N'day5';");
+    await Sql("EXEC sys.sp_addextendedproperty @name=N'UniversityRegistrationTests', @value=N'day6';");
     await Sql("INSERT dbo.Courses (Id,Code,Name,Credits) VALUES (500,N'D5_HIGH',N'Migration sentinel',3);");
+    await Sql("INSERT dbo.AcademicTerms (Id,Name,StartsOn,EndsOn) VALUES (600,N'D6_HIGH','20260101','20260101'); INSERT dbo.CourseOfferings (Id,CourseId,AcademicTermId,SectionCode,Capacity) VALUES (700,500,600,N'HIGH',1);");
     await using (var db = Db()) await db.Database.MigrateAsync();
+    await using (var db = Db()) Check(await db.CourseOfferings.AnyAsync(o => o.Id==700 && o.CourseId==500 && o.AcademicTermId==600), "Migration lost FK/IDs");
+    await Sql("DELETE dbo.CourseOfferings WHERE Id=700; DELETE dbo.AcademicTerms WHERE Id=600;");
     Check((await Read(500)).Code == "D5_HIGH", "Migration lost preexisting row");
     await using (var db = Db()) Check(!(await db.Database.GetPendingMigrationsAsync()).Any(), "Pending migration");
     await Sql("DELETE dbo.Courses WHERE Id=500 AND Code=N'D5_HIGH';");
@@ -207,12 +210,14 @@ try
     }
     finally { await Sql("ALTER TABLE dbo.Courses DROP CONSTRAINT CK_Day5_TestOnly;"); }
     Pass("Unexpected DB error = sanitized 500 Problem Details even in Development");
+    await RelatedWriteChecks.Run(Db, Send, Sql, SqlFile, StopApi, StartApi);
+    await Run("pwsh", "-NoProfile", "-File", "scripts/verify-http.ps1", "-Port", (port+1).ToString());
 }
 finally
 {
     StopApi();
     // Never touch app/lab; remove only this runner's prefixed rows in its unique DB.
-    await Sql("IF DB_NAME() NOT LIKE N'university[_]registration[_]tests[_]day5[_]%' THROW 51000,'Wrong cleanup target',1; IF OBJECT_ID(N'dbo.Courses') IS NOT NULL DELETE dbo.Courses WHERE Code LIKE N'D5[_]%';");
+    await Sql("IF DB_NAME() NOT LIKE N'university[_]registration[_]tests[_]day6[_]%' THROW 51000,'Wrong cleanup target',1; IF OBJECT_ID(N'dbo.CourseOfferings') IS NOT NULL DELETE dbo.CourseOfferings WHERE Id>=700; IF OBJECT_ID(N'dbo.AcademicTerms') IS NOT NULL DELETE dbo.AcademicTerms WHERE Name LIKE N'D6[_]%'; IF OBJECT_ID(N'dbo.Courses') IS NOT NULL DELETE dbo.Courses WHERE Code LIKE N'D5[_]%' OR Code LIKE N'D6[_]%';");
     Console.WriteLine("Cleanup: API stopped; owned test rows removed; test DB retained with seed. " + database);
 }
 

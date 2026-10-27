@@ -49,5 +49,23 @@ BEGIN
     DECLARE @sql nvarchar(200)=N'ALTER SEQUENCE dbo.CourseIds RESTART WITH '+CONVERT(nvarchar(20),@maximum+1);
     EXEC sys.sp_executesql @sql;
 END;
+SELECT @maximum=COALESCE(MAX(CONVERT(bigint,Id)),0) FROM dbo.AcademicTerms WITH (TABLOCKX,HOLDLOCK);
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.AcademicTermIds'))
+    THROW 51000, 'Apply GenerateTermAndOfferingIds before seeding.', 1;
+IF @maximum>=2147483647 THROW 51000, 'AcademicTerms Id int range exhausted.', 1;
+IF (SELECT CONVERT(bigint,current_value) FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.AcademicTermIds'))<=@maximum
+BEGIN
+    SET @sql=N'ALTER SEQUENCE dbo.AcademicTermIds RESTART WITH '+CONVERT(nvarchar(20),@maximum+1);
+    EXEC sys.sp_executesql @sql;
+END;
+SELECT @maximum=COALESCE(MAX(CONVERT(bigint,Id)),0) FROM dbo.CourseOfferings WITH (TABLOCKX,HOLDLOCK);
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseOfferingIds'))
+    THROW 51000, 'Apply GenerateTermAndOfferingIds before seeding.', 1;
+IF @maximum>=2147483647 THROW 51000, 'CourseOfferings Id int range exhausted.', 1;
+IF (SELECT CONVERT(bigint,current_value) FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseOfferingIds'))<=@maximum
+BEGIN
+    SET @sql=N'ALTER SEQUENCE dbo.CourseOfferingIds RESTART WITH '+CONVERT(nvarchar(20),@maximum+1);
+    EXEC sys.sp_executesql @sql;
+END;
 COMMIT;
 PRINT 'PASS: seed inserted missing rows only; existing values matched.';

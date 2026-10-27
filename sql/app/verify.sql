@@ -16,7 +16,7 @@ IF EXISTS (SELECT 1 FROM @Columns e
     LEFT JOIN sys.columns c ON c.object_id=t.object_id AND c.name=e.ColumnName
     WHERE c.column_id IS NULL OR TYPE_NAME(c.user_type_id)<>e.TypeName
        OR c.max_length<>e.ByteLength OR c.is_nullable<>0 OR c.is_identity<>0
-       OR (c.default_object_id<>0 AND NOT (e.TableName=N'Courses' AND e.ColumnName=N'Id')))
+       OR (c.default_object_id<>0 AND e.ColumnName<>N'Id'))
     THROW 51000, 'Column type/length/required/identity/default mapping mismatch.', 1;
 IF (SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id=c.object_id
     WHERE t.name IN (N'Courses',N'AcademicTerms',N'CourseOfferings'))<>13
@@ -38,4 +38,19 @@ IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE parent_object_id=OBJE
 IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseIds')
     AND TYPE_NAME(user_type_id)=N'int' AND CONVERT(bigint,increment)=1 AND is_cycling=0)
     THROW 51000, 'Expected non-cycling int sequence.', 1;
-PRINT 'PASS: real application schema, Course sequence, other explicit IDs, migration history.';
+IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.AcademicTerms')
+    AND name=N'DF_AcademicTerms_Id' AND definition=N'(NEXT VALUE FOR [dbo].[AcademicTermIds])')
+    THROW 51000, 'Expected AcademicTerms sequence default.', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.AcademicTermIds')
+    AND TYPE_NAME(user_type_id)=N'int' AND CONVERT(bigint,increment)=1 AND is_cycling=0)
+    THROW 51000, 'Expected AcademicTermIds int sequence.', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.CourseOfferings')
+    AND name=N'DF_CourseOfferings_Id' AND definition=N'(NEXT VALUE FOR [dbo].[CourseOfferingIds])')
+    THROW 51000, 'Expected CourseOfferings sequence default.', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.sequences WHERE object_id=OBJECT_ID(N'dbo.CourseOfferingIds')
+    AND TYPE_NAME(user_type_id)=N'int' AND CONVERT(bigint,increment)=1 AND is_cycling=0)
+    THROW 51000, 'Expected CourseOfferingIds int sequence.', 1;
+IF (SELECT COUNT(*) FROM sys.foreign_keys WHERE name IN (N'FK_CourseOfferings_Courses',N'FK_CourseOfferings_AcademicTerms')
+    AND delete_referential_action=0 AND update_referential_action=0 AND is_disabled=0 AND is_not_trusted=0)<>2
+    THROW 51000, 'Expected two trusted NO ACTION foreign keys.', 1;
+PRINT 'PASS: schema, three sequence defaults, NO ACTION foreign keys, migration history.';

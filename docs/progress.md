@@ -262,3 +262,80 @@ oluşturma ve ders açılışı.
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişinde
 `git log --format=%H --grep="^feat: add validated course creation and updates$"`
 ile bulunur. Push sonucu gerçekleşmeden başarılı kabul edilmez; son raporda verilir.
+
+## Gün 6
+
+**Konu/kavramlar:** İlişkili veri yazma, FK ile mevcut kayda bağlanma, Add ve
+SaveChanges sınırı, Detached/Added/Unchanged/Modified/Deleted, DetectChanges,
+projection ve entity izleme ayrımı, tek/ayrı SaveChanges ve başarısız tracker.
+
+**Başlangıç:** Yerel/uzak main 41e892f7804f224ee05c5ca46ff36308b0f1c0dc;
+çalışma ağacı temizdi. Uygulanabilir AGENTS.md yoktu. SDK 10.0.401, EF SQL Server,
+Design ve yerel araç 10.0.14 korundu; yeni paket/teknoloji eklenmedi. Gerçek
+uygulama DB'sindeki iki FK ve birleşik unique index adları incelendi.
+
+**Somut değişiklikler:** Dönem/açılış POST ve çalışan Location için detay GET;
+ayrı istek türleri, toplu alan doğrulaması, varlık/benzersizlik ön kontrolleri.
+Yalnızca yeni dönem veya açılış Add edilir; üst kayıtlar FK ile bağlanır. Dönem
+ve açılış listeleri Id sıralı DB projection'a taşındı; açılış iki SQL JOIN kullanır.
+Program'daki sabit listeler kaldırıldı. İlgili 2601 unique ve 547 FK hata dalları
+dar kapsamlı eşlenir; CHECK 547 ve diğer hatalar genel 400/409 yapılmaz.
+AcademicTermIds/CourseOfferingIds sequence/default migration'ı; seed, metadata,
+HTTP ve mevcut izole test runner'ı güncellendi. Öğrenme notu ve ADR 0006 eklendi.
+
+**Gerçek doğrulamalar ve sonuçlar:**
+
+- Restore/build başarılı: 0 uyarı, 0 hata. Paket sürümleri değişmedi.
+- Yeni Up/Down, designer/snapshot ve üretilen SQL incelendi. Mevcut tablo/satırlar
+  korunur; Down önce default sonra sequence kaldırır. Down çalıştırılmadı.
+- 20261027120003_GenerateTermAndOfferingIds yalnızca university_registration_app
+  üzerinde, geçici API süreçleri kapalıyken uygulandı. Tekrar update: bekleyen
+  migration yok. Model/snapshot farkı yok. Şema/default/NO ACTION kontrolü geçti.
+- Seed uygulama DB'sinde iki kez çalıştı; mevcut örneklerde 0 ek satır. İzole
+  testte yeni kullanıcı benzeri kayıtlar varken de iki seed, değerleri ve sayıları
+  korudu. Sequence'ler gerektiğinde yalnızca ileri hizalanır.
+- Mevcut runner iki ayrı yeni day6 DB'sinde geçti. İlk migration'a Course=500,
+  Term=600, Offering=700 ve FK'leri eklenip yeni migration'larla korundu; üretilen
+  yeni kimlikler bunların üstündeydi. Ortak 23 SQL kısıt deneyi tekrar kullanıldı.
+- Ders POST/PUT/detay/listesi ve önceki 400/404/409/500, normalizasyon, restart,
+  kimlik/kod yarışları regresyonu geçti. Üç GET sözleşmesi uygulama DB'sinde ve
+  ilave dönem/açılışların bulunduğu test DB'sinde geçti.
+- Dönem 201/Location/detay/liste; aynı başlangıç-bitiş kabulü; eksik/null/bozuk
+  tarih, boş/uzun ad ve birleşik alan 400'leri; başarısızlıkta sabit kayıt sayısı.
+- Açılış 201 yalnızca açılış sayısını artırdı; ilişkili ders/dönem yeniden eklenmedi.
+  Liste/detay alanları, doğru adlar, normalizasyon, kapasite/şube/FK alan hataları,
+  olmayan detay 404 ve aynı birleşim 409 geçti. Farklı şube/dönem kabul edildi.
+- Altı paralel dönem ve altı bağımsız açılış ayrı kimlikler aldı. Aynı açılış
+  yarışında bir 201/beş 409 ve tek DB kaydı doğrulandı.
+- Test context interceptor'ı ön kontrolden sonra gerçek unique rakibi ve ayrı
+  ayrı ders/dönem silinmesi oluşturdu: save aşamasında 409 ve doğru alan 400'leri
+  doğrulandı. Gerçek CHECK 547 yanlış FK sayılmadı. Temel geçersiz alanlarda DB
+  okuması olmadı. Üretim API'sine test kancası eklenmedi.
+- Restart sonrası dönem/açılışlar kaldı. Yalnızca testin ders/dönem adları DB'de
+  değiştirildi; açılış listesi/detayı yeni adları gösterdi. ToQueryString iki
+  INNER JOIN gösterdi; üç tablo belleğe alınmadı.
+- Tracking: new Detached, Add Added, save öncesi ayrı context'te yok; save sonrası
+  üretilmiş Id/Unchanged. Entity sorgusu Unchanged; değişiklik+DetectChanges Modified.
+  Ayrı context DB'de save öncesi eski, sonrası yeni değer okudu. Remove Deleted
+  gösterildi fakat bu silme kaydedilmedi. Temiz context'te alan/JOIN projection'ları
+  tracker'a entity eklemedi.
+- Tek SaveChanges'te gerçek kredi CHECK'i iki eklemeyi de geri aldı; ayrı iki
+  SaveChanges'te ilk başarılı kayıt kaldı. Hata sonrası tracker Added durumlarını
+  tuttu; bağımsız okumalar yeni context'lerden yapıldı, hatalı context kullanılmadı.
+- Finally önce açılışlar, sonra test dönem/dersleri temizledi; API süreçleri kapandı.
+  Son test DB'si university_registration_tests_day6_b2d00ffec4a241b692fe8950746bbac4
+  salt okunur kontrolde 2/2/3 seed kaydıyla kaldı. DB otomatik silinmedi.
+- Laboratuvara yazılmadı; öncesi/sonrası sayılar 2/2/3, veri checksum'ları aynıydı.
+
+**Açık noktalar/sınırlar:** Bugünkü kontrollerde engel yok. Down uygulanmadı.
+SQL mesajındaki tırnaklı kısıt adlarının sırasına bağımlılık sürüyor; bilinmeyen
+biçim 500'e bırakılır. Lost update, kontenjan tüketimi ve ileri transaction/isolation
+çözümü yok. Dönem ve açılış ayrı oluşturma işlemleri; başarısız açılış dönemi geri
+almaz. Test DB'leri seed ile tutulur, sequence boşlukları doldurulmaz.
+
+**Sıradaki gün:** LINQ → SQL, IQueryable/IEnumerable, projection, DTO ve
+AsNoTracking; filtreli ve sayfalı katalog.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişinde
+`git log --format=%H --grep="^feat: create academic terms and course offerings$"`
+ile bulunur. Gerçek push sonucu son raporda bildirilir; hash için ek commit yoktur.
