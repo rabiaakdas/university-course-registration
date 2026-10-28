@@ -37,5 +37,6 @@ app.MapAcademicTermEndpoints();
 app.MapCourseOfferingEndpoints();
 app.MapStudentEndpoints();
 app.MapEnrollmentEndpoints();
+app.MapPriorityPreviewEndpoint();
 
 app.Run();

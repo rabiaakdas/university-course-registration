@@ -657,3 +657,60 @@ uyarlamayı yasaklamaz. LSP'de ret/başarı/iptal anlamı; ISP'de gerçek tüket
 
 **Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^refactor: clarify enrollment responsibilities$"`
 ile bulunur. Push sonucu son raporda bildirilir; hash için ikinci commit yoktur.
+
+## Gün 12 — Strategy ile kayıt önceliği önizlemesi
+
+**İnceleme:** Temiz repo/main, gerçek HEAD fcebf4b; endpoint/DTO ve unit/core/full
+konsol düzeni incelendi. Paketler değiştirilmedi. EnrollmentOperations ve mevcut
+kayıt akışları önizleme için değiştirilmedi.
+
+**Somut katkı:** Get-only kontrollü PriorityInput; IRegistrationPriorityStrategy;
+GraduationPriorityStrategy ve CompletedCreditsPriorityStrategy. Graduation kalan
+<=20 için100, aksi0; completed puanı tamamlanan kredi. Kurucu parametre koşulları
+ve her iki stratejide null sözleşmesi korunur. Endpoint küçük switch ile normalize
+policy seçer; nullable istek alanlarının bağımsız hatalarını birlikte 400 döndürür.
+`POST /registration-priority/preview` yalnız normalize policy/score döndürür.
+DB bağımlılığı, yeni schema/Student alanı, migration veya kayıt kararı değişikliği
+yok. Factory/DI/calculator zinciri eklenmedi; durumsuz stratejiler doğrudan seçilir.
+
+**Gerçek birim/HTTP sonuçları:** Restore/build 0 uyarı/0 hata. Unit geçti:
+219/220/221/240/250 graduation sınırları; completed 0/120/225; negatif completed,
+sıfır/negatif required ve parametre adları; fazla tamamlanan kredi, iki stratejide
+null, deterministik sonuç ve Int32 uçları. Yeni framework/paket yok.
+
+Preview modu gerçek HTTP'de iki politika, trim/harf normalizasyonu, yalnız iki
+yanıt alanı, 0 completed kabulü; bilinmeyen/null/boş politika, eksik/null krediler,
+negatif/sıfır sınırlar ve birlikte üç alan hatasını doğruladı. Yanlış JSON türü,
+bozuk JSON ve Int32 taşması 400 verdi. Formül eşiklerinin hepsi HTTP'de tekrar
+kopyalanmadı; saf birim sınırında test edildi.
+
+**DB bağımsızlığı kanıtı:** Geçerli bağlantı biçimiyle rezerve edilmiş ama
+SQL dinlemeyen loopback portuna hedeflenen ayrı API süreci kullanıldı. Startup
+sözleşmesi değiştirilmedi. Aynı süreçte /courses=500, preview=200; DB kontrol
+isteğinden sonra preview yine200. LocalDB kapatılmadı; bu deney DB oluşturmadı veya
+veri değiştirmedi. Bağlantı teşebbüsü sayan interceptor yok; sıfır teşebbüs
+ölçüldüğü iddia edilmiyor. Kod incelemesinde hesaplama yolunda DbContext/sorgu/
+SaveChanges veya dış servis yoktur. Preview kontrolleri ayrıca full içinde geçti.
+
+**Regresyonlar:** Core DB `university_registration_tests_day10_20031f67aaf14377b1b84df19dace068`:
+üç kayıt senaryosu geçti, beş tablo temiz, model/snapshot farkı ve pending migration
+yok. Full DB `university_registration_tests_day6_7c7a08780fa74672bd47eee7a218c9d6`:
+mevcut seed/SQL kısıtları, ders/katalog/dönem/açılış/öğrenci/tekli ve batch HTTP,
+SQL/tracking/transaction, gerçek save unique/FK ve ilk INSERT sonrası batch
+rollback/rakip commit koruma kontrolleri geçti. Mevcut testler yeniden kullanıldı.
+
+**Sınırlar/temizlik:** App/lab hedeflenmedi. Preview process/socket/client ve
+regresyon süreçleri kapandı; test verileri mevcut finally düzeniyle temizlendi.
+Test DB şemaları tutulur, sequence sıfırlanmaz. Down ve cleanup arızası test edilmedi.
+Gerçek transkript/yetki/yerleştirme/eşit puan sıralaması yok; puan politikalar
+arasında ortak ölçek değildir. Engellenen kontrol yok. Testler yalnız sınanan
+örnek davranışlara güvence verir.
+
+**Öğrenme:** Sözleşme/somut strateji/kullanan kod ayrımı; hesaplama ile seçimin
+ayrılması. Küçük switch korunabilir. Switch/Func alternatifinin maliyeti ve
+Strategy'nin ek tür bakım maliyeti öğrenme notu/ADR 0012'de açıklanır.
+
+**Sıradaki gün:** Simple Factory, Factory Method, Abstract Factory ve DI farkları.
+
+**Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^feat: add strategy-based priority preview$"`
+ile bulunur. Push sonucu son raporda verilir; hash için ek commit yoktur.

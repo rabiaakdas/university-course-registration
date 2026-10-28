@@ -25,6 +25,13 @@ if (mode is "unit" or "core")
     catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
     if (mode == "unit") return;
 }
+if (mode is "preview" or "full")
+{
+    try { PriorityChecks.Unit(); await PriorityChecks.Http(root); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+    catch (Exception ex) { Console.Error.WriteLine("ENVIRONMENT/EXECUTION preview: " + ex.GetType().Name); Environment.ExitCode = 2; return; }
+    if (mode == "preview") return;
+}
 var database = (mode == "core" ? "university_registration_tests_day10_" : "university_registration_tests_day6_") + Guid.NewGuid().ToString("N");
 var connection = new SqlConnectionStringBuilder
 {

@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk on bir gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk on iki gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -954,3 +954,49 @@ powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
 
 [Tasarım değerlendirmesi ve öğrenme notu](docs/day11-responsibilities.md) ·
 [ADR 0011](docs/adr/0011-enrollment-responsibilities.md) · [Test kılavuzu](docs/testing.md).
+
+## 12. gün — Kayıt önceliği önizlemesi
+
+`POST /registration-priority/preview` DB sorgusu/yazması yapmadan örnek politika
+hesaplar. İstek:
+
+```json
+{"policy":"graduation","completedCredits":225,"requiredCredits":240}
+```
+
+200 yanıtı:
+
+```json
+{"policy":"graduation","score":100}
+```
+
+`graduation`: kalan kredi `Max(0, required-completed)`; en fazla 20 ise 100,
+aksi halde 0. `completed-credits`: tamamlanan kredi kadar puan (aynı örnekte 225).
+Bunlar örnek formüllerdir, üniversite yönetmeliği değildir. Farklı politikaların
+puanları doğrudan karşılaştırılmaz; eşit puan sıralaması tanımlanmadı.
+
+Policy Trim ve invariant küçük harfe çevrilir; yanıtta normalize adı döner.
+Üç alan zorunludur. Completed >= 0, required > 0; completed'ın required'ı aşması
+geçerlidir. Eksik/null/boş veya bilinmeyen policy ve geçersiz krediler alan bazlı
+400 ValidationProblem verir; bağımsız hatalar birlikte döner. Yanlış JSON türü,
+bozuk JSON ve Int32 taşması 400 verir. Ek üst kredi sınırı yoktur.
+
+Bu bir yerleştirme/bekleme listesi veya kontenjan sistemi değildir. Kredilerin
+bir öğrenciye ait olduğu doğrulanmaz. Gerçek kullanım güvenilir veri ve yetkili
+politika seçimi gerektirir. Mevcut tekli/batch kayıt kararı, sırası ve atomikliği
+etkilenmez. Yeni DB alanı veya migration yoktur.
+
+Çalıştırma önceki komutla aynıdır:
+
+```powershell
+dotnet run --project .\UniversityRegistration.csproj --urls http://127.0.0.1:5080
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode preview
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Unit saf formülleri sınar. Preview gerçek HTTP'yi erişilemeyen SQL test hedefiyle
+çalıştırır; LocalDB gerektirmez. Full preview kontrollerini de içerir ve sonra
+izole LocalDB regresyonlarına devam eder. [Öğrenme notu](docs/day12-strategy.md) ·
+[ADR 0012](docs/adr/0012-priority-preview-strategy.md).

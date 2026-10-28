@@ -86,3 +86,22 @@ hatalarında üç ön kontrol SELECT'i ayrıca doğrulanır; batch'in 50 öğede
 kontrolü korunur. Mevcut batch dosyasında işlemin iptal token'ını ret sonucuna
 çevirmeden yaydığı ve DB'yi değiştirmediği doğrudan kontrol edilir. Runner ve test
 framework'ü değişmedi. [Sorumluluk notu](day11-responsibilities.md).
+
+## 12. gün — Saf Strategy ve DB'siz HTTP
+
+`PriorityChecks.Unit` mevcut unit/core moduna eklenmiştir: graduation eşiklerinin
+iki tarafı, kredi aşımı, completed puanı, kurucu parametre hataları, null,
+determinizm ve Int32 uçları. Framework/paket eklenmedi.
+
+`powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode preview`
+aynı konsol altyapısında yalnız saf testler + gerçek preview HTTP kontrollerini
+çalıştırır. Bir process, rezerve edilmiş dinlemeyen loopback SQL portuyla başlar;
+connection değeri loglanmaz. Readiness sınırlı polling ile 404 route üzerinden
+beklenir. Preview 200, DB gerektiren /courses 500 ve ardından preview yine 200
+beklenir. DB oluşturulmaz; süreç/socket/client finally/using ile kapatılır.
+
+Bu erişilebilir DB gerekmemesi kanıtıdır; bağlantı girişimlerini sayan interceptor
+kullanılmadı. Kodda preview DB bağımlılığı yoktur. Full mod aynı HTTP kontrollerini
+çalıştırır, ardından önceki gerçek LocalDB kayıt/batch regresyonlarını sürdürür.
+Hatalar üst çalıştırıcıya nonzero exit code ile taşınır; süreç temizliği hatası
+ayrı bildirilir ve asıl hatayı gizlemez.
