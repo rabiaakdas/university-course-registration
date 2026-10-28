@@ -105,3 +105,21 @@ kullanılmadı. Kodda preview DB bağımlılığı yoktur. Full mod aynı HTTP k
 çalıştırır, ardından önceki gerçek LocalDB kayıt/batch regresyonlarını sürdürür.
 Hatalar üst çalıştırıcıya nonzero exit code ile taşınır; süreç temizliği hatası
 ayrı bildirilir ve asıl hatayı gizlemez.
+
+## 13. gün — Factory deneyleri
+
+`FactoryExperiments.Run` DB'siz davranış kontrolüdür: Simple Factory başarı/
+false-null/yeni nesne sözleşmesi, Factory Method 100/225, Abstract Factory uyumlu
+puan/açıklama ailesi. Web assembly'sinde deney türünün bulunmadığı ayrıca sınanır.
+Unit/core/full bağlantıları mevcut geçici konsol projesine küçük Compile Include
+ile eklenir; yeni proje/paket/framework yoktur.
+
+```powershell
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode factories
+# Yalnız çalıştırıcı hata yayılımı deneyi; beklenen başarısız exit code 1:
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode factories -ProbeFailure
+```
+
+Factories modu DB bağlantısı veya API süreci oluşturulmadan döner. Probe kalıcı
+bozuk test değildir; açıkça seçildiğinde kontrollü assertion hatası üretir.
+Önceki preview DB bağımsızlığı ve core/full güvenli LocalDB temizliği korunur.

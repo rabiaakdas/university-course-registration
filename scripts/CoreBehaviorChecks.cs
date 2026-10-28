@@ -29,6 +29,7 @@ internal static class CoreBehaviorChecks
         Equal(0, valid.Errors.Count, "valid input");
         Equal("code,credits,name", string.Join(',', CourseInput.Validate(null, " ", 0).Errors.Keys.Order()), "aggregate field errors");
         PriorityChecks.Unit();
+        FactoryExperiments.Run();
         if (probe) Equal(201, 409, "controlled runner failure probe");
         Console.WriteLine("PASS: unit — credit, blank fields, normalization, aggregate errors (no DB/HTTP)");
     }

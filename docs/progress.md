@@ -714,3 +714,57 @@ Strategy'nin ek tür bakım maliyeti öğrenme notu/ADR 0012'de açıklanır.
 
 **Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^feat: add strategy-based priority preview$"`
 ile bulunur. Push sonucu son raporda verilir; hash için ek commit yoktur.
+
+## Gün 13 — Simple Factory, Factory Method, Abstract Factory ve DI
+
+**İnceleme/karar:** Repo/main temizdi, gerçek HEAD 4dba0a4 idi. Önizlemede tek
+switch, tek tüketici ve seçilen stratejinin null olmasına dayalı validation var;
+bağımsız destek listesi yok. Hata mesajındaki adlar ikinci seçim algoritması
+sayılmadı. Simple Factory'ye taşıma endpoint'i birkaç satır kısaltır, fakat bugün
+ek tür bakım maliyetini karşılamaz. Üretim switch'i, normalizasyon ve API aynen
+korundu. Somut A/B değerlendirmesi öğrenme notu ve ADR 0013'te.
+
+**Deney katkısı:** Yalnız scripts/FactoryExperiments.cs içinde üç çalıştırılabilir
+alternatif: normalize adla TryCreate/NotNullWhen(true), protected abstract
+CreateStrategy kullanan ortak Preview creator akışı, strategy+explanation sağlayan
+iki Abstract Factory ailesi. Formüller mevcut gerçek stratejilerden kullanılır;
+açıklamalar eşikleri kopyalamaz. Null/bilinmeyen/non-normalize factory girdisi
+false/null; başarılı çağrı yeni durumsuz nesne. Üretim DI/endpoint/web derlemesine
+deney türleri eklenmedi. Paket/proje/migration ve üretim özellik değişikliği yok.
+
+**Gerçek sonuçlar:** Restore/build 0 uyarı/0 hata. Factories ve unit DB olmadan
+geçti. Simple Factory başarı/başarısızlık/yeni nesne kontrolleri; Factory Method
+225/240 girdisinde 100/225; Abstract Factory 100 + kalan15 ve 225 + tamamlanan225
+uyumu, kredi aşımında kalan0 kontrolü geçti. Web assembly'sinde deney türü yok.
+Factories -ProbeFailure beklenen assertion üretti, üst PowerShell exit1 verdi;
+normal çalıştırma başarılı. Kalıcı bozuk test eklenmedi.
+
+Preview kontrolü erişilemeyen SQL hedefinde /courses500 ve preview200 davranışını
+korudu; normalize politika, JSON/alan hataları ve puanlar geçti. Bağlantı teşebbüsü
+sayacı kullanılmadı; yalnız erişilebilir DB gerekmemesi kanıtı ve kaynak kodundaki
+DB bağımlılığı yokluğu raporlanır.
+
+Core: `university_registration_tests_day10_5a9ee94fb0304ed1ad2fb3f06bdda5ad`.
+Üç kayıt senaryosu, temiz beş tablo, pending migration/model-snapshot uyumu geçti.
+Full: `university_registration_tests_day6_c6bfd12a3edb442bb35412e094ad57fd`.
+Seed tekrarı/23SQL kısıt deneyi, ders/katalog/dönem/açılış/öğrenci/tekli-batch HTTP,
+tracking/transaction ve gerçek save FK/unique dalları geçti. Batch ilk başarılı
+INSERT sonrası hata deneyinde batch yazmaları geri alındı, rakip commit korundu.
+Önceki deneyler yeniden kullanıldı; yeni framework'e taşınmadı.
+
+**Temizlik/sınırlar:** App/lab hedeflenmedi; geçici süreçler kapatıldı. Core test
+kayıtları temizlendi; full seed ile tutuldu, yalnız kendi verilerini temizledi.
+Sequence sıfırlanmadı, DB şemaları inceleme için tutulur. Down ve cleanup arızası
+enjekte edilmedi. Engellenen kontrol yok. Gerçek yerleştirme/yetki/akademik kredi
+ve kontenjan hâlâ kapsam dışı. Açıklama yalnız deneye aittir, API alanı değildir.
+
+**Öğrenme:** Simple Factory GoF Factory Method değildir. Seçim factory ile yok
+olmaz; override noktası ile ürün ailesi farklı ihtiyaçlardır. DI bağımlılık
+sağlama/kurulum/yaşam süresidir, otomatik politika kararı veya DIP değildir.
+Kaynak tutan factory ürünlerinde sahiplik/dispose sözleşmesi gerekir; bugün bu
+varsayımsal ihtiyaca altyapı eklenmedi. Yeni aile/yeni ürün türü maliyeti notta.
+
+**Sıradaki gün:** Specification; ön koşul ve kredi sınırı kuralları.
+
+**Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^refactor: clarify priority creation and factory alternatives$"`
+ile bulunur. Push sonucu son raporda verilir; hash için ek commit yoktur.

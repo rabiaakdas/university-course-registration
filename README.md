@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk on iki gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk on üç gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1000,3 +1000,22 @@ Unit saf formülleri sınar. Preview gerçek HTTP'yi erişilemeyen SQL test hede
 çalıştırır; LocalDB gerektirmez. Full preview kontrollerini de içerir ve sonra
 izole LocalDB regresyonlarına devam eder. [Öğrenme notu](docs/day12-strategy.md) ·
 [ADR 0012](docs/adr/0012-priority-preview-strategy.md).
+
+## 13. gün — Factory alternatifleri
+
+Üretim politika seçimi `PriorityPreviewEndpoint.Preview` içindeki küçük switch'te
+kaldı: tek tüketici var, validation seçimin sonucunu kullanıyor. Simple Factory'ye
+taşımak bugün ek tür maliyetini karşılamıyor. Önizleme route/JSON/400 davranışları,
+normalizasyon ve puanlar değişmedi.
+
+Simple Factory, Factory Method ve Abstract Factory **yalnız öğrenme deneyi**
+olarak `scripts/FactoryExperiments.cs` içinde bulunur. Mevcut gerçek stratejileri
+kullanır; web üretim derlemesine/DI'a dahil değildir. Açıklama ürünü API'ye eklenmedi.
+
+```powershell
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode factories
+```
+
+Bu mod DB gerektirmez. Mevcut unit/core/full modları da deneyleri çalıştırır.
+[Karşılaştırma ve öğrenme notu](docs/day13-factories.md) ·
+[ADR 0013](docs/adr/0013-factory-alternatives.md).
