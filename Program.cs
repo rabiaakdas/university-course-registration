@@ -1,3 +1,4 @@
+using UniversityRegistration.Application;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Data;
 using UniversityRegistration.Endpoints;
@@ -9,6 +10,7 @@ var connectionString = builder.Configuration.GetConnectionString("UniversityData
 if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddScoped<EnrollmentOperations>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);

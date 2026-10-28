@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk dokuz gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk on bir gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -932,3 +932,25 @@ Core benzersiz ve önceden bulunmadığı doğrulanan test DB'sini kullanır; te
 kayıtlarını finally ile temizler, API sürecini kapatır, boş şemayı inceleme için
 tutar. App/lab verilerine dokunmaz. Başarısız alt komut başarısız exit code üretir.
 [ADR 0010](docs/adr/0010-selectable-behavior-checks.md).
+
+## 11. gün — Kayıt sorumlulukları
+
+Tekli/batch endpoint'leri isteğin biçimini doğrular ve HTTP yanıtını üretir.
+Scoped `Application/EnrollmentOperations` varlık/tekrar kontrolleri, UTC kayıt
+zamanı, Add/AddRange ve SaveChanges koordinasyonunu taşır. İşlem sonucu HTTP'den
+bağımsızdır; mevcut DTO'lar yeniden kullanılır. SQL hata tanıma Data altında kalır.
+Batch bütün seçimleri tek SaveChanges ile kaydeder; tekli metot döngüyle çağrılmaz.
+Route, alanlar, durum kodları, Location, sorgu sayısı ve transaction sınırı korunur.
+Şema/paket değişikliği, interface/repository veya yeni ürün özelliği yoktur.
+
+Çalıştırma komutu hâlâ `dotnet run --project .\UniversityRegistration.csproj --urls http://127.0.0.1:5080`.
+Testler repo kökünde:
+
+```powershell
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+[Tasarım değerlendirmesi ve öğrenme notu](docs/day11-responsibilities.md) ·
+[ADR 0011](docs/adr/0011-enrollment-responsibilities.md) · [Test kılavuzu](docs/testing.md).

@@ -597,3 +597,63 @@ kayıt sorumluluklarını değerlendirme.
 
 **Commit/push:** Kaydı içeren commit `git log --format=%H --grep="^test: strengthen enrollment behavior checks$"`
 ile bulunur. Push sonucu son raporda verilir; hash için ikinci commit yoktur.
+
+## Gün 11 — SOLID sınırları ve kayıt sorumlulukları
+
+**Önce inceleme/değerlendirme:** Repo/main temizdi; gerçek HEAD 5d372f7 idi.
+Tekli/batch CreateAsync içinde HTTP, ön kontrol, UTC, Add/Save ve SQL hata yanıtı
+birlikteydi. Gerçek tekrar save hata sınıflandırmasıydı; tekli iki alanı birlikte
+400 değerlendirmesi ile batch'in öğrenci 404 → açılış 400 sırası aynı değildi.
+Somut karar tablosu `docs/day11-responsibilities.md`, karar ADR 0011 içindedir.
+
+**Refactor:** Scoped somut `EnrollmentOperations` iki ayrı işlem metodunu taşır.
+Endpoint'lerde binding/istek biçimi, teknik 50 öğe sınırı ve HTTP eşlemesi kaldı.
+İşlemde DB varlık/tekrar kontrolü, UTC, Enrollment üretimi, Add/AddRange ve tek
+SaveChanges bulunur. Başarı/ret için ayrı tekli/batch sonuç türleri; nullable genel
+sonuç torbası yok. Mevcut DTO tekrar kullanılır; işlemde HttpContext/IResult/
+Results/status code yok. RegistrationWriteErrors ve güvenli merkezi handler
+korundu. Program.cs somut scoped DI kaydı ekler. Interface/repository/UoW,
+generic Result, yeni proje, Strategy ve paket eklenmedi.
+
+**Korunan anlamlar:** Tekli Add+save, batch AddRange+tek save; batch tekli işlemi
+döngüyle çağırmaz. Ön kontrol retleri ile save FK kaybı farklı sonuç olarak taşınır.
+Route/alanlar/Location/201/400/404/409, batch sırası ve UTC korunur. Hata/iptal
+“kayıt bulunamadı” sayılmaz; failed context yeniden kaydedilmez. Şema ve önceki
+migration'lar değişmedi. DI kullanımı EF/SQL Server bağımsızlığı iddiası değildir.
+
+**Gerçek kontroller:**
+
+- Değişiklik öncesi core geçti: `university_registration_tests_day10_d345e779e803458c862af12fd9154bed`.
+- Refactor sonrası restore/build: 0 uyarı/0 hata. Unit ve core geçti;
+  core DB `university_registration_tests_day10_516cb1773f934003a658f5e8e8390c5f`.
+  Başarı 201, olmayan açılış 400, tekrar 409 ve tek DB çifti; eski kayıtlar korundu.
+  Model/snapshot farkı ve bekleyen migration yok; cleanup sonrası beş tablo boş.
+- Full geçti: `university_registration_tests_day6_b21f25c75ebe4924bd09141d59f00145`.
+  Seed/23 SQL kısıt deneyi, ders/dönem/açılış, katalog SQL/tracking, öğrenci/tekli
+  kayıt, transaction A–D ve batch HTTP regresyonları yeniden kullanıldı.
+- Aynı interceptor deneyleri yeni nesneye bağlandı; beklentiler gevşetilmedi.
+  Tekli save unique ve iki FK dalı doğru HTTP status/alanı korudu. Save yarışında
+  üç ön kontrol SELECT'i doğrulandı; önceki kaynak kodda da üç sorgu vardı.
+  Batch 50 öğede üç SELECT kontrolü korundu, satır başına sorgu oluşmadı.
+- Batch'te başarılı ilk INSERT sonrası gerçek unique hatası: kendi yazmaları yok,
+  rakip commit var. Gerçek iki FK save hatasında kısmi batch yok. Ön kontrol retleri
+  bu yazma atomikliği kanıtının yerine sunulmadı.
+- Doğrudan işlem çağrısında iptal token'ı OperationCanceledException olarak yayıldı;
+  yeni context'te kayıt sayısı değişmedi. Yeni write senaryosu kopyalanmadı.
+
+**Temizlik/sınırlar:** Testler yalnız GUID adlı izole DB'leri kullandı; app/lab
+hedeflenmedi. Core fixture'ları temizlendi ve süreç kapandı; full kendi kayıtlarını
+FK sırasıyla temizleyip seed'i bıraktı. Test DB şemaları tutuldu. Down, cleanup
+arızası ve aktif sorgunun ortasında iptal ayrıca test edilmedi; önceden iptal edilmiş
+token sınandı. Beklenmeyen altyapı arızalarının tamamı denenmedi. SQL mesajındaki
+nesne adı ayrıştırma sınırı sürüyor. Kontenjan/akademik uygunluk/yetkilendirme yok.
+
+**Öğrenme:** SRP tek metot demek değildir; composition nesneleri birleştirir,
+DI yaşam süresi/sağlama mekanizmasıdır, DIP otomatik oluşmaz. OCP yeni ihtiyaca kod
+uyarlamayı yasaklamaz. LSP'de ret/başarı/iptal anlamı; ISP'de gerçek tüketici ihtiyacı
+önemlidir. Bugün olmayan değişkenlik için soyutlama eklenmedi.
+
+**Sıradaki gün:** Strategy; değiştirilebilir kayıt önceliği hesaplama.
+
+**Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^refactor: clarify enrollment responsibilities$"`
+ile bulunur. Push sonucu son raporda bildirilir; hash için ikinci commit yoktur.

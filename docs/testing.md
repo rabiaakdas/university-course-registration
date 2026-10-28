@@ -77,3 +77,12 @@ hatalar metnin Türkçe yazımına değil status/alan anahtarına dayanır.
 İki geçiş bütün olası hataların yokluğunu kanıtlamaz. Kontenjan, akademik uygunluk,
 yetkilendirme, genel idempotency ve altyapı arızaları bu çekirdek takımın güvencesi
 değildir. Ürün davranışı ve DB şeması değiştirilmedi.
+
+## 11. gün bağlantı güncellemesi
+
+Kayıt fault kontrolleri aynı interceptor/context'i `EnrollmentOperations` ile
+endpoint'e sağlar. Senaryolar ve HTTP beklentileri korunur. Tekli kayıt save
+hatalarında üç ön kontrol SELECT'i ayrıca doğrulanır; batch'in 50 öğede üç sorgu
+kontrolü korunur. Mevcut batch dosyasında işlemin iptal token'ını ret sonucuna
+çevirmeden yaydığı ve DB'yi değiştirmediği doğrudan kontrol edilir. Runner ve test
+framework'ü değişmedi. [Sorumluluk notu](day11-responsibilities.md).
