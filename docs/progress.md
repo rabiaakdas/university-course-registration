@@ -926,3 +926,94 @@ taslak/gönderilmiş/onaylanmış/reddedilmiş geçişler.
 
 **Commit/push:** Bu kaydı içeren commit `git log --format=%H --grep="^feat: explain enrollment eligibility and schedule conflicts$"`
 ile bulunur. Push sonucu son raporda bildirilir; hash için ikinci commit yoktur.
+
+## Gün 16 — Kontrollü Enrollment yaşam döngüsü ve State alternatifi
+
+**Kavram/değişiklik:** EnrollmentStatus Draft0/Submitted1/Approved2/Rejected3;
+private setter, kontrollü TrySubmit/TryApprove/TryReject ve nullable gerekçe.
+İzinli üç geçiş dışında aynı işlemin tekrarı dahil ret; geçersiz gerekçe/geçiş
+alanları değiştirmez. Gerekçe Trim sonrası1–500. Entity yalnız yerel geçişi
+korur; akademik uygunluk EnrollmentOperations, HTTP eşlemesi endpoint'tedir.
+Üretim enum+metot olarak kaldı; dört private durum nesnesiyle State yalnız
+scripts/EnrollmentStateExperiment.cs deneyidir. Ortak matris iki yaklaşımı
+aynı assertion'larla sınar; DI/framework/paket eklenmedi.
+
+**Sözleşme/anlam değişikliği:** Yeni tekli/batch kayıtlar Draft. Tekli, batch
+items, detay, öğrenci kayıt listesi ve yeni submit/approve/reject yanıtlarına
+string status ve nullable rejectionReason eklendi. Başarı oluşturma201/Location,
+geçiş200; yok404, yasak/tekrar409, akademik400/failures. Reject önce gerekçeyi,
+sonra varlığı/geçişi kontrol eder; akademik değerlendirme yapmaz. Öğrenci–açılış
+unique tüm durumlarda, Rejected dahil geçerlidir; yeniden açma yoktur.
+
+**Yük:** Sadece Submitted/Approved kredi ve saat yüküne katılır. EvaluateAsync
+aynı filtrelenmiş IQueryable'ı SUM(bigint) ve saat JOIN'lerinde kullanır.
+Submit/approve private yoldan yalnız hedef Enrollment.Id'yi dışlar, aday olarak
+bir kez değerlendirir; diğer aktif kayıtlar kalır. Exclude kimliği HTTP girdisi
+olmadı. Önizleme/yeni kayıt aynı politikayı kullanır. Batch adayları kendi
+aralarında hâlâ birlikte değerlendirilir; tek SaveChanges atomikliği korunur.
+
+**Migration:** 20261029131736_AddEnrollmentLifecycle Up/Down/SQL/snapshot
+incelendi. İki kolon, required int Status default0, nullable nvarchar(500)
+gerekçe, eski satırlara UPDATE Status=2, iki CHECK. Geçmiş migration değişmedi,
+tablo/kimlik/FK/unique korunur. SQL NULL mantığı ve Unicode whitespace açık
+kontrol edilir. Eski Approved değeri önceki doğrudan kayıt anlamını taşır;
+geçmiş onay/audit üretmez. Yalnız university_registration_app açık komutla
+yükseltildi; ikinci update no-op, model/snapshot ve pending kontrolleri temiz.
+App başlangıcında Enrollment0 idi; gerçek eski satır dönüşümü izole DB'de
+ayrıca sınandı, app üzerinde sahte kullanıcı verisi oluşturulmadı.
+
+**Gerçek kontroller:**
+
+- Restore/build başarılı,0 uyarı/0 hata. SDK10.0.401, EF/yerel araç10.0.14,
+  LocalDB17.0.4025.3 korundu. İlk test derlemesindeki yerel değişken adı çakışması
+  düzeltildi; sonraki derlemeler ve tüm ilgili çalışmalar başarılı.
+- state: `university_registration_tests_day6_08d8acb70b4a4f4ab7b5ab96a7dcc7f1`.
+  Önce15.gün şeması, eski kolonlarla gerçek Enrollment; sonra migration ile
+  Approved. Aynı Id/FK/zaman korundu, private setter yeni context'te yüklendi;
+  tekrar migration no-op. Yeni HTTP satırları Draft; submit/approve/reject,
+  akademik retlerde değişmeme, yasak/tekrar409, gerekçe alan400, yok404, restart,
+  SQL status/reason/NULL/uzunluk ve enum/State ortak matris geçti.
+- full: `university_registration_tests_day6_94c3be5c853342039f9d9015ce98e3ea`.
+  Yukarıdakiler ve ek Submitted kredi / Rejected yükten çıkarma kontrolleri,
+  Draft yük hariç, kendi24kredi/saatini iki kez saymayan approve, başka aktif
+  kayıtları koruyan approve reddi, submit+approve'da değişen ön koşulun yeniden
+  değerlendirilmesi, Draft batch iç kredi/saat retleri geçti. Rejected çift409,
+  tek satır kaldı. Gerekçesiz diğer durumlar ve geçersiz durumlar DB'de reddedildi;
+  SQL CHECK'in geçiş geçmişini bilmediği doğrudan Draft→Approved ile gösterildi.
+- Aynı full çalışmasında eski ders/katalog/dönem/açılış/öğrenci/kayıt,
+  priority DB bağımsızlığı, factory, tracking, transaction A–D,23 SQL kısıt
+  deneyleri ve seed tekrarı geçti. Gerçek FK/unique kayıt anı dalları çalıştı.
+  Batch ilk INSERT sonrası gerçek unique hatası kendi yazılarını geri aldı,
+  rakibin kesinleşmiş kaydı kaldı; FK hataları da tüm batch'i geri aldı.
+- Bağımsız unit geçti. core:
+  `university_registration_tests_day10_60a3dff0abae4331b15fc60f7776b69f`;
+  specifications: `university_registration_tests_day6_531b2326549946b9a238a801aed38c20`;
+  eligibility: `university_registration_tests_day6_604e93f3477045db99b8f3c10c2c4f66`;
+  hepsi başarılı, sonunda sekiz tablo boş/model uyumlu. Eski yük fixture'ları
+  HTTP submit veya yalnız fixture'da açık Approved ile hazırlandı; kurallar
+  kapatılmadı, limit30 korundu.
+- Gerçek SQL interceptor: hazırlık sekiz toplu SELECT, durum filtreleri yük/saat
+  sorgularında; tekli/50'li batch sayısı satır başına büyümedi. INSERT batching
+  komut sayısı sabit varsayılmadı. Güncel metadata verify.sql ve yeni lifecycle
+  kontrolü app/test DB'de geçti. `unit -ProbeFailure` bilerek assertion üretti;
+  üst çalıştırıcı exit1 verdi, bozuk test bırakılmadı.
+
+**Koruma/temizlik:** App ve full-test sonunda2 ders/2 dönem/3 açılış, kalan
+beş tablo0. Fixture kayıtları finally içinde kimlikleriyle FK sırasına uygun
+silindi. Test DB şemaları tutuldu; sequence sıfırlanmadı. Geçici API süreç0.
+Lab'a yazılmadı; önce/sonra üç tablonun satır sayıları/checksum'ları aynı,
+Enrollments tablosu yok. Checksum kriptografik veri koruma kanıtı değildir.
+Sandbox içindeki LocalDB/süreç okuma izin sınırı uygun yetkili araç çağrısıyla
+çözüldü; gerçek DB kontrolleri engellenmiş sayılmadı veya atlanmadı.
+
+**Sınırlar/eksikler:** Engel yok. Down ve cleanup arızası deneyi çalıştırılmadı.
+Yetkilendirme/danışman ataması yok; onay/ret geliştirme akışıdır. Eşzamanlı
+geçişlerde son yazan kazanabilir; kredi/program garantisi ve kontenjan yok.
+Rejected yeniden açma, audit/event/outbox/bildirim, genel state-machine ve
+Decorator altyapısı eklenmedi. DB CHECK satır tutarlılığı sağlar, geçmiş geçişi
+ve yetkiyi sağlamaz. Başarılı kontroller yalnız sınanan davranışları kanıtlar.
+
+**Sıradaki gün:** Decorator ve davranış sırası; kayıt değerlendirmesine süre ölçümü.
+
+**Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^feat: add controlled enrollment state transitions$"`
+ile bulunur. Push sonucu son raporda; hash için ikinci commit üretilmez.

@@ -30,6 +30,7 @@ internal static class CoreBehaviorChecks
         Equal("code,credits,name", string.Join(',', CourseInput.Validate(null, " ", 0).Errors.Keys.Order()), "aggregate field errors");
         SpecificationChecks.Unit();
         EligibilityChecks.Unit();
+        StateChecks.Unit();
         PriorityChecks.Unit();
         FactoryExperiments.Run();
         if (probe) Equal(201, 409, "controlled runner failure probe");
@@ -85,6 +86,8 @@ internal static class CoreBehaviorChecks
                 {
                     createdId = result.Body["id"]!.GetValue<int>();
                     Equal(student.Id, result.Body["studentId"]!.GetValue<int>(), context + " response student");
+                    Equal("Draft", result.Body["status"]!.GetValue<string>(), context + " initial status");
+                    Equal(true, result.Body["rejectionReason"] is null, context + " initial reason");
                     Equal(requested, result.Body["courseOfferingId"]!.GetValue<int>(), context + " response offering");
                     Equal($"/enrollments/{createdId}", result.Location, context + " Location");
                     var detail = await send("GET", result.Location!, null, null);
@@ -105,6 +108,8 @@ internal static class CoreBehaviorChecks
                     {
                         var saved = after.Single(e => e.Id == createdId);
                         Equal(student.Id, saved.StudentId, context + " DB student");
+                        Equal(EnrollmentStatus.Draft, saved.Status, context + " DB initial status");
+                        Equal(true, saved.RejectionReason is null, context + " DB initial reason");
                         Equal(requested, saved.CourseOfferingId, context + " DB offering");
                         Equal(result.Body["createdAtUtc"]!.GetValue<DateTimeOffset>(), saved.CreatedAtUtc, context + " DB timestamp");
                     }

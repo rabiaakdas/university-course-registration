@@ -55,7 +55,12 @@ internal static class EligibilityChecks
                 kind=="single"?(object)new{studentId=student,courseOfferingId=ids.Single()}:new{courseOfferingIds=ids},null);
             Check(r.Status==status,$"{kind} student={student} expected={status} actual={r.Status}");
             if(status!=201 || kind=="eligibility") Check((await Rows()).SequenceEqual(before),"preview/rejection has no new or modified enrollments (fresh context)");
-            else Check((await Rows()).Length==before.Length+ids.Length,"successful enrollment count");
+            else
+            {
+                Check((await Rows()).Length==before.Length+ids.Length,"successful enrollment count");
+                var created = kind=="single" ? new[]{r.Body["id"]!.GetValue<int>()} : r.Body["items"]!.AsArray().Select(n=>n!["id"]!.GetValue<int>());
+                foreach(var id in created) Check((await send("POST",$"/enrollments/{id}/submit",null,null)).Status==200,"activate schedule fixture");
+            }
             return r.Body;
         }
         async Task AddSlots(int index,params (DayOfWeek Day,TimeOnly Start,TimeOnly End)[] values)
@@ -103,8 +108,7 @@ internal static class EligibilityChecks
             Check((await Request(isolated,[offers[5].Id],"eligibility",200))["isEligible"]!.GetValue<bool>(),"other student's schedule excluded");
             Check((await Request(isolated,[offers[0].Id,offers[4].Id],"eligibility",200))["isEligible"]!.GetValue<bool>(),"identical weekly times in different terms allowed");
             await using(var db=factory())
-            {db.Enrollments.AddRange(new Enrollment{StudentId=isolated,CourseOfferingId=offers[2].Id,CreatedAtUtc=DateTimeOffset.UtcNow},
-                new Enrollment{StudentId=isolated,CourseOfferingId=offers[5].Id,CreatedAtUtc=DateTimeOffset.UtcNow});await db.SaveChangesAsync();}
+            {db.Enrollments.AddRange(StateChecks.Active(isolated,offers[2].Id),StateChecks.Active(isolated,offers[5].Id));await db.SaveChangesAsync();}
             Check((await Request(isolated,[offers[3].Id],"eligibility",200))["isEligible"]!.GetValue<bool>(),"existing-existing conflict is not a new rejection");
             await Request(int.MaxValue,[offers[2].Id],"eligibility",404);
             await Request(fresh,[int.MaxValue],"eligibility",400);
@@ -145,7 +149,7 @@ internal static class EligibilityChecks
             // Unique only stops exact duplicates; overlapping different intervals are allowed in storage.
             await AddSlots(0,(DayOfWeek.Monday,new(9,15),new(9,45)));
             var queryStudent=await Student();
-            await using(var db=factory()) {db.Enrollments.Add(new(){StudentId=queryStudent,CourseOfferingId=offers[0].Id,CreatedAtUtc=DateTimeOffset.UtcNow});await db.SaveChangesAsync();}
+            await using(var db=factory()) {db.Enrollments.Add(StateChecks.Active(queryStudent,offers[0].Id));await db.SaveChangesAsync();}
             await using(var template=factory())
             {
                 var capture=new CatalogSqlCapture();await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);

@@ -40,7 +40,8 @@ static class BatchEnrollmentChecks
             Check(items.Select(n=>n!["createdAtUtc"]!.GetValue<DateTimeOffset>()).Distinct().Count()==1,"Batch timestamp");
             foreach(var item in items)
             {
-                Check(string.Join(',',item!.AsObject().Select(p=>p.Key).Order())=="courseOfferingId,createdAtUtc,id,studentId","Batch item fields");
+                Check(string.Join(',',item!.AsObject().Select(p=>p.Key).Order())=="courseOfferingId,createdAtUtc,id,rejectionReason,status,studentId","Batch item fields");
+                Check(item["status"]!.GetValue<string>()=="Draft" && item["rejectionReason"] is null,"Batch item starts Draft");
                 var time=item["createdAtUtc"]!.GetValue<DateTimeOffset>();
                 Check(time.Offset==TimeSpan.Zero && time>=before && time<=after && item["studentId"]!.GetValue<int>()==student,"Server time/student");
                 var detail=await send("GET","/enrollments/"+item["id"]!.GetValue<int>(),null,null);

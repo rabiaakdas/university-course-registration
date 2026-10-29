@@ -28,3 +28,13 @@ public abstract record EligibilityResult
     public sealed record Evaluated(AcademicEvaluation Evaluation) : EligibilityResult;
     public sealed record Rejected(BatchEnrollmentFailure Reason) : EligibilityResult;
 }
+
+public abstract record EnrollmentTransitionResult
+{
+    private EnrollmentTransitionResult() { }
+    public sealed record Updated(EnrollmentResponse Enrollment) : EnrollmentTransitionResult;
+    public sealed record NotFound : EnrollmentTransitionResult;
+    public sealed record InvalidTransition : EnrollmentTransitionResult;
+    public sealed record InvalidReason : EnrollmentTransitionResult;
+    public sealed record AcademicRejected(AcademicEvaluation Evaluation) : EnrollmentTransitionResult;
+}

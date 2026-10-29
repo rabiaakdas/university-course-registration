@@ -10,7 +10,7 @@ IF EXISTS (SELECT 1 FROM @NewColumns e
     WHERE c.column_id IS NULL OR TYPE_NAME(c.user_type_id)<>e.TypeName OR c.max_length<>e.ByteLength
         OR c.is_nullable<>0 OR c.is_identity<>0 OR (e.ColumnName<>N'Id' AND c.default_object_id<>0))
     THROW 51000, 'Student/enrollment column mapping mismatch.', 1;
-IF (SELECT COUNT(*) FROM sys.columns WHERE object_id IN (OBJECT_ID(N'dbo.Students'),OBJECT_ID(N'dbo.Enrollments')))<>7
+IF (SELECT COUNT(*) FROM sys.columns WHERE object_id IN (OBJECT_ID(N'dbo.Students'),OBJECT_ID(N'dbo.Enrollments')))<>9
     THROW 51000, 'Unexpected student/enrollment columns.', 1;
 IF (SELECT COUNT(*) FROM sys.key_constraints WHERE type='PK' AND name IN (N'PK_Students',N'PK_Enrollments'))<>2
     THROW 51000, 'Missing primary keys.', 1;

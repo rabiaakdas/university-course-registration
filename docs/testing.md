@@ -177,3 +177,30 @@ Gerçek SQL metadata: `sql/app/verify-time-slots.sql`; optional rollback örneğ
 `sql/app/time-slot-example.sql` (yalnız işaretli full test DB'si). Önizlemede
 interceptor yalnız sekiz SELECT yakalar; satır sayısının değişmemesinden tek başına
 "sorgu yapılmadı" sonucu çıkarılmaz. Bu önizleme DB okur, rezervasyon yapmaz.
+
+## Gün 16 — Enum ve State karşılaştırması
+
+- `unit`: `StateChecks.Unit` aynı matris/ret gerekçesi beklentilerini üretim
+  Enrollment ve `EnrollmentStateExperiment` için uygular. DB/HTTP gerektirmez;
+  deney ana web derlemesine dahil değildir.
+- `state`: `StateChecks.Upgrade` izole DB'yi önce15.gün şemasına getirir, eski
+  biçimde ilişki ekler;16.gün migration'ından sonra Id/FK/zamanı koruyarak Approved
+  olduğunu gerçek context ile okur. App DB'si geri alınmaz. Yeni API satırlarının
+  Draft olması, submit/approve/reject, hata sırası, private setter yüklenmesi,
+  restart, durum CHECK/gerekçe NULL/boşluk/uzunluk ve aktif yük politikası sınanır.
+- Önceki `SpecificationChecks`/`EligibilityChecks` başarı fixture'larını HTTP ile
+  submit eder; olağandışı eski yük fixture'ları test yardımcısıyla açık Approved
+  hazırlanır. Yeni filtre kapatılmaz, kredi sınırı değiştirilmez. Eski akademik
+  kontroller ve yeni durum kontrolleri ayrı amaçlıdır.
+- `core/full` yeni status/rejectionReason alanlarını doğrular. Full gerçek
+  unique/FK ve ilk INSERT sonrası rollback/rakip kayıt korunmasını yeniden
+  kullanır. Gönderme/onaylama her defasında ortak kuralları okur; akademik ret
+  halinde yeni context ile durum/gerekçenin değişmediği kontrol edilir.
+
+Komut: `pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode state`.
+Mutasyon öncesi mevcut test hedefi kontrolü korunur. Yalnız fixture kimlikleriyle
+Enrollment ve ilişkiler, ardından üst kayıtlar finally temizlenir; süreç kapatılır.
+State modunda sekiz tablo boş kalır; full sonunda seed dışında veri kalmamalıdır.
+Hata exit code'u üst çalıştırıcıya taşınır. `sql/app/verify-enrollment-lifecycle.sql`
+yeni kolon/default/CHECK metadata kontrolüdür. Down ve eşzamanlı geçiş garantisi
+sınanmış değildir; ikinci garanti ürün kapsamında da yoktur.

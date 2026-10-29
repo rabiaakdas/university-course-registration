@@ -54,7 +54,8 @@ static class EnrollmentChecks
                 var response=await Post("/enrollments",new {id=99999,studentId=sid,courseOfferingId=oid,createdAtUtc="2000-01-01T00:00:00Z"});
                 var after=DateTimeOffset.UtcNow;
                 Check(response.Status==201 && Id(response.Body)!=99999,"Enrollment 201 / generated ID");
-                Fields(response.Body,"courseOfferingId,createdAtUtc,id,studentId");
+                Fields(response.Body,"courseOfferingId,createdAtUtc,id,rejectionReason,status,studentId");
+                Check(response.Body["status"]!.GetValue<string>()=="Draft" && response.Body["rejectionReason"] is null,"New enrollment Draft/null reason");
                 var created=response.Body["createdAtUtc"]!.GetValue<DateTimeOffset>();
                 Check(created.Offset==TimeSpan.Zero && created>=before && created<=after,"Server UTC time bounds");
                 Check(response.Location==$"/enrollments/{Id(response.Body)}" && JsonNode.DeepEquals((await Get(response.Location!)).Body,response.Body),"Enrollment Location/detail");
@@ -78,7 +79,7 @@ static class EnrollmentChecks
             Check(list.Count==2 && list.Select(n=>Id(n!)).SequenceEqual(list.Select(n=>Id(n!)).Order()),"Student enrollment list/order");
             foreach(var item in list)
             {
-                Fields(item!,"courseCode,courseName,courseOfferingId,createdAtUtc,id,sectionCode,termName");
+                Fields(item!,"courseCode,courseName,courseOfferingId,createdAtUtc,id,rejectionReason,sectionCode,status,termName");
                 Check(item!["courseCode"]!.GetValue<string>()=="CSE201" && item["courseName"]!.GetValue<string>()=="Veri Yapıları" && item["termName"]!.GetValue<string>()=="2026-2027 Güz","List JOIN content");
             }
             Check(list.Select(n=>n!["sectionCode"]!.GetValue<string>()).SequenceEqual(new[]{"A","B"}),"Different sections accepted");

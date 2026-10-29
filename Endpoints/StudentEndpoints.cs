@@ -42,7 +42,7 @@ public static class StudentEndpoints
                     join t in db.AcademicTerms on o.AcademicTermId equals t.Id
                     where e.StudentId == id
                     orderby e.Id
-                    select new StudentEnrollmentDto(e.Id, o.Id, c.Code, c.Name, t.Name, o.SectionCode, e.CreatedAtUtc);
+                    select new StudentEnrollmentDto(e.Id, o.Id, c.Code, c.Name, t.Name, o.SectionCode, e.CreatedAtUtc, e.Status.ToString(), e.RejectionReason);
         return Results.Ok(await query.ToListAsync(ct));
     }
 

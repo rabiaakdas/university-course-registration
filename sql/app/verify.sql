@@ -57,3 +57,4 @@ PRINT 'PASS: schema, three sequence defaults, NO ACTION foreign keys, migration 
 :r sql/app/verify-enrollment-schema.sql
 :r sql/app/verify-academic-schema.sql
 :r sql/app/verify-time-slots.sql
+:r sql/app/verify-enrollment-lifecycle.sql

@@ -107,6 +107,9 @@ internal static class SpecificationChecks
                     var detail=await send("GET",response.Location!,null,null);Check(detail.Status==200 && JsonNode.DeepEquals(detail.Body,response.Body),"single detail");
                 }
                 else Check(response.Body["items"]!.AsArray().Select(n=>n!["courseOfferingId"]!.GetValue<int>()).SequenceEqual(ids),"batch response order");
+                // These older academic scenarios need an active load, not a new Draft.
+                var created = batch ? response.Body["items"]!.AsArray().Select(n=>n!["id"]!.GetValue<int>()) : [response.Body["id"]!.GetValue<int>()];
+                foreach(var id in created) Check((await send("POST",$"/enrollments/{id}/submit",null,null)).Status==200,"activate academic fixture");
             }
         }
         try
@@ -151,8 +154,7 @@ internal static class SpecificationChecks
             await using(var db=factory())
             {
                 var bigB=new CourseOffering{CourseId=courses[7].Id,AcademicTermId=terms[0].Id,SectionCode="B",Capacity=1};offers.Add(bigB);db.Add(bigB);await db.SaveChangesAsync();
-                db.Enrollments.AddRange(new Enrollment{StudentId=wide,CourseOfferingId=O(7),CreatedAtUtc=DateTimeOffset.UtcNow},
-                    new Enrollment{StudentId=wide,CourseOfferingId=bigB.Id,CreatedAtUtc=DateTimeOffset.UtcNow});await db.SaveChangesAsync();
+                db.Enrollments.AddRange(StateChecks.Active(wide,O(7)), StateChecks.Active(wide,bigB.Id));await db.SaveChangesAsync();
             }
             await Request(wide,[O(6)],false,400,"credit_limit_exceeded",terms[0].Id);
 

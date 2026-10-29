@@ -19,6 +19,7 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "state" or "full") StateChecks.Unit();
 if (mode is "eligibility" or "full") EligibilityChecks.Unit();
 if (mode is "specifications" or "full")
 {
@@ -138,15 +139,17 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility")
+if (mode is "core" or "specifications" or "eligibility" or "state")
 {
     try
     {
-        await using (var db = Db()) await db.Database.MigrateAsync();
+        if (mode == "state") await StateChecks.Upgrade(Db);
+        else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
         if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
-        else await EligibilityChecks.Run(Db, Send);
+        else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
+        else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await using var verify = Db();
         Check(await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
             && await verify.CourseOfferings.CountAsync() == 0 && await verify.AcademicTerms.CountAsync() == 0
@@ -173,7 +176,7 @@ try
     await Sql("EXEC sys.sp_addextendedproperty @name=N'UniversityRegistrationTests', @value=N'day6';");
     await Sql("INSERT dbo.Courses (Id,Code,Name,Credits) VALUES (500,N'D5_HIGH',N'Migration sentinel',3);");
     await Sql("INSERT dbo.AcademicTerms (Id,Name,StartsOn,EndsOn) VALUES (600,N'D6_HIGH','20260101','20260101'); INSERT dbo.CourseOfferings (Id,CourseId,AcademicTermId,SectionCode,Capacity) VALUES (700,500,600,N'HIGH',1);");
-    await using (var db = Db()) await db.Database.MigrateAsync();
+    await StateChecks.Upgrade(Db);
     await using (var db = Db()) Check(await db.CourseOfferings.AnyAsync(o => o.Id==700 && o.CourseId==500 && o.AcademicTermId==600), "Migration lost FK/IDs");
     await Sql("DELETE dbo.CourseOfferings WHERE Id=700; DELETE dbo.AcademicTerms WHERE Id=600;");
     Check((await Read(500)).Code == "D5_HIGH", "Migration lost preexisting row");
@@ -281,6 +284,7 @@ try
     await BatchEnrollmentChecks.Run(Db, Send, StopApi, StartApi);
     await SpecificationChecks.Run(Db, Send);
     await EligibilityChecks.Run(Db, Send);
+    await StateChecks.Run(Db, Send, StopApi, StartApi);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

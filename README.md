@@ -1,12 +1,12 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk on beş gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk on altı gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
 endpoint'leri DB kullanır; dönem ve açılış oluşturma da desteklenir.
 Güncel kayıt akışında doğrudan ön koşullar, dönemlik kredi sınırı ve bilinen saat çakışmaları birlikte değerlendirilir.
-Önceki gün başlıkları o günkü kapsamı anlatır; güncel akademik kurallar ve failures sözleşmesi aşağıdaki 15. gün bölümündedir.
+Önceki gün başlıkları o günkü kapsamı anlatır; akademik failures sözleşmesi 15., güncel durum ve yük politikası 16. gün bölümündedir.
 
 ## Ön koşullar ve çalıştırma
 
@@ -1187,3 +1187,114 @@ finally içinde yapılır; süreçler kapatılır. Down çalıştırılmadı.
 
 Ayrıntılar: [öğrenme notu](docs/day15-eligibility.md),
 [karar kaydı](docs/adr/0015-explainable-eligibility.md), [test kılavuzu](docs/testing.md).
+
+## 16. gün — Kontrollü kayıt durumları
+
+Yeni Enrollment **Draft** başlar. Durum dışarıdan atanamaz; entity metotları
+geçişi korur. İzin verilenler:
+
+| Mevcut durum | İşlem | Yeni durum | Kredi/program yükü |
+|---|---|---|---|
+| Draft | submit | Submitted | Dahil olur |
+| Submitted | approve | Approved | Dahil kalır |
+| Submitted | reject | Rejected | Hariç olur |
+
+Draft/Rejected mevcut yükten hariç, Submitted/Approved dahildir. Diğer bütün
+geçişler ve aynı işlemin tekrarı409'dur. Rejected yeniden açılmaz; durumdan
+bağımsız öğrenci–açılış UNIQUE nedeniyle aynı çift için yeniden POST da409'dur.
+
+```http
+POST /enrollments/501/submit
+```
+
+```http
+POST /enrollments/501/approve
+```
+
+İkisinde de gövde gerekmez. Başka bir Submitted kaydı reddetme örneği:
+
+```http
+POST /enrollments/502/reject
+Content-Type: application/json
+
+{"reason":"  Başvurudaki bilgiler yeniden değerlendirilmeli.  "}
+```
+
+Başarı200 ve güncel kayıt. Örnek (kimlik/zaman temsili):
+
+```json
+{
+  "id":502,
+  "studentId":1,
+  "courseOfferingId":102,
+  "createdAtUtc":"2026-10-29T10:00:00+00:00",
+  "status":"Rejected",
+  "rejectionReason":"Başvurudaki bilgiler yeniden değerlendirilmeli."
+}
+```
+
+**Bilinçli sözleşme genişlemesi:** tekli oluşturma, batch items, detay, öğrenci
+kayıt listesi ve geçiş yanıtlarında `status` isim olarak, `rejectionReason` nullable
+alan olarak döner. Yeni kayıt201/Location davranışı korunur; status=Draft,
+rejectionReason=null. İstemci Id/Status/gerekçe atayarak oluşturma yapamaz;
+oluşturma request türlerinde bu alanlar yoktur. Genel status PATCH/PUT yoktur.
+
+Submit/approve: kayıt yok404 → yanlış mevcut durum409 → güncel akademik
+ret400/failures → geçiş ve SaveChanges →200. Hedef kayıt kendi yükünden çıkarılır,
+aday olarak bir kez değerlendirilir; öğrencinin diğer aktif kayıtları korunur.
+Reject: gerekçe Trim sonrası boş veya500 üstüyse400/`reason` (varlık kontrolünden
+önce); sonra yok404 → Submitted değil409 → geçiş/yazma200. Reject akademik
+uygunluğu yeniden hesaplamaz. Bozuk JSON binding400 olarak kalır.
+
+Yeni Draft oluşturma ve batch uygunluk kontrollerini atlamaz. Batch adayları
+birlikte değerlendirilir ve tek SaveChanges ile atomik kalır. Önizleme yeni aktif
+yük politikasını kullanır, rezervasyon yapmaz. Gerçek kayıt/gönderme/onaylama
+kendi anında yeniden değerlendirilir.
+
+`20261029131736_AddEnrollmentLifecycle` mevcut satırları **Approved** yapar;
+bu eski doğrudan kayıt anlamını korur, geçmiş danışman onayı/audit iddiası değildir.
+Kalıcı DB varsayılanı Draft0'dır. Status required int/CHECK0..3;
+RejectionReason nullable nvarchar(500), Rejected için non-null ve boşluk dışı,
+diğerlerindeNULL. CHECK önceki durumu veya yetkiyi bilemez.
+
+Migration sırasında **uygulamayı ve bütün yazıcıları durdurun**. Güvenli bağlantı
+ayarının yalnız `university_registration_app` hedeflediğini kontrol edip kökten:
+
+```powershell
+dotnet tool restore
+dotnet restore
+dotnet build
+dotnet ef migrations script AddCourseOfferingTimeSlots AddEnrollmentLifecycle --output obj/day16-migration.sql
+# Up/Down ve SQL'i incele; tablo yeniden oluşturma yok.
+dotnet ef database update
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
+dotnet run --project .\UniversityRegistration.csproj
+```
+
+Testler app/lab yerine yeni, adı doğrulanan izole LocalDB kullanır:
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode state
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode specifications
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode eligibility
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+`unit` DB olmadan enum ve üretim dışı State deneyini aynı matrisle sınar.
+`state` eski migration seviyesinde kayıt hazırlayıp yükseltmeyi, HTTP geçişlerini,
+SQL kısıtlarını, yük/dışlama ve restart davranışını sınar. Full eski fault/rollback
+kontrollerini yeniden kullanır. Test kayıtları finally içinde FK sırasıyla
+silinir, süreçler kapanır; test DB şemaları tutulur. Sequence geri sarılmaz.
+
+**Geliştirme sınırı:** submit/approve/reject henüz kimlik doğrulama ve
+yetkilendirme içermez; gerçek danışman onay sistemi değildir. Eşzamanlı geçişlerde
+son yazan kazanabilir; kredi/program ve kontenjan garantisi yoktur. Rejected
+satır için tekrar başvuru/ders bırakma, audit/outbox ve bildirim yoktur. Down
+çalıştırılmadı ve durum/gerekçe bilgisini koruyan bir geri alma sayılmaz.
+
+[Öğrenme notu](docs/day16-enrollment-state.md) ·
+[ADR](docs/adr/0016-controlled-enrollment-lifecycle.md) · [Test kılavuzu](docs/testing.md)

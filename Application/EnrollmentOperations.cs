@@ -72,6 +72,36 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         return new EligibilityResult.Evaluated(academic);
     }
 
+    public Task<EnrollmentTransitionResult> SubmitAsync(int id, CancellationToken ct) => AdvanceAsync(id, false, ct);
+    public Task<EnrollmentTransitionResult> ApproveAsync(int id, CancellationToken ct) => AdvanceAsync(id, true, ct);
+
+    private async Task<EnrollmentTransitionResult> AdvanceAsync(int id, bool approve, CancellationToken ct)
+    {
+        var enrollment = await db.Enrollments.SingleOrDefaultAsync(e => e.Id == id, ct);
+        if (enrollment is null) return new EnrollmentTransitionResult.NotFound();
+        var expected = approve ? EnrollmentStatus.Submitted : EnrollmentStatus.Draft;
+        if (enrollment.Status != expected) return new EnrollmentTransitionResult.InvalidTransition();
+        // FK guarantees the offering. Infrastructure/data failures must not become academic rejections.
+        var offering = await Offerings([enrollment.CourseOfferingId]).SingleAsync(ct);
+        var academic = await EvaluateAsync(enrollment.StudentId, [offering], ct, enrollment.Id);
+        if (!academic.IsEligible) return new EnrollmentTransitionResult.AcademicRejected(academic);
+        var changed = approve ? enrollment.TryApprove() : enrollment.TrySubmit();
+        if (!changed) return new EnrollmentTransitionResult.InvalidTransition();
+        await db.SaveChangesAsync(ct);
+        return new EnrollmentTransitionResult.Updated(Response(enrollment));
+    }
+
+    public async Task<EnrollmentTransitionResult> RejectAsync(int id, string? reason, CancellationToken ct)
+    {
+        var cleaned = Enrollment.CleanRejectionReason(reason);
+        if (cleaned is null) return new EnrollmentTransitionResult.InvalidReason();
+        var enrollment = await db.Enrollments.SingleOrDefaultAsync(e => e.Id == id, ct);
+        if (enrollment is null) return new EnrollmentTransitionResult.NotFound();
+        if (!enrollment.TryReject(cleaned)) return new EnrollmentTransitionResult.InvalidTransition();
+        await db.SaveChangesAsync(ct);
+        return new EnrollmentTransitionResult.Updated(Response(enrollment));
+    }
+
     private sealed record OfferingData(int Id, int CourseId, int AcademicTermId, int Credits);
     private IQueryable<OfferingData> Offerings(int[] ids) =>
         from offering in db.CourseOfferings
@@ -80,7 +110,7 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         select new OfferingData(offering.Id, offering.CourseId, offering.AcademicTermId, course.Credits);
 
     // Bounded projections, not whole tables. Evaluation order comes from the request.
-    private async Task<AcademicEvaluation> EvaluateAsync(int studentId, OfferingData[] ordered, CancellationToken ct)
+    private async Task<AcademicEvaluation> EvaluateAsync(int studentId, OfferingData[] ordered, CancellationToken ct, int? excludedEnrollmentId = null)
     {
         var courseIds = ordered.Select(o => o.CourseId).Distinct().ToArray();
         var required = await db.CoursePrerequisites.Where(p => courseIds.Contains(p.CourseId))
@@ -91,20 +121,24 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
             .Select(c => c.CourseId).ToArrayAsync(ct);
         var byCourse = required.ToLookup(p => p.CourseId, p => p.PrerequisiteCourseId);
         var termIds = ordered.Select(o => o.AcademicTermId).Distinct().ToArray();
-        var loads = await (from enrollment in db.Enrollments
+        // Exclusion is private and derives only from the tracked transition target, never HTTP input.
+        var active = db.Enrollments.Where(e => e.StudentId == studentId
+            && (e.Status == EnrollmentStatus.Submitted || e.Status == EnrollmentStatus.Approved));
+        if (excludedEnrollmentId is int excluded) active = active.Where(e => e.Id != excluded);
+        var loads = await (from enrollment in active
             join offering in db.CourseOfferings on enrollment.CourseOfferingId equals offering.Id
             join course in db.Courses on offering.CourseId equals course.Id
-            where enrollment.StudentId == studentId && termIds.Contains(offering.AcademicTermId)
+            where termIds.Contains(offering.AcademicTermId)
             group course by offering.AcademicTermId into term
             select new { TermId = term.Key, Credits = term.Sum(c => (long)c.Credits) })
             .ToDictionaryAsync(x => x.TermId, x => x.Credits, ct);
         var ids = ordered.Select(o => o.Id).ToArray();
         var newSlots = await db.CourseOfferingTimeSlots.Where(s => ids.Contains(s.CourseOfferingId))
             .Select(s => new { s.CourseOfferingId, s.Day, s.StartsAt, s.EndsAt }).ToListAsync(ct);
-        var oldSlots = await (from enrollment in db.Enrollments
+        var oldSlots = await (from enrollment in active
             join offering in db.CourseOfferings on enrollment.CourseOfferingId equals offering.Id
             join slot in db.CourseOfferingTimeSlots on offering.Id equals slot.CourseOfferingId
-            where enrollment.StudentId == studentId && termIds.Contains(offering.AcademicTermId)
+            where termIds.Contains(offering.AcademicTermId)
             select new { offering.Id, offering.AcademicTermId, slot.Day, slot.StartsAt, slot.EndsAt }).ToListAsync(ct);
         var slotsByOffering = newSlots.ToLookup(s => s.CourseOfferingId);
         var requested = ordered.Select(o => new OfferingEligibility(
@@ -132,5 +166,5 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         // Unknown SQL errors and cancellation propagate; no retry with a failed tracker.
     }
 
-    private static EnrollmentResponse Response(Enrollment e) => new(e.Id, e.StudentId, e.CourseOfferingId, e.CreatedAtUtc);
+    private static EnrollmentResponse Response(Enrollment e) => new(e.Id, e.StudentId, e.CourseOfferingId, e.CreatedAtUtc, e.Status.ToString(), e.RejectionReason);
 }
