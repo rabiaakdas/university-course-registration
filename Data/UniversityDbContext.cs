@@ -13,6 +13,7 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
 
     public DbSet<CoursePrerequisite> CoursePrerequisites => Set<CoursePrerequisite>();
     public DbSet<StudentCompletedCourse> StudentCompletedCourses => Set<StudentCompletedCourse>();
+    public DbSet<CourseOfferingTimeSlot> CourseOfferingTimeSlots => Set<CourseOfferingTimeSlot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -89,5 +90,22 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_StudentCompletedCourses_Students");
         completed.HasOne<Course>().WithMany().HasForeignKey(x => x.CourseId)
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_StudentCompletedCourses_Courses");
+
+        modelBuilder.HasSequence<int>("CourseOfferingTimeSlotIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
+        var slot = modelBuilder.Entity<CourseOfferingTimeSlot>();
+        slot.ToTable("CourseOfferingTimeSlots", table =>
+        {
+            table.HasCheckConstraint("CK_CourseOfferingTimeSlots_Day", "[Day] BETWEEN 0 AND 6");
+            table.HasCheckConstraint("CK_CourseOfferingTimeSlots_Range", "[StartsAt] < [EndsAt]");
+        });
+        slot.HasKey(x => x.Id).HasName("PK_CourseOfferingTimeSlots");
+        slot.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[CourseOfferingTimeSlotIds]", "DF_CourseOfferingTimeSlots_Id");
+        slot.Property(x => x.Day).HasConversion<int>().IsRequired();
+        slot.Property(x => x.StartsAt).HasColumnType("time(7)").IsRequired();
+        slot.Property(x => x.EndsAt).HasColumnType("time(7)").IsRequired();
+        slot.HasOne<CourseOffering>().WithMany().HasForeignKey(x => x.CourseOfferingId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_CourseOfferingTimeSlots_CourseOfferings");
+        slot.HasIndex(x => new { x.CourseOfferingId, x.Day, x.StartsAt, x.EndsAt })
+            .IsUnique().HasDatabaseName("UX_CourseOfferingTimeSlots_Offering_Day_Range");
     }
 }

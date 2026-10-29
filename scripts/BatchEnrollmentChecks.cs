@@ -85,7 +85,7 @@ static class BatchEnrollmentChecks
                 await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
                 var result=await BatchEnrollmentEndpoint.CreateAsync(largeStudent,new(offeringIds.ToArray()),new EnrollmentOperations(db, new EnrollmentPolicy(30)),default);
                 Check(((IStatusCodeHttpResult)result).StatusCode==201,"50-item boundary");
-                Check(capture.Commands.Count(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase))==6,"Expected six bulk preflight reads, no per-item reads");
+                Check(capture.Commands.Count(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase))==8,"Expected eight bulk preflight reads, no per-item reads");
                 capture.Commands.Clear();
                 await BatchEnrollmentEndpoint.CreateAsync(int.MaxValue,new([]),new EnrollmentOperations(db, new EnrollmentPolicy(30)),default);
                 Check(capture.Commands.Count==0,"Invalid structure queried DB");
@@ -105,7 +105,7 @@ static class BatchEnrollmentChecks
             }
             Check((await Read(largeStudent)).Length==50,"Cancelled operation changed registrations");
             Console.WriteLine("PASS: operation cancellation propagates without a rejection result or write");
-            Console.WriteLine("PASS: batch HTTP/ordering/time/details/restart; input 400/student 404/missing offering 400/existing pair 409 are precheck evidence; 50 items and six bulk reads");
+            Console.WriteLine("PASS: batch HTTP/ordering/time/details/restart; input 400/student 404/missing offering 400/existing pair 409 are precheck evidence; 50 items and eight bulk reads");
 
             var raceStudent=await Student();
             await using(var template=factory())

@@ -31,6 +31,9 @@ namespace UniversityRegistration.Data.Migrations
             modelBuilder.HasSequence<int>("CourseOfferingIds", "dbo")
                 .HasMin(1L);
 
+            modelBuilder.HasSequence<int>("CourseOfferingTimeSlotIds", "dbo")
+                .HasMin(1L);
+
             modelBuilder.HasSequence<int>("EnrollmentIds", "dbo")
                 .HasMin(1L);
 
@@ -134,6 +137,40 @@ namespace UniversityRegistration.Data.Migrations
                     b.ToTable("CourseOfferings", null, t =>
                         {
                             t.HasCheckConstraint("CK_CourseOfferings_Capacity_Positive", "[Capacity] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("UniversityRegistration.Models.CourseOfferingTimeSlot", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValueSql("NEXT VALUE FOR [dbo].[CourseOfferingTimeSlotIds]", "DF_CourseOfferingTimeSlots_Id");
+
+                    b.Property<int>("CourseOfferingId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Day")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("EndsAt")
+                        .HasColumnType("time(7)");
+
+                    b.Property<TimeOnly>("StartsAt")
+                        .HasColumnType("time(7)");
+
+                    b.HasKey("Id")
+                        .HasName("PK_CourseOfferingTimeSlots");
+
+                    b.HasIndex("CourseOfferingId", "Day", "StartsAt", "EndsAt")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CourseOfferingTimeSlots_Offering_Day_Range");
+
+                    b.ToTable("CourseOfferingTimeSlots", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CourseOfferingTimeSlots_Day", "[Day] BETWEEN 0 AND 6");
+
+                            t.HasCheckConstraint("CK_CourseOfferingTimeSlots_Range", "[StartsAt] < [EndsAt]");
                         });
                 });
 
@@ -244,6 +281,16 @@ namespace UniversityRegistration.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_CourseOfferings_Courses");
+                });
+
+            modelBuilder.Entity("UniversityRegistration.Models.CourseOfferingTimeSlot", b =>
+                {
+                    b.HasOne("UniversityRegistration.Models.CourseOffering", null)
+                        .WithMany()
+                        .HasForeignKey("CourseOfferingId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CourseOfferingTimeSlots_CourseOfferings");
                 });
 
             modelBuilder.Entity("UniversityRegistration.Models.CoursePrerequisite", b =>

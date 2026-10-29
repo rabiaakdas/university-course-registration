@@ -110,7 +110,7 @@ static class EnrollmentChecks
                 await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(observer,capture).Options);
                 var result=await action(db);
                 if(expected != "studentNumber")
-                    Check(capture.Commands.Count(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase))==6,"Single registration keeps six bounded preflight reads");
+                    Check(capture.Commands.Count(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase))==8,"Single registration keeps eight bounded preflight reads");
                 Check(observer.Classification==expected,"Real save branch: "+expected);
                 Check(((IStatusCodeHttpResult)result).StatusCode==(expected is "studentNumber" or "duplicate"?409:400),"Save branch status");
                 if(expected is "studentId" or "courseOfferingId") Check(((ProblemHttpResult)result).ProblemDetails is HttpValidationProblemDetails validation && validation.Errors.ContainsKey(expected),"Save branch field");

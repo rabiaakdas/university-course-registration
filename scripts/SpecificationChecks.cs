@@ -93,9 +93,9 @@ internal static class SpecificationChecks
             Check(response.Status==status,$"HTTP expected={status} actual={response.Status} student={student} ids={string.Join(',',ids)}");
             if(status==400)
             {
-                Check(response.Body["code"]?.GetValue<string>()==code,"academic code");
+                Check(response.Body["failures"]![0]!["code"]?.GetValue<string>()==code,"academic code");
                 var key=code=="prerequisite_not_satisfied"?"courseOfferingId":"academicTermId";
-                Check(response.Body[key]?.GetValue<int>()==contextId,"fail-fast context ID");
+                Check(response.Body["failures"]![0]![key]?.GetValue<int>()==contextId,"first ordered failure context ID");
                 Check((await Rows(student)).SequenceEqual(before),"rejection preserves all previous DB records; no partial write");
             }
             else
@@ -141,7 +141,7 @@ internal static class SpecificationChecks
             await Request(loadStudent,[O(6,1),O(5)],true,400,"credit_limit_exceeded",terms[0].Id); // one valid term + one invalid
             await Request(loadStudent,[O(5,1),O(5)],true,400,"credit_limit_exceeded",terms[1].Id); // request term order
             await Request(loadStudent,[O(4),O(4,1)],true,201); // exactly30 separately
-            await Request(loadStudent,[O(1)],false,400,"prerequisite_not_satisfied",O(1)); // both rules fail: prerequisite wins
+            await Request(loadStudent,[O(1)],false,400,"prerequisite_not_satisfied",O(1)); // both rules fail: prerequisite comes first
             await Request(loadStudent,[O(6)],false,400,"credit_limit_exceeded",terms[0].Id);
             var sectionStudent=await Student();await Request(sectionStudent,[O(2),offers.Last().Id],true,201);
             await Request(sectionStudent,[O(3)],false,400,"credit_limit_exceeded",terms[0].Id); // two sections count twice:8+24
@@ -164,7 +164,7 @@ internal static class SpecificationChecks
                 var result=await new EnrollmentOperations(db,new EnrollmentPolicy(30)).CreateBatchAsync(sqlStudent,[O(1),O(2)],default);
                 Check(result is BatchEnrollmentResult.Created,"direct operation succeeds");
                 var reads=capture.Commands.Where(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase)).ToArray();
-                Check(reads.Length==6,"six bulk queries independent of selection count");
+                Check(reads.Length==8,"eight bulk queries independent of selection count");
                 Check(reads.Any(c=>c.Text.Contains("GROUP BY") && c.Text.Contains("SUM(") && c.Text.Contains("bigint",StringComparison.OrdinalIgnoreCase) && c.Text.Contains("WHERE") && c.Text.Contains("JOIN")),"actual SQL filtered JOIN/GROUP BY/SUM(bigint)");
                 Check(reads.Where(c=>c.Text.Contains("StudentCompletedCourses") || c.Text.Contains("CoursePrerequisites")).All(c=>c.Text.Contains("WHERE")),"bounded academic reads");
             }
@@ -185,7 +185,7 @@ internal static class SpecificationChecks
             // This is deliberately allowed: a self CHECK does not prohibit an indirect cycle.
             await using(var db=factory()) {db.CoursePrerequisites.Add(new(){CourseId=courses[0].Id,PrerequisiteCourseId=courses[1].Id});await db.SaveChangesAsync();}
             await using(var db=factory()) Check(await db.CoursePrerequisites.AnyAsync(p=>p.CourseId==courses[0].Id && p.PrerequisiteCourseId==courses[1].Id),"indirect cycle limitation observed");
-            Console.WriteLine("PASS: academic HTTP fail-fast/term order/completion isolation/exact-limit/multi-term batch/no partial writes; actual six bounded SQL reads and bigint SUM; PK/FK/self-CHECK and cycle boundary");
+            Console.WriteLine("PASS: academic HTTP ordered failures/term order/completion isolation/exact-limit/multi-term batch/no partial writes; actual eight bounded SQL reads and bigint SUM; PK/FK/self-CHECK and cycle boundary");
         }
         catch(Exception ex){failure=ex;throw;}
         finally

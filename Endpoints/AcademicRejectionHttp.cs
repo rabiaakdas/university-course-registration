@@ -4,14 +4,14 @@ namespace UniversityRegistration.Endpoints;
 
 internal static class AcademicRejectionHttp
 {
-    public static IResult Problem(AcademicRejection rejection) => rejection switch
+    public static object[] Failures(AcademicEvaluation evaluation) => evaluation.Failures.Select<AcademicRejection, object>(f => f switch
     {
-        AcademicRejection.PrerequisiteNotSatisfied missing => Results.Problem(statusCode: 400,
-            title: "Ders ön koşulu sağlanmadı.", detail: "Seçilen dersin doğrudan ön koşulları başarıyla tamamlanmalıdır.",
-            extensions: new Dictionary<string, object?> { ["code"] = "prerequisite_not_satisfied", ["courseOfferingId"] = missing.CourseOfferingId }),
-        AcademicRejection.CreditLimitExceeded limit => Results.Problem(statusCode: 400,
-            title: "Dönemlik kredi sınırı aşılıyor.", detail: "Mevcut kayıtlar ve yeni seçimler dönemlik kredi sınırını aşamaz.",
-            extensions: new Dictionary<string, object?> { ["code"] = "credit_limit_exceeded", ["academicTermId"] = limit.AcademicTermId }),
+        AcademicRejection.PrerequisiteNotSatisfied p => new { p.Code, p.Message, p.CourseOfferingId },
+        AcademicRejection.CreditLimitExceeded c => new { c.Code, c.Message, c.AcademicTermId },
+        AcademicRejection.ScheduleConflict s => new { s.Code, s.Message, s.CourseOfferingId, s.ConflictingCourseOfferingId },
         _ => throw new InvalidOperationException("Unknown academic rejection.")
-    };
+    }).ToArray();
+
+    public static IResult Problem(AcademicEvaluation evaluation) => Results.Problem(statusCode: 400,
+        title: "Kayıt koşulları sağlanmadı.", extensions: new Dictionary<string, object?> { ["failures"] = Failures(evaluation) });
 }

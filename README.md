@@ -1,12 +1,12 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk on dört gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk on beş gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
 endpoint'leri DB kullanır; dönem ve açılış oluşturma da desteklenir.
-Güncel kayıt akışında doğrudan ön koşullar ve dönemlik kredi sınırı uygulanır.
-Önceki gün başlıkları o günkü kapsamı anlatır; güncel akademik kurallar aşağıdaki 14. gün bölümündedir.
+Güncel kayıt akışında doğrudan ön koşullar, dönemlik kredi sınırı ve bilinen saat çakışmaları birlikte değerlendirilir.
+Önceki gün başlıkları o günkü kapsamı anlatır; güncel akademik kurallar ve failures sözleşmesi aşağıdaki 15. gün bölümündedir.
 
 ## Ön koşullar ve çalıştırma
 
@@ -1088,3 +1088,102 @@ Full modu bu örneği de doğrular. Gerçek öğrenciye keyfi başarı kaydı ve
 
 [Öğrenme notu ve kod bağlantıları](docs/day14-specifications.md) ·
 [ADR 0014](docs/adr/0014-academic-specifications.md).
+
+
+## 15. gün — Saatler ve açıklanabilir uygunluk
+
+Kayıt artık doğrudan ön koşul, dönemlik kredi ve **bilinen haftalık saat**
+çakışmalarını birlikte değerlendirir. Önceki tek akademik `code` yanıtı bilinçli
+olarak aşağıdaki `failures` listesine dönüştü; ilk rette durulmaz.
+
+```http
+POST /students/1/enrollments/eligibility
+Content-Type: application/json
+
+{"courseOfferingIds":[101,102]}
+```
+
+Geçerli değerlendirme her zaman 200; uygun örnek:
+
+```json
+{"isEligible":true,"failures":[]}
+```
+
+Uygun olmayan örnek (kimlikler örnektir):
+
+```json
+{
+  "isEligible": false,
+  "failures": [
+    {"code":"prerequisite_not_satisfied","message":"Dersin doğrudan ön koşulları başarıyla tamamlanmalıdır.","courseOfferingId":101},
+    {"code":"credit_limit_exceeded","message":"Mevcut kayıtlar ve seçimler dönemlik kredi sınırını aşıyor.","academicTermId":1},
+    {"code":"schedule_conflict","message":"Seçilen açılışın haftalık saatleri başka bir açılışla çakışıyor.","courseOfferingId":101,"conflictingCourseOfferingId":102}
+  ]
+}
+```
+
+Tekli/batch **gerçek kayıt** akademik rette 400 `application/problem+json`,
+`title: "Kayıt koşulları sağlanmadı."` ve aynı `failures` listesini döndürür.
+Ret varsa hiçbir yeni Enrollment eklenmez. Başarı yanıtları ve tek SaveChanges
+batch atomikliği korunur. Alan hataları 400 ValidationProblem, varlık/mükerrer
+kontrolleri önceki 400/404/409 davranışındadır. Önizleme de batch'in zorunlu,
+1–50, pozitif ve tekrarsız kimlik listesi doğrulamasını paylaşır; öğrenci yok404,
+açılış yok400, mevcut kayıt409. 50 teknik istek sınırıdır.
+
+Önizleme rezervasyon veya kayıt onayı değildir; gerçek kayıt aynı değerlendirmeyi
+**yeniden** çalıştırır. İstemcinin önceden uygun bulduğu seçim kabul garantisi
+vermez. Priority preview (puan hesabı) ayrı kalır. Yetkilendirme ve kontenjan
+henüz yok; StudentId alan geliştirme akışı güvenli öğrenci self-servisi değildir.
+İki istek aynı yük/programı okuyabilir; eşzamanlı kredi/program garantisi yoktur.
+
+`CourseOfferingTimeSlot`: DB tarafından sequence/default Id, açılışa zorunlu FK
+(NO ACTION), `DayOfWeek` sayısal0..6, zorunlu `time(7)` başlangıç/bitiş.
+Aralıklar `[başlangıç,bitiş)`; 09–10 ve10–11 çakışmaz. Aynı gün içinde
+başlangıç<bitiş şarttır. Üniversite yerel haftalık saatleri kullanılır; gece
+geçişi, timezone/tatil/haftaya özel istisna yoktur. Farklı dönemler karşılaştırılmaz.
+Saat kaydı olmayan açılış için yalnız **bilinen aralıklarla çakışma yok** kabulü
+vardır; program eksiksizliği iddiası yoktur. Birebir UNIQUE farklı ama örtüşen
+aralıkları engellemez. Aynı açılış çifti birçok saatte çakışsa bile tek neden döner.
+
+Varsayılan seed saat atamaz. `sql/app/time-slot-example.sql` yalnız işaretli
+izole day6 test DB'sinde kendi sentetik ders/dönem/açılışını oluşturur ve her
+zaman rollback yapar; app/lab hedefini reddeder. Mevcut açılışlar değiştirilmez.
+Tekrar çalışır; sequence boşlukları normaldir. Zaman CRUD endpoint'i yoktur.
+
+Repo kökünden, uygulamayı durdurup hedefin `university_registration_app` olduğunu
+kontrol ederek (bağlantı yapılandırması yukarıdaki güvenli yöntemle):
+
+```powershell
+dotnet tool restore
+dotnet restore
+dotnet build
+dotnet ef migrations script AddPrerequisitesAndCompletedCourses AddCourseOfferingTimeSlots --output obj/day15-migration.sql
+# SQL'i incele; migration oluşturmak/script üretmek DB'yi değiştirmez.
+dotnet ef database update
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -f 65001 -i sql/app/verify.sql
+dotnet run --project .\UniversityRegistration.csproj
+```
+
+İzole gerçek LocalDB/HTTP testleri; app/lab test hedefi değildir:
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode eligibility
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode specifications
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+# full çıktısındaki yalnız bu koşuya ait işaretli DB adını kullan:
+# sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d <izole-test-DB-adı> -b -f 65001 -i sql/app/time-slot-example.sql
+```
+
+Yeni kontrol saf saat hesabı, gerçek time(7) tick gidiş-dönüşü, PK/FK/CHECK/UNIQUE,
+üçlü ret, önizleme sonrası değişen program ve yazmama davranışını sınar. Mevcut
+batch ilk INSERT sonrası rollback/FK/unique deneyleri yeniden kullanılır.
+İlgili veri hazırlığında sekiz toplu SELECT vardır; açılış/saat başına sorgu yok.
+Temizlik yalnız fixture kimlikleriyle saat/ilişki/Enrollment ve üst kayıt sırasıyla,
+finally içinde yapılır; süreçler kapatılır. Down çalıştırılmadı.
+
+Ayrıntılar: [öğrenme notu](docs/day15-eligibility.md),
+[karar kaydı](docs/adr/0015-explainable-eligibility.md), [test kılavuzu](docs/testing.md).

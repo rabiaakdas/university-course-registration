@@ -848,3 +848,81 @@ ve toplu uygunluk sonucu.
 
 **Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^feat: enforce prerequisite and credit specifications$"`
 ile bulunur. Push sonucu son raporda bildirilir; hash için ek commit yoktur.
+
+## Gün 15 — Birleşik kurallar, açıklanabilir retler ve saat çakışması
+
+**Kavramlar/değişiklik:** Haftalık yerel saat, yarı açık aralık, AND ile tüm
+bağımsız retleri toplama, yeni–mevcut/yeni–yeni çift tekilleştirme, belirli sıra,
+önizleme/kayıt ortaklığı. CourseOfferingTimeSlot (sequence, FK NO ACTION,
+Day0..6, time(7), start<end, birebir UNIQUE) eklendi. WeeklyTimeSlot kontrollü
+saf değer; AcademicEligibility eski ön koşul/kredi specification'larını yeniden
+kullanır. EnrollmentOperations veriyi filtreli toplu sorgularla hazırlar.
+AcademicEvaluation savunmacı kopya üzerinden IsEligible türetir; retler ayrık
+code/message/kimlik tipleridir. Genel composite/rule engine eklenmedi.
+
+**Bilinçli sözleşme değişikliği:** Akademik fail-fast kaldırıldı. Tekli/batch
+akademik ret artık400 Problem Details, title='Kayıt koşulları sağlanmadı.' ve
+bütün failures listesidir. Eski alan400/varlık404/mükerrer409, UTC ve başarılı
+Location/yanıtlar korunur. Yeni POST /students/{id:int}/enrollments/eligibility
+batch doğrulamasını paylaşır, geçerli değerlendirmede200/isEligible/failures
+verir; hiçbir kayıt/rezervasyon yazmaz. Gerçek kayıt yeniden değerlendirir.
+
+**Migration:** 20261029122117_AddCourseOfferingTimeSlots Up/Down/snapshot ve
+üretilen SQL incelendi: yalnız yeni tablo, sequence/default, PK/FK/CHECK/unique
+index ve EF history. Mevcut tablolar yeniden oluşturulmadı. Uygulama süreci
+yokken yalnız university_registration_app hedefine açık `dotnet ef database
+update` uygulandı. İkinci update no-op; has-pending-model-changes temiz. Gerçek
+metadata verify.sql/verify-time-slots.sql geçti. Mevcut app sayıları2 ders,
+2 dönem,3 açılış; diğer tablolar0, yeni saat tablosu0. Varsayılan seed saat atamaz.
+
+**Gerçek çalıştırılanlar:**
+
+- Restore/build başarılı (0 uyarı/0 hata); SDK10.0.401, EF10.0.14,
+  LocalDB17.0.4025.3 aynı kaldı, paket/framework eklenmedi.
+- unit: saf saat sınırı/simetri/geçersiz gün/eşit-ters saat, üç ret türü birlikte,
+  belirli sıra/çift başına tek ret ve savunmacı koleksiyonlar; önceki saf kontroller.
+- eligibility ilk çalışma `university_registration_tests_day6_d0e7cb7d323e4ca396193d7a8aacebfd`:
+  gerçek HTTP üçlü ret, fresh-context yazmama, yeni–yeni ve yeni–mevcut,
+  bitiş=başlangıç kabul, farklı gün/dönem ve boş program, preview sonrası
+  program değişikliğiyle kayıt reddi. Gerçek PK/FK/CHECK/UNIQUE/NOT NULL ve
+  time(7)100ns/min/max gidiş-dönüşü geçti.
+- specifications `university_registration_tests_day6_67de9d6c15ae438d9fa62127ad990c59`:
+  önceki başarı/ön koşul/Int64 kredi/term düzeni/ilişki kısıt kontrolleri
+  yeni failures sözleşmesiyle geçti; geçersiz startup yapılandırmaları da geçti.
+- core `university_registration_tests_day10_e9ff0fbcebfb4513bc8add08a290a3aa`:
+  başarılı kayıt/olmayan açılış/mükerrer tek satır ve temizliği geçti.
+- full `university_registration_tests_day6_0c43daf37c794b19a4d2b6d90760cfef`:
+  önceki ders/katalog/dönem/açılış/öğrenci/kayıt, priority DB bağımsızlığı,
+  factory deneyleri, tracking ve transaction A–D, gerçek FK/unique hata
+  dalları, 50'li batch ve ilk INSERT sonrası gerçek hata rollback'i geçti.
+  Rakip context'in kesinleşmiş kaydı korundu. Akademik/eligibility kontrolleri,
+  seed tekrarı ve rollback saat örneğinin iki çalışması da geçti.
+- Son eklenen öğrenci izolasyonu, eski–eski çakışmayı dışlama ve saat FK'sinin
+  NO ACTION silme deneyleriyle eligibility tekrar çalıştı:
+  `university_registration_tests_day6_c87deb48d3c64c18ab7f02fa49970c60`, başarılı.
+- Interceptor: önizlemede yalnız8SELECT, izlenen entity/yazma yok; iki saat
+  sorgusu WHERE ve öğrenci/dönem JOIN'leriyle daraltılmış. Tekli ve50'li batch
+  yine8SELECT; N+1 yok. SUM(bigint) korundu. Bir çiftin birden fazla saati tek
+  schedule_conflict üretti. Sabit INSERT komut sayısı iddiası yok.
+- `unit -ProbeFailure` kontrollü assertion ile üst çalıştırıcıya exit1 taşıdı;
+  bu bilerek başarısız kontrol, ürün testi başarısı sayılmadı; bozuk test kalmadı.
+
+**Temizlik/koruma:** Yeni fixture saatleri ilişkilerden/üst kayıtlardan önce
+kimlik bazlı finally temizlendi. Bağımsız modlarda sekiz tablo boş, full sonu
+yalnız seed2/2/3, diğerleri0 olarak ayrıca SQL'den okundu. Test DB şemaları tutuldu,
+sequence sıfırlanmadı. Geçici API süreç sayısı0. Lab'a mutasyon yapılmadı;
+önce/sonra üç tablonun sayıları ve veri checksum'ları aynı, saat tablosu yok.
+Bu checksum karşılaştırması kriptografik bütünlük kanıtı olarak sunulmaz.
+
+**Sınırlar/eksikler:** Engel yok. Down uygulanmadı, geri alma doğrulandı denmez.
+Cleanup arızası zorlanmadı. Eşzamanlı kredi/program değişikliğine kesin garanti
+verilmez; transaction/lock/retry eklenmedi. Haftalık yerel aynı-gün aralıklar;
+tatil/timezone/dolaylı ön koşul/kontenjan/yetkilendirme yok. Boş saatler eksiksiz
+program anlamına gelmez. Course.Credits güncel değeridir. Önizleme rezervasyon
+veya kabul garantisi değildir. Başarılı testler yalnız sınanan davranışları kapsar.
+
+**Sıradaki gün:** State; enum/koşul alternatifi;
+taslak/gönderilmiş/onaylanmış/reddedilmiş geçişler.
+
+**Commit/push:** Bu kaydı içeren commit `git log --format=%H --grep="^feat: explain enrollment eligibility and schedule conflicts$"`
+ile bulunur. Push sonucu son raporda bildirilir; hash için ikinci commit yoktur.

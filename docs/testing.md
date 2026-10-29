@@ -147,3 +147,33 @@ kredi politikası 30 kalır. Tekli/batch fault kontrolleri üç yerine altı top
 sorgudan sonra aynı gerçek yazma hatalarına ulaşır. Cleanup yeni ilişki tablolarını
 üst kayıtlardan önce kaldırır; yalnız üretilen test kimlikleri hedeflenir. Varsayılan
 seed değişmedi. Full içindeki rollback-only akademik SQL örneği tekrar güvenlidir.
+
+## Gün 15 — Uygunluk ve saatler
+
+- `-Mode unit`: önceki saf kontroller + WeeklyTimeSlot yarı açık aralık, simetri,
+  geçersiz gün/saat, tüm retlerin sırası/tekilleştirme, savunmacı sonuç kopyaları.
+- `-Mode eligibility`: yeni GUID LocalDB + gerçek API; üç akademik ret birlikte,
+  yeni–mevcut/yeni–yeni, dönem/gün/öğrenci ayrımı, sınır saat ve boş program,
+  preview sonrası program değişikliği, fresh-context DB değişmezliği,
+  time(7) tick/min/max gidiş-dönüşü ve gerçek PK/FK/NOT NULL/CHECK/UNIQUE.
+- `-Mode specifications`: önceki ön koşul/kredi kontrolleri korunur; artık
+  failures listesindeki belirli ilk neden kontrol edilir. Tam liste/sıra yeni
+  EligibilityChecks'te sınanır; aynı testler kopyalanmaz.
+- `-Mode core/full`: mevcut davranışlar. Full save-stage unique/FK ve batch ilk
+  INSERT sonrası rollback/rakip kayıt korunmasını aynen çalıştırır. SQL interceptor
+  tekli/50'li batch/önizlemede sekiz toplu SELECT'i; saat sorgularında WHERE ve
+  ilgili öğrenci/dönem JOIN'lerini doğrular. INSERT batching sayısı sabitlenmez.
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode eligibility`
+komutu bağımsız tekrar çalışır. Mutasyon öncesi LocalDB/test adı ve DB yokluğu
+kontrol edilir; sahipliği belirsiz DB kullanılmaz. Saat kayıtları açılışlardan
+önce, fixture kimlikleriyle finally temizlenir; başarısız temizlik ayrıca raporlanır.
+İzole DB şemaları korunur, sequence geri sarılmaz; geçici API kapatılır.
+`eligibility/core/specifications` sonunda sekiz uygulama tablosu boş olmalıdır;
+full sonunda yalnız başlangıç seed'i kalır. Uygulama/laboratuvar DB'si değişmez.
+Migration uygulama komutu ayrı ve yalnız app hedeflidir.
+
+Gerçek SQL metadata: `sql/app/verify-time-slots.sql`; optional rollback örneği:
+`sql/app/time-slot-example.sql` (yalnız işaretli full test DB'si). Önizlemede
+interceptor yalnız sekiz SELECT yakalar; satır sayısının değişmemesinden tek başına
+"sorgu yapılmadı" sonucu çıkarılmaz. Bu önizleme DB okur, rezervasyon yapmaz.

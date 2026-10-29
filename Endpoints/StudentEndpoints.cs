@@ -18,6 +18,7 @@ public static class StudentEndpoints
         });
         app.MapGet("/students/{id:int}/enrollments", ListEnrollmentsAsync);
         app.MapPost("/students/{id:int}/enrollments/batch", BatchEnrollmentEndpoint.CreateAsync);
+        app.MapPost("/students/{id:int}/enrollments/eligibility", BatchEnrollmentEndpoint.PreviewAsync);
     }
 
     public static async Task<IResult> CreateAsync(CreateStudentRequest request, UniversityDbContext db, CancellationToken ct)

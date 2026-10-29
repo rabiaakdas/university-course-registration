@@ -21,7 +21,7 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         if (await db.Enrollments.AnyAsync(e => e.StudentId == studentId && e.CourseOfferingId == offeringId, ct))
             return new SingleEnrollmentResult.Rejected(SingleEnrollmentFailure.Duplicate);
         var academic = await EvaluateAsync(studentId, [offering!], ct);
-        if (academic is not null) return new SingleEnrollmentResult.AcademicRejected(academic);
+        if (!academic.IsEligible) return new SingleEnrollmentResult.AcademicRejected(academic);
         var enrollment = new Enrollment { StudentId = studentId, CourseOfferingId = offeringId, CreatedAtUtc = DateTimeOffset.UtcNow };
         db.Enrollments.Add(enrollment);
         var failure = await SaveAsync(ct);
@@ -37,16 +37,10 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
 
     public async Task<BatchEnrollmentResult> CreateBatchAsync(int studentId, int[] offeringIds, CancellationToken ct)
     {
-        if (!await db.Students.AnyAsync(s => s.Id == studentId, ct))
-            return new BatchEnrollmentResult.Rejected(BatchEnrollmentFailure.StudentMissing);
-        var found = await Offerings(offeringIds).ToListAsync(ct);
-        if (found.Count != offeringIds.Length)
-            return new BatchEnrollmentResult.Rejected(BatchEnrollmentFailure.OfferingsMissing);
-        if (await db.Enrollments.AnyAsync(e => e.StudentId == studentId && offeringIds.Contains(e.CourseOfferingId), ct))
-            return new BatchEnrollmentResult.Rejected(BatchEnrollmentFailure.Duplicate);
-        var byId = found.ToDictionary(o => o.Id);
-        var academic = await EvaluateAsync(studentId, offeringIds.Select(id => byId[id]).ToArray(), ct);
-        if (academic is not null) return new BatchEnrollmentResult.AcademicRejected(academic);
+        var evaluation = await EvaluateBatchAsync(studentId, offeringIds, ct);
+        if (evaluation is EligibilityResult.Rejected rejected) return new BatchEnrollmentResult.Rejected(rejected.Reason);
+        var academic = ((EligibilityResult.Evaluated)evaluation).Evaluation;
+        if (!academic.IsEligible) return new BatchEnrollmentResult.AcademicRejected(academic);
         var now = DateTimeOffset.UtcNow;
         var enrollments = offeringIds.Select(offeringId => new Enrollment
             { StudentId = studentId, CourseOfferingId = offeringId, CreatedAtUtc = now }).ToArray();
@@ -63,6 +57,21 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         };
     }
 
+    // Shared preflight, always reads fresh data. No reservation, Add or SaveChanges here.
+    public async Task<EligibilityResult> EvaluateBatchAsync(int studentId, int[] offeringIds, CancellationToken ct)
+    {
+        if (!await db.Students.AnyAsync(s => s.Id == studentId, ct))
+            return new EligibilityResult.Rejected(BatchEnrollmentFailure.StudentMissing);
+        var found = await Offerings(offeringIds).ToListAsync(ct);
+        if (found.Count != offeringIds.Length)
+            return new EligibilityResult.Rejected(BatchEnrollmentFailure.OfferingsMissing);
+        if (await db.Enrollments.AnyAsync(e => e.StudentId == studentId && offeringIds.Contains(e.CourseOfferingId), ct))
+            return new EligibilityResult.Rejected(BatchEnrollmentFailure.Duplicate);
+        var byId = found.ToDictionary(o => o.Id);
+        var academic = await EvaluateAsync(studentId, offeringIds.Select(id => byId[id]).ToArray(), ct);
+        return new EligibilityResult.Evaluated(academic);
+    }
+
     private sealed record OfferingData(int Id, int CourseId, int AcademicTermId, int Credits);
     private IQueryable<OfferingData> Offerings(int[] ids) =>
         from offering in db.CourseOfferings
@@ -71,7 +80,7 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         select new OfferingData(offering.Id, offering.CourseId, offering.AcademicTermId, course.Credits);
 
     // Bounded projections, not whole tables. Evaluation order comes from the request.
-    private async Task<AcademicRejection?> EvaluateAsync(int studentId, OfferingData[] ordered, CancellationToken ct)
+    private async Task<AcademicEvaluation> EvaluateAsync(int studentId, OfferingData[] ordered, CancellationToken ct)
     {
         var courseIds = ordered.Select(o => o.CourseId).Distinct().ToArray();
         var required = await db.CoursePrerequisites.Where(p => courseIds.Contains(p.CourseId))
@@ -81,11 +90,6 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
             .Where(c => c.StudentId == studentId && prerequisiteIds.Contains(c.CourseId))
             .Select(c => c.CourseId).ToArrayAsync(ct);
         var byCourse = required.ToLookup(p => p.CourseId, p => p.PrerequisiteCourseId);
-        var prerequisites = new PrerequisitesSatisfiedSpecification();
-        foreach (var offering in ordered)
-            if (!prerequisites.IsSatisfiedBy(new PrerequisiteInput(byCourse[offering.CourseId], completed)))
-                return new AcademicRejection.PrerequisiteNotSatisfied(offering.Id);
-
         var termIds = ordered.Select(o => o.AcademicTermId).Distinct().ToArray();
         var loads = await (from enrollment in db.Enrollments
             join offering in db.CourseOfferings on enrollment.CourseOfferingId equals offering.Id
@@ -94,15 +98,21 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
             group course by offering.AcademicTermId into term
             select new { TermId = term.Key, Credits = term.Sum(c => (long)c.Credits) })
             .ToDictionaryAsync(x => x.TermId, x => x.Credits, ct);
-        var creditLimit = new CreditLimitSpecification();
-        // LINQ-to-Objects GroupBy preserves first-seen term order in this ordered input.
-        foreach (var term in ordered.GroupBy(o => o.AcademicTermId))
-        {
-            var requested = term.Sum(o => (long)o.Credits); // At most 50 positive Int32 values.
-            if (!creditLimit.IsSatisfiedBy(new CreditLoad(loads.GetValueOrDefault(term.Key), requested, policy.MaxCreditsPerTerm)))
-                return new AcademicRejection.CreditLimitExceeded(term.Key);
-        }
-        return null;
+        var ids = ordered.Select(o => o.Id).ToArray();
+        var newSlots = await db.CourseOfferingTimeSlots.Where(s => ids.Contains(s.CourseOfferingId))
+            .Select(s => new { s.CourseOfferingId, s.Day, s.StartsAt, s.EndsAt }).ToListAsync(ct);
+        var oldSlots = await (from enrollment in db.Enrollments
+            join offering in db.CourseOfferings on enrollment.CourseOfferingId equals offering.Id
+            join slot in db.CourseOfferingTimeSlots on offering.Id equals slot.CourseOfferingId
+            where enrollment.StudentId == studentId && termIds.Contains(offering.AcademicTermId)
+            select new { offering.Id, offering.AcademicTermId, slot.Day, slot.StartsAt, slot.EndsAt }).ToListAsync(ct);
+        var slotsByOffering = newSlots.ToLookup(s => s.CourseOfferingId);
+        var requested = ordered.Select(o => new OfferingEligibility(
+            new OfferingSchedule(o.Id, o.AcademicTermId, slotsByOffering[o.Id].Select(s => new WeeklyTimeSlot(s.Day, s.StartsAt, s.EndsAt))),
+            o.Credits, new PrerequisiteInput(byCourse[o.CourseId], completed))).ToArray();
+        var existing = oldSlots.GroupBy(s => new { s.Id, s.AcademicTermId }).Select(g =>
+            new OfferingSchedule(g.Key.Id, g.Key.AcademicTermId, g.Select(s => new WeeklyTimeSlot(s.Day, s.StartsAt, s.EndsAt)))).ToArray();
+        return AcademicEligibility.Evaluate(requested, loads, existing, policy.MaxCreditsPerTerm);
     }
 
     private enum WriteFailure { Duplicate, StudentRemoved, OfferingRemoved }

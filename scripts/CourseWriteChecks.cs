@@ -19,6 +19,7 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "eligibility" or "full") EligibilityChecks.Unit();
 if (mode is "specifications" or "full")
 {
     SpecificationChecks.Unit();
@@ -137,19 +138,20 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications")
+if (mode is "core" or "specifications" or "eligibility")
 {
     try
     {
         await using (var db = Db()) await db.Database.MigrateAsync();
         await StartApi();
         if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
-        else await SpecificationChecks.Run(Db, Send);
+        else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
+        else await EligibilityChecks.Run(Db, Send);
         await using var verify = Db();
         Check(await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
             && await verify.CourseOfferings.CountAsync() == 0 && await verify.AcademicTerms.CountAsync() == 0
             && await verify.Courses.CountAsync() == 0 && await verify.CoursePrerequisites.CountAsync() == 0
-            && await verify.StudentCompletedCourses.CountAsync() == 0, "Core fixture residue");
+            && await verify.StudentCompletedCourses.CountAsync() == 0 && await verify.CourseOfferingTimeSlots.CountAsync() == 0, "Core fixture residue");
         Check(!verify.Database.HasPendingModelChanges(), "Model/snapshot mismatch");
         Check(!(await verify.Database.GetPendingMigrationsAsync()).Any(), "Pending migration");
         Console.WriteLine("PASS: empty test tables; migration/model alignment");
@@ -278,7 +280,10 @@ try
     await EnrollmentChecks.Run(Db, Send, StopApi, StartApi, SqlFile);
     await BatchEnrollmentChecks.Run(Db, Send, StopApi, StartApi);
     await SpecificationChecks.Run(Db, Send);
+    await EligibilityChecks.Run(Db, Send);
     await SqlFile("sql/app/academic-example.sql");
+    await SqlFile("sql/app/time-slot-example.sql");
+    await SqlFile("sql/app/time-slot-example.sql");
     await Run("pwsh", "-NoProfile", "-File", "scripts/verify-http.ps1", "-Port", (port+1).ToString());
 }
 finally
