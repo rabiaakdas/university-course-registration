@@ -1,10 +1,12 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk on üç gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk on dört gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
 endpoint'leri DB kullanır; dönem ve açılış oluşturma da desteklenir.
+Güncel kayıt akışında doğrudan ön koşullar ve dönemlik kredi sınırı uygulanır.
+Önceki gün başlıkları o günkü kapsamı anlatır; güncel akademik kurallar aşağıdaki 14. gün bölümündedir.
 
 ## Ön koşullar ve çalıştırma
 
@@ -1019,3 +1021,70 @@ powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode factories
 Bu mod DB gerektirmez. Mevcut unit/core/full modları da deneyleri çalıştırır.
 [Karşılaştırma ve öğrenme notu](docs/day13-factories.md) ·
 [ADR 0013](docs/adr/0013-factory-alternatives.md).
+
+## 14. gün — Ön koşul ve dönemlik kredi sınırı
+
+Tekli ve batch kayıt önce mevcut varlık/mükerrer kontrollerini, sonra doğrudan
+ön koşulu, ardından dönemlik krediyi değerlendirir. Enrollment başarı değildir;
+StudentCompletedCourse ayrı başarı kaydıdır. Batch'te ön koşul dersini seçmek
+onu tamamlamak sayılmaz. CoursePrerequisite doğrudan ilişkiyi tutar; self CHECK
+bütün döngüleri engellemez. Geniş akademik CRUD endpoint'i eklenmedi.
+
+Açık örnek sunucu politikası `appsettings.json` içindedir:
+
+```json
+{"EnrollmentPolicy":{"MaxCreditsPerTerm":30}}
+```
+
+Eksik/geçersiz/pozitif olmayan ayarda uygulama başlangıcı başarısızdır; sınırsız
+fallback yoktur. Ortam değişkeni karşılığı `EnrollmentPolicy__MaxCreditsPerTerm`.
+İstemci limit gönderemez. 30 bir örnek proje politikasıdır, üniversite yönetmeliği
+iddiası değildir. Güncel Course.Credits kullanılır; değişmesi geçmiş kayıt yükünü
+etkiler. Her mevcut Enrollment (aynı dersin iki şubesi dahil) kredi yüküdür.
+Dönemler ayrı hesaplanır; yeni batch seçimleri kendi döneminde birlikte toplanır.
+
+Yeni retler 400 Problem Details'tir:
+
+```json
+{"status":400,"title":"Ders ön koşulu sağlanmadı.","code":"prerequisite_not_satisfied","courseOfferingId":101}
+```
+
+```json
+{"status":400,"title":"Dönemlik kredi sınırı aşılıyor.","code":"credit_limit_exceeded","academicTermId":1}
+```
+
+Örnekler `detail` gibi standart Problem Details alanlarını kısaltır. İlk retle
+durulur; ön koşul açılışları ve dönemler istek sırasıyla değerlendirilir. Önceden
+kayıt409 ve mevcut404/alan400/FK/unique sözleşmeleri korunur. Retlerde yeni kayıt
+yoktur; başarılı batch tek SaveChanges kullanır. **İki eşzamanlı istek aynı yükü
+okuyabilir:** kredi kontrolü eşzamanlı aşımı kesin engellemez. Kontenjan, saat
+çakışması, danışman istisnası ve dolaylı ön koşul zinciri yoktur.
+
+Repo kökünde, uygulama yazmalarını durdurup hedefin app DB'si olduğunu doğrulayın.
+Mevcut güvenli bağlantı yapılandırması tasarım zamanı araçları tarafından da okunur;
+parola komutlara/dosyalara gömülmez. Lab migration hedefi değildir.
+
+```powershell
+dotnet tool restore
+dotnet ef migrations script AddStudentsAndEnrollments AddPrerequisitesAndCompletedCourses --output obj/day14-migration.sql
+# SQL'i inceleyin; iki yeni tablo/PK/FK/CHECK/index dışında değişiklik yoktur.
+dotnet ef database update
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -i sql/app/verify.sql
+dotnet run --project .\UniversityRegistration.csproj --urls http://127.0.0.1:5080
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode specifications
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Varsayılan `sql/app/seed.sql` akademik ilişki eklemez. Opsiyonel
+`sql/app/academic-example.sql`, **yalnız test runner'ın sahiplik işaretli day6
+DB'sinde** çalışır (app/lab'de hata verir): `sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d <runner-test-db> -b -f 65001 -i sql/app/academic-example.sql`.
+Sentetik kayıtları kendi üretir, kimlikleri OUTPUT ile kontrol eder ve rollback
+ile kaldırır. Tekrar koşmak kullanıcı verisini ezmez; sequence boşlukları normaldir.
+Full modu bu örneği de doğrular. Gerçek öğrenciye keyfi başarı kaydı verilmez.
+
+[Öğrenme notu ve kod bağlantıları](docs/day14-specifications.md) ·
+[ADR 0014](docs/adr/0014-academic-specifications.md).

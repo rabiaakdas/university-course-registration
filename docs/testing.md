@@ -123,3 +123,27 @@ powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode factories -Pr
 Factories modu DB bağlantısı veya API süreci oluşturulmadan döner. Probe kalıcı
 bozuk test değildir; açıkça seçildiğinde kontrollü assertion hatası üretir.
 Önceki preview DB bağımsızlığı ve core/full güvenli LocalDB temizliği korunur.
+
+## 14. gün — Akademik specification kontrolleri
+
+`SpecificationChecks.Unit` unit/core moduna saf koşulları ekler; `-Mode specifications`
+birim + başlangıç ayarı + yeni izole DB'de gerçek HTTP/kısıt/SQL kontrollerini
+çalıştırır. Full bunları mevcut regresyonlarla birlikte yeniden kullanır.
+
+`PrerequisiteInput` dış koleksiyon değişikliğine karşı kopya, null/kimlik
+koşulları; CreditLoad negatif/sıfır sınırları ve long uçları sınanır. Başlangıç
+testleri boş content root ve özel süreç ortamıyla eksik/boş/bozuk/0/negatif/taşan
+ayarları sınar; gerçek ayar dosyası değişmez, hata çıktısı loglanmaz.
+
+HTTP testleri Enrollment≠başarı, başka öğrenci başarısı, batch seçimi≠tamamlama,
+fail-fast sırası, dönem ayrımı, 24+6 kabul/24+7 ret, iki4kredi batch reddi ve
+çok dönemli kısmi yazmama durumlarını yeni context üzerinden doğrular. SQL capture
+başarılı yolda altı SELECT ve WHERE/JOIN/GROUP BY/SUM(bigint) kanıtını bellekte
+inceler. Büyük mevcut yük Int32 üstünde de denenir. PK/FK/selfCHECK retleri tam
+SQL numarası ve nesne adıyla sınanır; dolaylı döngünün kabulü sınırı gösterilir.
+
+Eski 50 öğelik batch fixture'ı on yeni test dönemine beşer 4 kredi açılış dağıtır;
+kredi politikası 30 kalır. Tekli/batch fault kontrolleri üç yerine altı toplu
+sorgudan sonra aynı gerçek yazma hatalarına ulaşır. Cleanup yeni ilişki tablolarını
+üst kayıtlardan önce kaldırır; yalnız üretilen test kimlikleri hedeflenir. Varsayılan
+seed değişmedi. Full içindeki rollback-only akademik SQL örneği tekrar güvenlidir.

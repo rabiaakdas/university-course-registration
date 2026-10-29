@@ -137,6 +137,25 @@ namespace UniversityRegistration.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.CoursePrerequisite", b =>
+                {
+                    b.Property<int>("CourseId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PrerequisiteCourseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("CourseId", "PrerequisiteCourseId")
+                        .HasName("PK_CoursePrerequisites");
+
+                    b.HasIndex("PrerequisiteCourseId");
+
+                    b.ToTable("CoursePrerequisites", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CoursePrerequisites_NotSelf", "[CourseId] <> [PrerequisiteCourseId]");
+                        });
+                });
+
             modelBuilder.Entity("UniversityRegistration.Models.Enrollment", b =>
                 {
                     b.Property<int>("Id")
@@ -194,6 +213,22 @@ namespace UniversityRegistration.Data.Migrations
                     b.ToTable("Students", (string)null);
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.StudentCompletedCourse", b =>
+                {
+                    b.Property<int>("StudentId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CourseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("StudentId", "CourseId")
+                        .HasName("PK_StudentCompletedCourses");
+
+                    b.HasIndex("CourseId");
+
+                    b.ToTable("StudentCompletedCourses", (string)null);
+                });
+
             modelBuilder.Entity("UniversityRegistration.Models.CourseOffering", b =>
                 {
                     b.HasOne("UniversityRegistration.Models.AcademicTerm", null)
@@ -211,6 +246,23 @@ namespace UniversityRegistration.Data.Migrations
                         .HasConstraintName("FK_CourseOfferings_Courses");
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.CoursePrerequisite", b =>
+                {
+                    b.HasOne("UniversityRegistration.Models.Course", null)
+                        .WithMany()
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CoursePrerequisites_Courses");
+
+                    b.HasOne("UniversityRegistration.Models.Course", null)
+                        .WithMany()
+                        .HasForeignKey("PrerequisiteCourseId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CoursePrerequisites_PrerequisiteCourses");
+                });
+
             modelBuilder.Entity("UniversityRegistration.Models.Enrollment", b =>
                 {
                     b.HasOne("UniversityRegistration.Models.CourseOffering", null)
@@ -226,6 +278,23 @@ namespace UniversityRegistration.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_Enrollments_Students");
+                });
+
+            modelBuilder.Entity("UniversityRegistration.Models.StudentCompletedCourse", b =>
+                {
+                    b.HasOne("UniversityRegistration.Models.Course", null)
+                        .WithMany()
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_StudentCompletedCourses_Courses");
+
+                    b.HasOne("UniversityRegistration.Models.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_StudentCompletedCourses_Students");
                 });
 #pragma warning restore 612, 618
         }

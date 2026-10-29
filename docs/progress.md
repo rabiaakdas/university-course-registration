@@ -768,3 +768,83 @@ varsayımsal ihtiyaca altyapı eklenmedi. Yeni aile/yeni ürün türü maliyeti 
 
 **Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^refactor: clarify priority creation and factory alternatives$"`
 ile bulunur. Push sonucu son raporda verilir; hash için ek commit yoktur.
+
+## Gün 14 — Specification: ön koşul ve dönemlik kredi sınırı
+
+**İnceleme:** Repo/main temizdi, gerçek HEAD 7bde90e idi. EF/SDK araçları mevcut
+10.0.14/10.0.401 olarak korundu. App DB'de dört migration ve beş uygulama tablosu
+vardı. Tekli/batch varlık/mükerrer kontrolleri, sonuç türleri ve eski fault/test
+verileri incelendi. Önceki 50 seçimli testin aynı dönemde 200 kredi istediği
+belirlendi; sınırı kapatmak yerine test dönemleri ayrıldı.
+
+**Modeller/migration:** CoursePrerequisite (CourseId,PrerequisiteCourseId) ve
+StudentCompletedCourse (StudentId,CourseId) birleşik PK'li iki tablo eklendi.
+Dört zorunlu FK NO ACTION; doğrudan self-prerequisite CHECK. Kimlik stratejileri,
+önceki migration'lar ve varsayılan seed değişmedi. Yeni migration
+`20261029103645_AddPrerequisitesAndCompletedCourses`: Up/Down, snapshot farkı ve
+üretilen SQL incelendi; yalnız iki tablo, iki ilişki index'i, anahtar/kısıtlar ve
+migration geçmişi ekleniyor. Down iki yeni tabloyu kaldırır; çalıştırılmadı.
+
+**Uygulama:** Saf PrerequisitesSatisfiedSpecification ve CreditLimitSpecification;
+FrozenSet'e savunmacı kopyalanan pozitif kimlikler, null sözleşmesi, kontrollü long
+kredi girdisi. Taşmasız limit-current karşılaştırması. EnrollmentPolicy ayarı
+Program'da başlangıçta doğrulanır; appsettings açık örnek30 içerir, fallback yok.
+EnrollmentOperations seçilmiş açılış/dersten metadata, gerekli ön koşul/başarı ve
+ilgili öğrenci/dönem yükünü toplu hazırlar. SQL SUM girdisi bigint'tir. Önce
+istek sırasındaki ön koşul, sonra ilk görünme sırasındaki dönem: ilk retle durur.
+AcademicRejection HTTP'den bağımsızdır; endpoint400 Problem Details code ve ilgili
+kimliği üretir. Eski409/404/alan400 ve FK/unique sınıflandırması korunur.
+
+**Gerçek birim/başlangıç sonuçları:** Restore/build başarılı, 0 uyarı/0 hata.
+Boş/tek/eksik/tam/fazla tamamlanan ön koşul, dış liste değişimi, null/kimlik
+kuralları geçti. 24+5/6 kabul,24+7 ret; mevcut sınırüstü ret;0 ve long uçları
+geçti. Eksik/boş/bozuk/sıfır/negatif/Int64 taşan ayarlar ayrı API süreçlerinde
+anlaşılır başlangıç hatası verdi. Geçerli30 ayarı HTTP regresyonlarında çalıştı.
+
+**Gerçek HTTP/DB/SQL sonuçları:**
+
+- Specifications ilk koşusu: `university_registration_tests_day6_c88c89e5cd344b2da40d26188ce44d72`.
+  Son ek fail-fast assertion'ıyla yeniden koşu:
+  `university_registration_tests_day6_fbd3353eaa954fa19ef2803a64649f91`; ikisi geçti.
+- Enrollment'ın tamamlanma sayılmaması, başka öğrencinin başarısının kullanılmaması,
+  başarı kaydıyla kabul ve aynı batch ön koşul seçiminin reddi geçti. Eksik ön
+  koşul400/code/açılış, kredi400/code/dönem kimlikleri doğru; ret sonrasında yeni
+  context'te bütün eski kayıtlar korunuyor ve kısmi kayıt yok.
+- Tam30 kabul,24+7 ret,24+4+4 toplu ret, başka dönem ayrımı, çok dönemli bir aşımda
+  bütün batch reddi, aynı dersin iki şubesinin iki kez sayılması geçti. İstek
+  sırası fail-fast kimliğini belirledi. İki koşul birlikte reddettiğinde prerequisite
+  önce döndü. Başarılı tekli Location/detail ve batch yanıt sırası korundu.
+- Gerçek SQL capture altı SELECT; filtreli JOIN/GROUP BY/SUM(bigint) doğrulandı.
+  Int32'yi aşan mevcut yük de500/taşma yerine kredi reddi verdi. Satır/kural başına
+  sorgu yok. Önceki üç sorguya üç toplu akademik sorgu maliyeti eklendi.
+- Her iki ilişki PK tekrarı2627, dört FK547 ve selfCHECK547 doğru nesne adıyla
+  reddedildi. İki derslik dolaylı döngü kabul edildi: CHECK'in sınırı açıkça gözlendi.
+- Unit/core/full ve full içindeki preview/factory/SQL/tracking/transaction regresyonları
+  geçti. Core: `university_registration_tests_day10_c16e6dfa58aa44a2830a0fa285ab88a9`.
+  Full: `university_registration_tests_day6_cc72f60bca4541c792cacc1faca210e2`.
+  50 öğe, 10 dönem × 5 açılış × 4 kredi ile başarılı; sınır30 kaldı. Gerçek single/batch
+  unique/FK save dalları ve ilk INSERT sonrası batch rollback/rakip commit koruma
+  aynı interceptor deneyleriyle geçti. Altı sorgu assertion'ı yeni ihtiyaca göre
+  güncellendi, gerçek hata assertion'ları gevşetilmedi.
+- Opsiyonel SQL full içinde ve ardından iki ardışık koşuda sentetik kimliklerini OUTPUT ile aldı, ilişkileri doğruladı ve
+  rollback yaptı. Seed tekrarı/23 eski SQL kısıt kontrolü de full içinde geçti.
+
+**Uygulama DB sonucu:** Yalnız `university_registration_app` açık hedefiyle
+migration uygulandı; ikinci update no-op. has-pending-model-changes fark bulmadı.
+verify.sql yeni kolon/birleşikPK/NO ACTION/CHECK metadata dahil geçti. App sayıları
+2 ders/2 dönem/3 açılış/0 öğrenci/0 kayıt olarak korundu; iki yeni tablo 0 satırdır.
+Örnek başarı verisi gerçek uygulama öğrencilerine yazılmadı; lab hedeflenmedi.
+
+**Temizlik/sınırlar:** İzole test ilişkileri üst kayıtlardan önce yalnız fixture
+kimlikleriyle temizlendi; core/specifications yedi tablo boş, full seed ile kaldı.
+Test DB şemaları tutulur, sequence geri sarılmaz. Geçici süreçler kapandı. Down,
+cleanup arızası ve eşzamanlı kredi aşımını engelleme testi yapılmadı; sonuncusu
+ürün garantisi değildir. İki istek aynı yükü okuyabilir. Ön koşullar yalnız doğrudan,
+kredi güncel Course.Credits üzerinden; değişirse eski yük değişir. Kontenjan,
+not/transkript, dolaylı döngü, kilit/serializable/token/retry eklenmedi. Engel yok.
+
+**Sıradaki gün:** Birleşik kurallar ve açıklanabilir ret nedenleri; saat çakışması
+ve toplu uygunluk sonucu.
+
+**Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^feat: enforce prerequisite and credit specifications$"`
+ile bulunur. Push sonucu son raporda bildirilir; hash için ek commit yoktur.

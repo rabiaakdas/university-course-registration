@@ -11,6 +11,9 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
     public DbSet<Student> Students => Set<Student>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
 
+    public DbSet<CoursePrerequisite> CoursePrerequisites => Set<CoursePrerequisite>();
+    public DbSet<StudentCompletedCourse> StudentCompletedCourses => Set<StudentCompletedCourse>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasSequence<int>("CourseIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
@@ -71,5 +74,20 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Enrollments_Students");
         enrollment.HasOne<CourseOffering>().WithMany().HasForeignKey(x => x.CourseOfferingId)
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Enrollments_CourseOfferings");
+        var prerequisite = modelBuilder.Entity<CoursePrerequisite>();
+        prerequisite.ToTable("CoursePrerequisites", table => table.HasCheckConstraint("CK_CoursePrerequisites_NotSelf", "[CourseId] <> [PrerequisiteCourseId]"));
+        prerequisite.HasKey(x => new { x.CourseId, x.PrerequisiteCourseId }).HasName("PK_CoursePrerequisites");
+        prerequisite.HasOne<Course>().WithMany().HasForeignKey(x => x.CourseId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_CoursePrerequisites_Courses");
+        prerequisite.HasOne<Course>().WithMany().HasForeignKey(x => x.PrerequisiteCourseId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_CoursePrerequisites_PrerequisiteCourses");
+
+        var completed = modelBuilder.Entity<StudentCompletedCourse>();
+        completed.ToTable("StudentCompletedCourses");
+        completed.HasKey(x => new { x.StudentId, x.CourseId }).HasName("PK_StudentCompletedCourses");
+        completed.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_StudentCompletedCourses_Students");
+        completed.HasOne<Course>().WithMany().HasForeignKey(x => x.CourseId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_StudentCompletedCourses_Courses");
     }
 }

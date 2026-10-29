@@ -6,6 +6,10 @@ using Microsoft.AspNetCore.Diagnostics;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+if (!long.TryParse(builder.Configuration["EnrollmentPolicy:MaxCreditsPerTerm"],
+    System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var creditLimit) || creditLimit <= 0)
+    throw new InvalidOperationException("EnrollmentPolicy:MaxCreditsPerTerm zorunludur ve pozitif bir Int64 olmalıdır.");
+builder.Services.AddSingleton(new EnrollmentPolicy(creditLimit));
 var connectionString = builder.Configuration.GetConnectionString("UniversityDatabase");
 if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");

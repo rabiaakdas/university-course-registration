@@ -17,6 +17,7 @@ public static class BatchEnrollmentEndpoint
         }
         if (messages.Count > 0) return Results.ValidationProblem(new Dictionary<string, string[]> { ["courseOfferingIds"] = messages.ToArray() });
         var result = await operations.CreateBatchAsync(id, ids!, ct);
+        if (result is BatchEnrollmentResult.AcademicRejected academic) return AcademicRejectionHttp.Problem(academic.Rejection);
         if (result is BatchEnrollmentResult.Created created)
             return Results.Json(new BatchEnrollmentResponse(created.Items), statusCode: StatusCodes.Status201Created);
         return ((BatchEnrollmentResult.Rejected)result).Reason switch

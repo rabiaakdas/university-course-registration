@@ -10,6 +10,7 @@ public abstract record SingleEnrollmentResult
 {
     private SingleEnrollmentResult() { }
     public sealed record Created(EnrollmentResponse Enrollment) : SingleEnrollmentResult;
+    public sealed record AcademicRejected(AcademicRejection Rejection) : SingleEnrollmentResult;
     public sealed record Rejected(SingleEnrollmentFailure Reason) : SingleEnrollmentResult;
 }
 
@@ -17,5 +18,6 @@ public abstract record BatchEnrollmentResult
 {
     private BatchEnrollmentResult() { }
     public sealed record Created(IReadOnlyList<EnrollmentResponse> Items) : BatchEnrollmentResult;
+    public sealed record AcademicRejected(AcademicRejection Rejection) : BatchEnrollmentResult;
     public sealed record Rejected(BatchEnrollmentFailure Reason) : BatchEnrollmentResult;
 }
