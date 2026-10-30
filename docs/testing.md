@@ -204,3 +204,26 @@ State modunda sekiz tablo boş kalır; full sonunda seed dışında veri kalmama
 Hata exit code'u üst çalıştırıcıya taşınır. `sql/app/verify-enrollment-lifecycle.sql`
 yeni kolon/default/CHECK metadata kontrolüdür. Down ve eşzamanlı geçiş garantisi
 sınanmış değildir; ikinci garanti ürün kapsamında da yoktur.
+
+## Gün 17 — Decorator gözlemi
+
+| Sınır | Kontrol / komut | Kanıt |
+|---|---|---|
+| Saf birim | `-Mode unit`, `DecoratorChecks.Run` | Aynı sonuç referansı/ret sırası, tek çağrı; Event1701, outcome/count/süre; aynı exception/stack |
+| Üretim dışı deney | Aynı unit veya `-Mode decorator` | TCS ile await/result/fault/cancel; iki sarma sırası ve finally |
+| Gerçek HTTP + LocalDB + DI | `-Mode decorator` | EligibilityChecks ve StateChecks yeniden kullanılır; başarılı/retli preview, create/batch/submit/approve logları; erken retlerde log yok; JSON değişmez |
+| SQL/fault regresyonu | `-Mode full` | Mevcut unique/FK, batch ilk INSERT sonrası rollback ve rakip kayıt korunması; doğrudan işlem kontrolleri de timing üzerinden |
+
+Yeni test framework'ü yoktur. Runner sadece iki test kaynağını geçici console
+projesine dahil eder. Saf mod DB istemez; decorator modu diğer gerçek kontrollerle
+aynı yeni ve adı doğrulanmış LocalDB yaklaşımını kullanır. Eligibility/state
+fixture'ları sonunda sekiz tablo boş; full yalnız seed bırakır. App/lab hedeflenmez.
+SQL sayacı artık sarmalanmış evaluator kullanan işlemde yine sekiz hazırlık
+SELECT'i bekler; yeni ölçüm DB erişmez. SQL logu dosyaya yazılmaz.
+
+Gerçek HTTP log gözlemcisi test API'sinde JSON console formatter açar; yalnız
+Event1701 alanlarını ve istek-bitme sayaçlarını bellekte tutar. RequestFinished
+sıra bariyeri ile serial senaryoları kontrol eder; eşzamanlı full senaryolarında
+bu serial gözlemci etkin değildir. Logger sağlayıcısı arızası simüle edilmez.
+Alt komut hata kodu üst PowerShell'e taşınır; `unit -ProbeFailure` kontrollü
+başarısızlık denemesidir, kalıcı bozuk test yoktur.

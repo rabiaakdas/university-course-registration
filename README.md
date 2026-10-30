@@ -1298,3 +1298,44 @@ satır için tekrar başvuru/ders bırakma, audit/outbox ve bildirim yoktur. Dow
 
 [Öğrenme notu](docs/day16-enrollment-state.md) ·
 [ADR](docs/adr/0016-controlled-enrollment-lifecycle.md) · [Test kılavuzu](docs/testing.md)
+
+## Gün 17 — Akademik hesaplama süresi
+
+`IAcademicEligibilityEvaluator`, hazırlanmış verilerle çalışan senkron sözleşmedir.
+`AcademicEligibility` saf kuralları uygular; `TimingAcademicEligibilityEvaluator`
+aynı sonucu değiştirmeden iletir. `Program.cs` somut değerlendiriciyi ve onu saran
+interface kaydını scoped kurar. `EnrollmentOperations.EvaluateAsync` DB hazırlığını
+bitirdikten sonra bu interface'i çağırır: oluşturma, batch, eligibility, submit ve
+approve ortak sınırı kullanır. Erken girdi/varlık/mükerrer retlerinde hesaplama yoktur.
+
+Yapılandırılmış log: EventId **1701**, adı **AcademicEligibilityCalculation**;
+`ElapsedMs`, `Outcome` (`eligible`, `ineligible`, `failed`), `FailureCount`.
+Sonuç üretilemediyse sayı null'dır; akademik ret teknik hata değildir. Süre yalnız
+**akademik değerlendirme hesaplama süresi**dir. DB sorguları, SaveChanges,
+HTTP yanıtının gönderilmesi ve toplam istek süresi dahil değildir. Log yayımı
+Stopwatch durduktan sonradır. Bu ölçüm benchmark veya süre garantisi değildir.
+
+Sonuç/ret sırası, exception akışı, JSON sözleşmeleri, durumlar ve batch'in tek
+SaveChanges sınırı korunur. Yeni migration/paket yoktur. Log sağlayıcısı hata
+atarsa sonucu veya asıl hatayı gölgeleyebilir; genel fallback kurulmadı.
+
+Repo kökünden (mevcut bağlantı ve kredi politikası yapılandırmasıyla):
+
+```powershell
+dotnet restore
+dotnet build
+dotnet run --project .\UniversityRegistration.csproj
+# Ayrı terminal:
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode decorator
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes
+```
+
+`unit` saf decorator/async/sıra deneylerini DB olmadan çalıştırır. `decorator`,
+mevcut eligibility ve state senaryolarını yeni izole LocalDB'de yeniden kullanır;
+gerçek API'nin yapılandırılmış konsol olaylarını bellekten doğrular. Log dosyası
+üretmez. Deneyler `scripts` altındadır ve web derlemesine/DI'a dahil değildir.
+[Test düzeni](docs/testing.md) · [Öğrenme notu](docs/day17-decorator.md) ·
+[ADR](docs/adr/0017-academic-timing-decorator.md)

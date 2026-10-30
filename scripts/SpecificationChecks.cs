@@ -163,7 +163,7 @@ internal static class SpecificationChecks
             {
                 var capture=new CatalogSqlCapture();
                 await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
-                var result=await new EnrollmentOperations(db,new EnrollmentPolicy(30)).CreateBatchAsync(sqlStudent,[O(1),O(2)],default);
+                var result=await new EnrollmentOperations(db,new EnrollmentPolicy(30),DecoratorChecks.TimedEvaluator()).CreateBatchAsync(sqlStudent,[O(1),O(2)],default);
                 Check(result is BatchEnrollmentResult.Created,"direct operation succeeds");
                 var reads=capture.Commands.Where(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase)).ToArray();
                 Check(reads.Length==8,"eight bulk queries independent of selection count");

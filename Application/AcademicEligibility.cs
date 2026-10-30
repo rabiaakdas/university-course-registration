@@ -22,9 +22,9 @@ public sealed class OfferingSchedule
 public sealed record OfferingEligibility(OfferingSchedule Schedule, int Credits, PrerequisiteInput Prerequisites);
 
 // Pure evaluation: no EF, SQL or HTTP. Inputs are prepared for this request only.
-public static class AcademicEligibility
+public sealed class AcademicEligibility : IAcademicEligibilityEvaluator
 {
-    public static AcademicEvaluation Evaluate(IReadOnlyList<OfferingEligibility> requested,
+    public AcademicEvaluation Evaluate(IReadOnlyList<OfferingEligibility> requested,
         IReadOnlyDictionary<int, long> currentCredits, IReadOnlyList<OfferingSchedule> existing, long limit)
     {
         ArgumentNullException.ThrowIfNull(requested);

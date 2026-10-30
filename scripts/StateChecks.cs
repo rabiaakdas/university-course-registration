@@ -199,7 +199,7 @@ internal static class StateChecks
             await using(var template=factory())
             {
                 var capture=new CatalogSqlCapture();await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
-                await new EnrollmentOperations(db,new(30)).EvaluateBatchAsync(rejected,[offers[4].Id],default);
+                await new EnrollmentOperations(db,new(30),DecoratorChecks.TimedEvaluator()).EvaluateBatchAsync(rejected,[offers[4].Id],default);
                 var reads=capture.Commands.Where(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase)).ToArray();
                 Check(reads.Length==8 && reads.Where(c=>c.Text.Contains("SUM(") || c.Text.Contains("CourseOfferingTimeSlots") && c.Text.Contains("Enrollments")).All(c=>c.Text.Contains("Status")),"bounded bulk SQL with active status filters");
             }

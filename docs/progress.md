@@ -1017,3 +1017,61 @@ ve yetkiyi sağlamaz. Başarılı kontroller yalnız sınanan davranışları ka
 
 **Commit/push:** Kaydı içeren kimlik `git log --format=%H --grep="^feat: add controlled enrollment state transitions$"`
 ile bulunur. Push sonucu son raporda; hash için ikinci commit üretilmez.
+
+## Gün 17 — Decorator ve davranış sırası
+
+**Üretim:** `IAcademicEligibilityEvaluator` gerçek hazırlanmış giriş/sonuç
+sözleşmesini sunar. AcademicEligibility statik yerine saf somut uygulama oldu;
+kurallar değişmedi. TimingAcademicEligibilityEvaluator her çağrıda yerel Stopwatch,
+tek iç çağrı ve finally ile Event1701/ElapsedMs/Outcome/nullable FailureCount
+üretir. Program scoped somut + sarmalanmış interface kaydını açık kurar.
+EnrollmentOperations yalnız DB hazırlığı sonrasında interface'i çağırır.
+
+**Deney/test:** DecoratorChecks aynı sonuç referansı, tek çağrı, aynı exception ve
+orijinal stack, log alanları ve gerçek evaluator ret sırasını sınar. Üretim dışı
+async deney TCS ile bekleme/sonuç/hata/iptali; sıra deneyi iki iç içe düzenin başarı
+ve finally hata yolunu gösterir. Yeni paket/framework yoktur. `decorator` modu
+mevcut EligibilityChecks/StateChecks senaryolarını kopyalamadan kullanır;
+EvaluationLogObserver gerçek API JSON console olaylarını bellekten okur.
+Eski doğrudan işlem/fault kontrolleri de test yardımcı timing evaluator'ına bağlandı.
+
+**Gerçek sonuçlar (30 Ekim 2026):**
+- SDK10.0.401/net10.0; paketler değişmedi. Restore başarılı, build0 uyarı/0 hata.
+  İlk test derlemesinde test logger sınıfı/metot adı çakışması düzeltildi;
+  sonraki unit ve full derlemeleri/kontrolleri başarılıdır.
+- `unit`: sonuç kimliği, eligible/ineligible/failed alanları, nullable failure
+  count, tek kayıt, aynı exception/stack; async success/fault/cancel ve iki sıra
+  başarılı. Önceki saf kurallar/pattern/durum kontrolleri de geçti.
+- `decorator`: yeni izole LocalDB üzerinde gerçek DI + HTTP; preview, tekli/batch
+  oluşturma, submit/approve yollarında50 hesaplama olayı doğrulandı. Uygun/uygunsuz
+  outcome ve failure sayısı doğru; erken retlerde olay yok; HTTP'de elapsedMs yok.
+  Eligibility ret içeriği/sırası ve state/restart davranışları korundu.
+- `core`, `specifications`, `eligibility`, `state`, `full` ayrı çalıştırıldı ve
+  geçti. Full gerçek unique/FK yarış dalları, ilk INSERT sonrası batch rollback
+  ve başka context'in kesinleşmiş rakip satırının korunmasını yeniden doğruladı.
+  Öncelik preview DB bağımsızlığı, katalog SQL/tracking, transaction A/B/C/D,
+  seed tekrarı ve üç liste endpoint'i regresyonları da geçti.
+- Gerçek SQL interceptor kontrolleri sarmalanmış evaluator kullanan işlemde
+  sekiz toplu hazırlık SELECT'i/no write; sorgu sayısı satır başına artmadı.
+- `dotnet ef migrations has-pending-model-changes`: fark yok. İzole testlerde
+  pending migration yok. Yeni migration oluşturulmadı; app/lab'a yazılmadı.
+- `unit -ProbeFailure`: beklenen kontrollü assertion, üst çalıştırıcı exit1;
+  kalıcı bozuk test yok. Test fixture'ları finally ile FK sırasıyla temizlendi.
+  Küçük modlarda sekiz tablo boş, full sonunda yalnız2 ders/2 dönem/3 açılış seed'i
+  ve diğer tablolarda0 satır kaldı. Geçici API süreç sayısı0; DB şemaları tutuldu,
+  sequence sıfırlanmadı. Log/SQL çıktıları repoya eklenmedi.
+
+**Sınırlar/eksikler:** Engel yok. Ölçüm sadece hazırlanmış akademik hesaplama;
+DB hazırlığı, SaveChanges, HTTP ve toplam istek süresi değil. SaveChanges daha
+sonra başarısız olsa bile başarılı hesaplamanın outcome'u eligible kalabilir.
+Bu benchmark veya SLA değildir. Log sağlayıcısı arızası ve temizlik arızası
+simülasyonu yapılmadı; logger exception'ı sonucu/asıl hatayı gölgeleyebilir.
+Üretime yapay hesaplama hatası endpoint'i eklenmedi; failed dalı saf testte gerçek
+exception ile sınandı. Down çalıştırılmadı (bu gün migration yok).
+Mevcut yetki, kontenjan ve eşzamanlı kredi/program/geçiş sınırları değişmedi.
+
+**Sıradaki gün:** Adapter; iki sahte bildirim sağlayıcısını ortak sözleşmeye uyarlama.
+
+**Commit/push:** Kaydı içeren commit Git geçmişinden
+`git log --format=%H --grep="^feat: measure eligibility with a timing decorator$"`
+ile bulunur. Push sonucu son raporda verilir; kendi hash'i için ek commit yoktur.

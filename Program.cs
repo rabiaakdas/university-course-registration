@@ -15,6 +15,10 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddScoped<EnrollmentOperations>();
+builder.Services.AddScoped<AcademicEligibility>();
+builder.Services.AddScoped<IAcademicEligibilityEvaluator>(services =>
+    new TimingAcademicEligibilityEvaluator(services.GetRequiredService<AcademicEligibility>(),
+        services.GetRequiredService<ILogger<TimingAcademicEligibilityEvaluator>>()));
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);

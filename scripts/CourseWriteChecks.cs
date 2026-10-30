@@ -19,6 +19,7 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "unit" or "decorator" or "full") await DecoratorChecks.Run();
 if (mode is "state" or "full") StateChecks.Unit();
 if (mode is "eligibility" or "full") EligibilityChecks.Unit();
 if (mode is "specifications" or "full")
@@ -59,6 +60,7 @@ async Task Sql(string sql) { await using var db = Db(); await db.Database.Execut
 async Task<int> Count() { await using var db = Db(); return await db.Courses.CountAsync(); }
 async Task<Course> Read(int id) { await using var db = Db(); return await db.Courses.SingleAsync(c => c.Id == id); }
 Process? api = null;
+var evaluationLogs = new EvaluationLogObserver();
 var listener = new TcpListener(IPAddress.Loopback, 0);
 listener.Start(); var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
 using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(15) };
@@ -87,8 +89,9 @@ async Task StartApi()
     info.Environment["ConnectionStrings__UniversityDatabase"] = connection;
     info.Environment["ASPNETCORE_ENVIRONMENT"] = "Development"; // Errors must be safe even here.
     info.Environment["DOTNET_ENVIRONMENT"] = "Development";
+    if (mode == "decorator") { info.Environment["Logging__Console__FormatterName"] = "json"; info.Environment["Logging__LogLevel__Microsoft.AspNetCore.Hosting.Diagnostics"] = "Information"; }
     api = Process.Start(info)!;
-    api.OutputDataReceived += (_, _) => { }; api.ErrorDataReceived += (_, _) => { };
+    api.OutputDataReceived += (_, e) => { if (mode == "decorator") evaluationLogs.Receive(e.Data); }; api.ErrorDataReceived += (_, _) => { };
     api.BeginOutputReadLine(); api.BeginErrorReadLine();
     for (var i = 0; i < 50; i++)
     {
@@ -101,6 +104,7 @@ async Task StartApi()
 }
 async Task<(int Status, JsonNode Body, string? Location)> Send(string method, string path, object? body = null, string? raw = null)
 {
+    var logBefore = evaluationLogs.Before(path);
     using var request = new HttpRequestMessage(new HttpMethod(method), path);
     if (raw is not null) request.Content = new StringContent(raw, Encoding.UTF8, "application/json");
     else if (body is not null) request.Content = JsonContent.Create(body);
@@ -116,6 +120,7 @@ async Task<(int Status, JsonNode Body, string? Location)> Send(string method, st
             Check(!text.Contains(forbidden, StringComparison.OrdinalIgnoreCase), "Sensitive error response");
     }
     else Check(response.Content.Headers.ContentType?.MediaType == "application/json", "Success content type");
+    if (mode == "decorator") await evaluationLogs.Verify(method, path, status, json, logBefore);
     return (status, json, response.Headers.Location?.ToString());
 }
 void DetailFields(JsonNode node) => Check(string.Join(',', node.AsObject().Select(p => p.Key).Order()) == "code,credits,id,name", "Detail field contract");
@@ -139,7 +144,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator")
 {
     try
     {
@@ -149,6 +154,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state")
         if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
+        else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await using var verify = Db();
         Check(await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
@@ -158,6 +164,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state")
         Check(!verify.Database.HasPendingModelChanges(), "Model/snapshot mismatch");
         Check(!(await verify.Database.GetPendingMigrationsAsync()).Any(), "Pending migration");
         Console.WriteLine("PASS: empty test tables; migration/model alignment");
+        if (mode == "decorator") Console.WriteLine($"PASS: real DI/HTTP structured timing logs; {evaluationLogs.Audited} evaluations; early rejections have no timing; no timing JSON fields");
     }
     catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; }
     catch (CleanupFailure) { Environment.ExitCode = 3; }

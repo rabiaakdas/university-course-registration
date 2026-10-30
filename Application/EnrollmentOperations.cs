@@ -7,7 +7,8 @@ using UniversityRegistration.Models;
 namespace UniversityRegistration.Application;
 
 // Scoped with its DbContext. Callers validate request shape before invoking these operations.
-public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolicy policy)
+public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolicy policy,
+    IAcademicEligibilityEvaluator evaluator)
 {
     public async Task<SingleEnrollmentResult> CreateAsync(int studentId, int offeringId, CancellationToken ct)
     {
@@ -146,7 +147,7 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
             o.Credits, new PrerequisiteInput(byCourse[o.CourseId], completed))).ToArray();
         var existing = oldSlots.GroupBy(s => new { s.Id, s.AcademicTermId }).Select(g =>
             new OfferingSchedule(g.Key.Id, g.Key.AcademicTermId, g.Select(s => new WeeklyTimeSlot(s.Day, s.StartsAt, s.EndsAt)))).ToArray();
-        return AcademicEligibility.Evaluate(requested, loads, existing, policy.MaxCreditsPerTerm);
+        return evaluator.Evaluate(requested, loads, existing, policy.MaxCreditsPerTerm);
     }
 
     private enum WriteFailure { Duplicate, StudentRemoved, OfferingRemoved }

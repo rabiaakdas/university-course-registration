@@ -25,7 +25,7 @@ internal static class EligibilityChecks
         var requested=new[]{new OfferingEligibility(schedule,7,new([1],[])),
             new OfferingEligibility(new(10,2,[a,Slot(9,10,DayOfWeek.Wednesday)]),7,new([2],[]))};
         var existing=new[]{new OfferingSchedule(99,2,[a,Slot(9,10,DayOfWeek.Wednesday)]),new OfferingSchedule(98,3,[a])};
-        var result=AcademicEligibility.Evaluate(requested,new Dictionary<int,long>{{2,24}},existing,30);
+        var result=new AcademicEligibility().Evaluate(requested,new Dictionary<int,long>{{2,24}},existing,30);
         Check(!result.IsEligible && result.Failures.SequenceEqual(new AcademicRejection[]{
             new AcademicRejection.PrerequisiteNotSatisfied(20),new AcademicRejection.PrerequisiteNotSatisfied(10),
             new AcademicRejection.CreditLimitExceeded(2),new AcademicRejection.ScheduleConflict(20,99),
@@ -33,7 +33,7 @@ internal static class EligibilityChecks
         var failures=new List<AcademicRejection>{new AcademicRejection.CreditLimitExceeded(1)};
         var copy=new AcademicEvaluation(failures); failures.Clear();Check(!copy.IsEligible,"result defensive copy");
         Throws<NotSupportedException>(()=>((IList<AcademicRejection>)copy.Failures).Clear());
-        Check(AcademicEligibility.Evaluate([new(new(1,1,[]),1,new([],[]))],new Dictionary<int,long>(),[],30).IsEligible,"empty known schedule allowed");
+        Check(new AcademicEligibility().Evaluate([new(new(1,1,[]),1,new([],[]))],new Dictionary<int,long>(),[],30).IsEligible,"empty known schedule allowed");
         Throws<ArgumentNullException>(()=>new AcademicEvaluation(null!));
         Console.WriteLine("PASS: pure weekly intervals, symmetry/boundaries/invalid inputs, all failure types/order/dedup and immutable result");
     }
@@ -153,7 +153,7 @@ internal static class EligibilityChecks
             await using(var template=factory())
             {
                 var capture=new CatalogSqlCapture();await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
-                var result=await new EnrollmentOperations(db,new(30)).EvaluateBatchAsync(queryStudent,[offers[1].Id,offers[5].Id],default);
+                var result=await new EnrollmentOperations(db,new(30),DecoratorChecks.TimedEvaluator()).EvaluateBatchAsync(queryStudent,[offers[1].Id,offers[5].Id],default);
                 var evaluated=((EligibilityResult.Evaluated)result).Evaluation;
                 Check(evaluated.Failures.OfType<AcademicRejection.ScheduleConflict>().Count()==3,"one reason per pair despite multiple/overlapping slots");
                 Check(!db.ChangeTracker.Entries().Any(),"projection preview has no tracked changes/entities");
