@@ -244,3 +244,23 @@ vermelidir. Normal adapter çalışması exit0. Deney türleri web assembly'sind
 bulunmamalıdır. Kaynaklar yalnız geçici `obj/day5-checks/Checks.csproj` içine açıkça
 dahil edilir. Veri/süreç oluşturmazlar; core/full gerçek DB regresyonları mevcut
 izole LocalDB ve finally temizliğiyle devam eder. App/lab hedeflenmez.
+
+## Gün 19 — Dönem özeti
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode summary` mevcut
+izole LocalDB/gerçek HTTP çalıştırıcısıyla SummaryChecks'i çağırır. Full de aynı
+kontrolü kullanır; kopya test/proje/framework yoktur. Fixture durumları kontrollü
+entity metotlarıyla hazırlanır; okuma testi akademik kayıt kabulüne bağlanmaz.
+
+Kontroller:4 statü, aktif kredi9, çok saatli derste tek kredi sayımı, öğrenci/dönem
+ayrımı, tüm alanlar, aktif program/saatsiz kimlikler, Pazartesi→Pazar ve eşit
+saatlerde kimlik sırası, time(7) JSON tick dönüşü, boş/pasif sonuç,404/400, tekrarlı
+GET ve fresh context'te değişmeyen fixture içeriği. Gerçek SQL interceptor4 ve24
+kayıtta4 SELECT, boş/pasif yolda3 SELECT; filtre/projection ve tracker boşluğu.
+Yüksek kredi fixture'ı Int32 üstü toplamı ve aynı dersin farklı şubelerinin ayrı
+sayımını sınar. SQL alias/parametre adı/süre snapshot'ı yoktur.
+
+`-Mode summary -ProbeFailure` kontrollerden sonra bilerek assertion üretir;
+finally fixture temizliği ve süreç kapatması çalışırken üst komut exit1 vermelidir.
+Yalnız oluşturulan öğrenci/açılış/saat/kayıt/dönem/ders kimlikleri FK sırasıyla
+silinir. App/lab kullanılmaz, test DB şeması tutulur, sequence sıfırlanmaz.

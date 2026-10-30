@@ -15,6 +15,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddScoped<EnrollmentOperations>();
+builder.Services.AddScoped<TermRegistrationSummaryFacade>();
 builder.Services.AddScoped<AcademicEligibility>();
 builder.Services.AddScoped<IAcademicEligibilityEvaluator>(services =>
     new TimingAcademicEligibilityEvaluator(services.GetRequiredService<AcademicEligibility>(),
@@ -44,6 +45,7 @@ app.MapCourseEndpoints();
 app.MapAcademicTermEndpoints();
 app.MapCourseOfferingEndpoints();
 app.MapStudentEndpoints();
+app.MapTermRegistrationSummaryEndpoint();
 app.MapEnrollmentEndpoints();
 app.MapPriorityPreviewEndpoint();
 

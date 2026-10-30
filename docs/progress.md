@@ -1127,3 +1127,61 @@ HTTP-log modu bugün ayrıca çalıştırılmadı; saf decorator ve full regresy
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
 `feat: adapt demo notification providers` commit'inden bulunur. Push sonucu son
 raporda verilir; hash yazmak için ek commit oluşturulmaz.
+
+## Gün 19 — Dönem kayıt özeti Facade
+
+**Başlangıç:** main/origin doğru, çalışma ağacı temiz. Gerçek HEAD
+`21a86cb0b77132254d2de71914a4333331b7f432`; önceki decorator ve adapter commit'leri
+Git geçmişinde ve dosyalarda görüldü, korundu. Kullanıcının eski commit'i güncel
+varsayılmadı;17–18. günlere ait yeni bir sonuç uydurulmadı.
+
+**Katkı:** Scoped TermRegistrationSummaryFacade öğrenci→dönem varlık kontrolünü,
+hedef kayıt projection'ını ve aktif saatleri tek HTTP-bağımsız işlemde toplar.
+Found/StudentMissing/TermMissing küçük sonuç türleri; endpoint alan bazlı400,
+sıralı404 veya200 üretir. DTO'lar bütün durumları, durum sayıları, checked long
+aktif kredi, aktif program ve saatsiz aktif kimlikleri taşır. Submitted/Approved
+aktif anlamı korunur. Her enrollment tek satır; saat JOIN'i toplamı çoğaltmaz.
+Güncel kredi kullanılır, şubeler ayrı sayılır. Pazartesi başlangıçlı sıra ve
+TimeOnly/time(7) hassasiyeti korunur. İç HTTP, Add/Update/SaveChanges, yeni kural,
+interface zinciri, paket veya migration eklenmedi.
+
+**Gerçek doğrulamalar:** SDK10.0.401; restore/build başarılı,0 uyarı/0 hata.
+İlk summary denemeleri testin JsonNode.GetValue<TimeOnly> dönüşümünde durdu;
+üretim serileştirmesi değiştirilmeden test Deserialize<TimeOnly> kullanacak
+şekilde düzeltildi. Başarısız denemelerde fixture/süreç temizliği çalıştı.
+Sonraki summary kontrolü ve full içindeki tekrar başarılı:
+-3/4/5/6 kredili Draft/Submitted/Approved/Rejected fixture'ı: aktif kredi9,
+ her durum1, dört doğru kayıt. Başka öğrenci/dönem hariç; çok saatli dersin kredisi
+ bir kez. Pasif saatler hariç, saatsiz aktif kimlikler artan.
+- Pazartesi→Pazar, başlangıç/bitiş/açılış kimliği sıra kontrolleri ve
+ 09:00:00.1234567 değerinin gerçek HTTP JSON tick dönüşü başarılı.
+- Boş/pasif sonuç,200/400/404, öğrenci-önce yokluk, alan hataları, tekrarlı GET
+ ve bütün fixture kayıtlarının yeni context'te değişmediği doğrulandı.
+- Gerçek SQL interceptor4 ve24 kayıt için4 SELECT; boş ve yalnız pasif yolda3.
+ Filtre/projection/SQL sıra mevcut, entity tracker boş. Aynı dersin farklı
+ şubeleri ayrı sayıldı; Int32 üstü toplam doğru long olarak döndü.
+- `unit`, `core`, `full` başarılı. Önceki adapter/decorator saf deneyleri,
+ akademik/state/eligibility HTTP, gerçek unique/FK ve ilk INSERT sonrası batch
+ rollback/rakip kayıt korunması, katalog/tracking/transaction ve seed tekrarı
+ regresyonları geçti. Ürün sözleşmeleri yeni endpoint dışında değişmedi.
+- `dotnet ef migrations has-pending-model-changes`: fark yok. İzole testlerde
+ migration/model uyumu kontrol edildi; uygulama DB'sine migration uygulanmadı.
+- `summary -ProbeFailure`: beklenen assertion sonrası finally temizliği ve
+ süreç kapatması; üst çalıştırıcı exit1. Sonradan ayrı SQL bağlantısıyla probe
+ DB'sinin sekiz tablosu boş doğrulandı. Full DB'sinde yalnız2 ders/2 dönem/3 açılış
+ seed'i ve diğer beş tabloda0 satır kaldı. Geçici API süreç sayısı0.
+
+**Sınırlar/eksikler:** Engel yok. Özet birkaç sorgudur; tüm yanıt için tek snapshot
+ veya eşzamanlılık garantisi yoktur. Sayılar/kredi aynı projection'dan; program
+ sonraki sorgudan gelir. Saat yokluğu eksiksiz program/uygunluk garantisi değildir.
+ Yetkilendirme, rezervasyon, çakışma raporu ve otomatik düzeltme yoktur. App/lab'a
+ dokunulmadı; test DB şemaları tutuldu. Down/temizlik arızası deneyi çalıştırılmadı.
+ Ayrı decorator HTTP-log modu bugün yeniden çalıştırılmadı; unit/full deney ve
+ regresyonları çalıştırıldı. Yeni Builder veya genel raporlama altyapısı yoktur.
+
+**Sıradaki gün:** Builder; constructor/object initializer alternatifleri;
+karmaşık program test verileri.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
+`feat: add term registration summary facade` commit'inden bulunur. Push sonucu
+son raporda; hash yazmak için ek commit oluşturulmaz.

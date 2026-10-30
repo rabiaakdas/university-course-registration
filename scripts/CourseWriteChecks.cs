@@ -150,7 +150,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary")
 {
     try
     {
@@ -160,6 +160,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
+        else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe);
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await using var verify = Db();
@@ -298,6 +299,7 @@ try
     await SpecificationChecks.Run(Db, Send);
     await EligibilityChecks.Run(Db, Send);
     await StateChecks.Run(Db, Send, StopApi, StartApi);
+    await SummaryChecks.Run(Db, Send);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

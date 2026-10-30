@@ -1374,3 +1374,65 @@ Outbox, kalıcı bildirim, yeni endpoint veya Facade yoktur. Adapter DB kaydıyl
 haricî gönderimi atomik yapmaz; timeout/yanıt kaybı belirsizliğini çözmez.
 [Öğrenme notu](docs/day18-notification-adapter.md) ·
 [ADR](docs/adr/0018-demo-notification-adapters.md) · [Test kılavuzu](docs/testing.md)
+
+## Gün 19 — Dönem kayıt özeti (Facade)
+
+`GET /students/{studentId:int}/terms/{termId:int}/registration-summary`
+öğrencinin seçilen dönemini tek bir işlemde sunar. Pozitif olmayan kimlikler
+alan bazlı400; önce öğrenci, sonra dönem yokluğu404; iki kaynak da mevcut fakat
+kayıt yoksa200, sıfır sayılar ve boş listeler döner.
+
+Örnek: `GET /students/1/terms/10/registration-summary`:
+
+```json
+{
+  "studentId": 1,
+  "academicTermId": 10,
+  "activeCredits": 9,
+  "counts": { "draft": 1, "submitted": 1, "approved": 1, "rejected": 1 },
+  "enrollments": [
+    { "id": 501, "courseOfferingId": 101, "courseCode": "CSE101", "courseName": "Giriş", "credits": 3, "status": "Draft", "rejectionReason": null },
+    { "id": 502, "courseOfferingId": 102, "courseCode": "CSE201", "courseName": "Veri Yapıları", "credits": 4, "status": "Submitted", "rejectionReason": null },
+    { "id": 503, "courseOfferingId": 103, "courseCode": "CSE203", "courseName": "Veritabanı Yönetimi", "credits": 5, "status": "Approved", "rejectionReason": null },
+    { "id": 504, "courseOfferingId": 104, "courseCode": "CSE301", "courseName": "Örnek Ders", "credits": 6, "status": "Rejected", "rejectionReason": "Örnek ret gerekçesi" }
+  ],
+  "activeSchedule": [
+    { "courseOfferingId": 102, "day": "Monday", "startsAt": "09:00:00.1234567", "endsAt": "10:00:00" }
+  ],
+  "unscheduledActiveOfferingIds": [103]
+}
+```
+
+Kimlikler örnektir; gerçek hedef dönemin bütün kayıtları gelir. counts bütün
+statüleri, activeCredits (`long`) ve program yalnız Submitted/Approved kayıtları
+kapsar. Her enrollment güncel Course.Credits ile bir kez sayılır; aynı dersin farklı
+şubeleri ayrı kayıt olarak yük oluşturur. Saat sayısı kredi toplamını çoğaltmaz.
+
+Kayıtlar Id artan; program Pazartesi→Pazar, başlangıç, bitiş, açılış Id ve iç slot
+Id sırasındadır. TimeOnly/time(7) saniye altı değerleri kırpılmaz. Saatsiz aktif
+kimlikler artan döner; bu liste eksik program bilgisini görünür kılar, uygunluk
+reddi değildir. Boş program eksiksizlik garantisi vermez.
+
+Scoped `TermRegistrationSummaryFacade` öğrenci/dönem varlığını ve daraltılmış
+projection'ları sıralı await ile hazırlar. HTTP kararları endpoint'tedir. Yazma,
+iç HTTP çağrısı, yeni akademik kural veya migration yoktur. Sayılar ve kredi aynı
+kayıt listesinden hesaplanır; ayrı saat sorgusuyla beraber **tek snapshot garantisi
+yoktur**. Bu özet rezervasyon, uygunluk veya çakışma raporu değildir. Endpoint
+henüz yetkilendirilmemiş geliştirme akışıdır; öğrenci self-servis güvenliği sağlamaz.
+
+Repo kökünden, mevcut güvenli bağlantı ayarıyla:
+
+```powershell
+dotnet restore
+dotnet build
+dotnet run --project .\UniversityRegistration.csproj
+# Ayrı terminalde izole LocalDB kontrolleri:
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode summary
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes
+```
+
+[Öğrenme notu](docs/day19-registration-summary-facade.md) ·
+[ADR](docs/adr/0019-term-registration-summary-facade.md) · [Test kılavuzu](docs/testing.md)
