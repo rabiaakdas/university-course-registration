@@ -1436,3 +1436,15 @@ dotnet ef migrations has-pending-model-changes
 
 [Öğrenme notu](docs/day19-registration-summary-facade.md) ·
 [ADR](docs/adr/0019-term-registration-summary-facade.md) · [Test kılavuzu](docs/testing.md)
+
+## Gün 20 — Test senaryosu Builder
+
+Üretim davranışı değişmedi. Bellek içi karmaşık uygunluk fixture'ları için
+`scripts/EligibilityScenarioBuilder.cs` eklendi; DB fixture veya genel entity
+builder değildir. Bağımsız Build sonuçları, kopyalama ve yapısal koşullar:
+[Test kılavuzu](docs/testing.md) · [Öğrenme notu](docs/day20-eligibility-scenario-builder.md) ·
+[ADR](docs/adr/0020-eligibility-scenario-builder.md).
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode builder
+```

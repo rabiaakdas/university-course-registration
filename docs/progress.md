@@ -1185,3 +1185,68 @@ karmaşık program test verileri.
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
 `feat: add term registration summary facade` commit'inden bulunur. Push sonucu
 son raporda; hash yazmak için ek commit oluşturulmaz.
+
+## Gün 20 — Okunabilir uygunluk senaryoları için Builder
+
+**İnceleme:** main/origin doğru, çalışma ağacı temizdi. Başlangıç HEAD
+`4c14a163df03281726a9daba2122adf5d5268e7e`; 17–19. gün commit/dosyaları mevcut
+Git geçmişinden görüldü ve korundu. Önceki kullanıcı commit'i güncel varsayılmadı.
+
+**Katkı:** Yalnız scripts içinde EligibilityScenarioBuilder ve bağımsız sonuç
+kabı eklendi. Gerçek OfferingEligibility/OfferingSchedule/PrerequisiteInput
+kullanılır; öğrenci entity'si veya paralel akademik model yok. Tek öğrencinin
+hazırlanmış bağlamı, açık dönem/kimlik/kredi/status/saat/ön koşul/tamamlanan ders ve
+zorunlu limit ile kurulur. Build aktif mevcut yükü hazırlar, uygunluk hesaplamaz;
+Draft/Rejected durumunu değiştirmez, aktif girdiye dahil etmez.
+
+**Temsilî refactor:** EligibilityChecks.Unit'in birleşik yeni–mevcut/yeni–yeni
+çakışma, ön koşul+kredi+saat ve dönem ayrımı fixture'ı builder'a geçti. Beklenen
+ret listesi, sıra ve kimlik assertion'ları aynen korundu. DecoratorChecks'in gerçek
+saf/decorated eşdeğerlik girdileri de aynı hazırlık biçimini kullanır. Basit kredi
+sınırı ve tek slot constructor kontrolleri, tüm DB fixture'ları korundu. Yeni kopya
+akademik test algoritması yazılmadı. Kazanç ilişkilerin/önemli değerlerin görünmesi;
+maliyet küçük hazırlık API'si ve kopyalama kontrolleri, daha az satır garantisi yok.
+
+**Sözleşme:** Her Build bağımsız, reset yok. Dış koleksiyonlar ekleme anında
+kopyalanır; nested schedule ve prerequisite değerleri her Build'de yeniden kurulur.
+Salt okunur listeler/kredi sözlüğü, immutable slotlar ve FrozenSet kullanılır.
+Sonraki builder/dış liste değişimleri önceki sonucu bozmaz. Yapısal pozitif
+kimlik/kredi/limit, geçerli enum/aralık, tanımlı hedef ve tekrarsız tanım koşulları
+vardır. Birebir saat tekrarı açık hata; farklı geçerli örtüşmeler, eksik ön koşul
+ve kredi aşımı düzeltilmeden kalır. Rastgele kimlik/zaman, expected failure üretimi,
+DB/HTTP/SaveChanges/temizlik veya thread-safety altyapısı yoktur.
+
+**Gerçek sonuçlar (30 Ekim 2026):**
+- SDK 10.0.401 ile restore/build başarılı, 0 uyarı/0 hata; paket değişmedi.
+- `builder` ve refactor edilmiş saf uygunluk kontrolleri başarılı. İki Build,
+  sonradan builder değişimi, dış koleksiyonun Build öncesi/sonrası değişimi,
+  nested slot/küme/dictionary bağımsızlığı, readonly mutasyon reddi, ayrı builder,
+  istek sırası, yapısal hatalar ve uygunsuz verinin korunması doğrulandı.
+  Builder türünün web assembly'sinde bulunmadığı kontrol edildi.
+- `unit`, `eligibility`, `specifications`, `core`, `full` çalıştırıldı ve geçti.
+  Gerçek LocalDB/HTTP akademik ret sırası, status/load, summary, unique/FK,
+  ilk INSERT sonrası batch rollback ve kesinleşmiş rakip satırının korunması,
+  seed/katalog/tracking/transaction kontrolleri korundu. Önceki adapter ve
+  decorator deneyleri unit/full içinde yeniden geçti.
+- `dotnet ef migrations has-pending-model-changes`: fark yok. Migration yok.
+  Git diff ile üretim source/project/model dosyalarının değişmediği doğrulandı.
+- `builder -ProbeFailure` beklenen assertion üretti; üst çalıştırıcı exit1.
+  Üretimde ve normal testlerde kalıcı bozuk kontrol bırakılmadı.
+- Regresyonlar izole LocalDB kullandı; app/lab'a yazılmadı. Küçük DB modlarında
+  sekiz tablo boş; full sonunda yalnız 2 ders/2 dönem/3 açılış seed'i, diğer beş
+  tabloda 0 satır doğrulandı. Geçici API süreç sayısı 0; finally temizliği korundu.
+  Test DB şemaları tutuldu, sequence sıfırlanmadı. Çıktı/log/DB dosyası commit edilmedi.
+
+**Sınırlar/eksikler:** Engel yok. Bellek içi builder DB/SQL veya transaction
+kanıtı değildir; bunlar ayrı gerçek regresyonlarla sınandı. Thread-safe/paylaşılan
+builder yok, her test yeni hazırlık kullanır. Down/temizlik arızası simülasyonu
+çalıştırılmadı (bu gün migration yok). Ayrı decorator HTTP-log modu yeniden
+çalıştırılmadı; saf deneyleri ve full regresyonlar çalıştırıldı. Genel entity
+builder/Director/clone, yeni ürün özelliği ve Observer eklenmedi.
+
+**Sıradaki gün:** Observer, domain event ve integration event; kayıt onayına
+uygulama içi tepki ve teslim garantisi sınırları.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
+`test: build readable eligibility scenarios` commit'inden bulunur. Push sonucu
+son raporda verilir; hash için ikinci commit üretilmez.

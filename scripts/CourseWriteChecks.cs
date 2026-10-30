@@ -19,6 +19,12 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "builder" or "unit" or "full")
+{
+    try { BuilderChecks.Run(mode == "builder" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+    if (mode == "builder") { EligibilityChecks.Unit(); return; }
+}
 if (mode is "adapter" or "unit" or "full")
 {
     try { await AdapterChecks.Run(mode == "adapter" && probe); }

@@ -264,3 +264,48 @@ sayımını sınar. SQL alias/parametre adı/süre snapshot'ı yoktur.
 finally fixture temizliği ve süreç kapatması çalışırken üst komut exit1 vermelidir.
 Yalnız oluşturulan öğrenci/açılış/saat/kayıt/dönem/ders kimlikleri FK sırasıyla
 silinir. App/lab kullanılmaz, test DB şeması tutulur, sequence sıfırlanmaz.
+
+## Gün 20 — Bellek içi uygunluk senaryosu Builder
+
+`EligibilityScenarioBuilder` yalnız test derlemesindedir. Kullanım yerleri:
+- `EligibilityChecks.Unit`: yeni–mevcut ve yeni–yeni saat çakışması, üç ret türünün
+  birlikte/sıralı dönmesi ve farklı dönem dışlamasını zaten birlikte sınayan fixture.
+  Aynı beklenen ret türleri/kimlikleri/sırası korundu; testler kopyalanmadı.
+- `DecoratorChecks.Run`: boş ve kredi+ön koşul retli gerçek evaluator eşdeğerlik
+  girdileri. Beklenen davranış karşılaştırması aynı kaldı.
+- `BuilderChecks.Run`: builder'ın kopyalama ve yapısal sözleşmesi.
+
+Kredi sınırı kurucuda zorunlu; kimlik/dönem/kredi/durum ve saatler açık verilir.
+Başlangıçta koleksiyonlar boştur: ön koşul/tamamlanan ders/saat/kayıt yoktur.
+Bir builder, verisi zaten tek öğrenciye daraltılmış senaryo içindir; saf evaluator
+StudentId kullanmadığı için sahte öğrenci entity'si/kimliği eklenmez.
+`Request`, `Existing`, `WithSlots`, `Requires`, `Completed`, `Build` adımları vardır.
+Existing durumları değiştirilmez; yalnız Submitted/Approved, üretim değerlendirme
+imzasının beklediği aktif kredi ve mevcut program girdisine hazırlanır.
+
+Her Build yeni dış listeler/dictionary ve nested schedule/prerequisite değerleri
+üretir; gizli reset yoktur. Dış koleksiyonlar ekleme anında kopyalanır. Listeler
+salt okunur sarmalanır, kredi dictionary'si ayrıca kopyalanır; prerequisite kümeleri
+mevcut FrozenSet, slot elemanları mevcut sealed/get-only WeeklyTimeSlot'tır.
+Bu immutable elemanları paylaşmak güvenlidir; keyfi mutable entity'ler kabul edilmez.
+Builder değiştirilebilirdir, testler arasında paylaşılmaz; thread-safe değildir.
+
+Pozitif kimlik/kredi/sınır, geçerli enum, tanımlı hedef ve slot constructor kuralları
+korunur. Aynı açılışı tekrar tanımlamak (aynı veya çelişkili değerlerle) hata verir;
+birebir aynı saat tekrarı da hata verir, sessizce tekilleştirilmez. Farklı ama
+örtüşen saatler kabul edilir. Gerekli/tamamlanan dersler üretim girdisi gibi kümedir.
+Hatalı ekleme mevcut hazırlığı değiştirmez. Build uygunluk hesaplamaz, DB/HTTP
+çağırmaz, ders tamamlamaz veya kredi/saat düzeltmez. DB fixture temizliği yönetmez.
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode builder
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode eligibility
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode specifications
+```
+
+Builder modu saf sözleşme kontrolleri ve refactor edilen EligibilityChecks.Unit'i
+DB olmadan çalıştırır; unit/full de builder sözleşmesini içerir.
+`-Mode builder -ProbeFailure` kontrollü assertion ile üst çalıştırıcıya exit1
+taşınmasını sınar. Yeni framework/proje yok; iki kaynak mevcut geçici console
+projesine açık dahil edilir, web derlemesinden dışlanır.

@@ -22,10 +22,14 @@ internal static class EligibilityChecks
         Throws<ArgumentOutOfRangeException>(()=>Slot(9,10,(DayOfWeek)7));Throws<ArgumentNullException>(()=>a.Overlaps(null!));
         var mutable=new List<WeeklyTimeSlot>{a}; var schedule=new OfferingSchedule(20,2,mutable);mutable.Clear();
         Check(schedule.Slots.Count==1,"defensive schedule copy");
-        var requested=new[]{new OfferingEligibility(schedule,7,new([1],[])),
-            new OfferingEligibility(new(10,2,[a,Slot(9,10,DayOfWeek.Wednesday)]),7,new([2],[]))};
-        var existing=new[]{new OfferingSchedule(99,2,[a,Slot(9,10,DayOfWeek.Wednesday)]),new OfferingSchedule(98,3,[a])};
-        var result=new AcademicEligibility().Evaluate(requested,new Dictionary<int,long>{{2,24}},existing,30);
+        var scenario=new EligibilityScenarioBuilder(creditLimit:30)
+            .Request(offeringId:20,termId:2,credits:7).WithSlots(20,[a]).Requires(20,[1])
+            .Request(offeringId:10,termId:2,credits:7).WithSlots(10,[a,Slot(9,10,DayOfWeek.Wednesday)]).Requires(10,[2])
+            .Existing(offeringId:99,termId:2,credits:24,status:EnrollmentStatus.Approved)
+            .WithSlots(99,[a,Slot(9,10,DayOfWeek.Wednesday)])
+            .Existing(offeringId:98,termId:3,credits:4,status:EnrollmentStatus.Submitted).WithSlots(98,[a])
+            .Build();
+        var result=new AcademicEligibility().Evaluate(scenario.Requested,scenario.CurrentCredits,scenario.Existing,scenario.CreditLimit);
         Check(!result.IsEligible && result.Failures.SequenceEqual(new AcademicRejection[]{
             new AcademicRejection.PrerequisiteNotSatisfied(20),new AcademicRejection.PrerequisiteNotSatisfied(10),
             new AcademicRejection.CreditLimitExceeded(2),new AcademicRejection.ScheduleConflict(20,99),

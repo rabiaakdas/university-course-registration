@@ -40,10 +40,11 @@ internal static class DecoratorChecks
         { Check(ReferenceEquals(actual,error) && actual.StackTrace!.Contains(nameof(ThrowOriginal)), "same exception and original throw frame"); }
         Check(failing.Calls == 1, "failure invoked once"); Verify(failureLog,"failed",null);
         var pure = new AcademicEligibility();
-        foreach(var requested in new OfferingEligibility[][] { [], [new(new(1,1,[]),31,new([2],[]))] })
+        foreach(var scenario in new[] { new EligibilityScenarioBuilder(30).Build(),
+            new EligibilityScenarioBuilder(30).Request(offeringId:1,termId:1,credits:31).Requires(1,[2]).Build() })
         {
-            var expected = pure.Evaluate(requested,new Dictionary<int,long>(),[],30);
-            var actual = new TimingAcademicEligibilityEvaluator(pure,new CapturedLog()).Evaluate(requested,new Dictionary<int,long>(),[],30);
+            var expected = pure.Evaluate(scenario.Requested,scenario.CurrentCredits,scenario.Existing,scenario.CreditLimit);
+            var actual = new TimingAcademicEligibilityEvaluator(pure,new CapturedLog()).Evaluate(scenario.Requested,scenario.CurrentCredits,scenario.Existing,scenario.CreditLimit);
             Check(actual.IsEligible == expected.IsEligible && actual.Failures.SequenceEqual(expected.Failures), "real evaluator equivalence/order");
         }
         await DecoratorExperiments.Run();
