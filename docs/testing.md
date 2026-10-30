@@ -227,3 +227,20 @@ sıra bariyeri ile serial senaryoları kontrol eder; eşzamanlı full senaryolar
 bu serial gözlemci etkin değildir. Logger sağlayıcısı arızası simüle edilmez.
 Alt komut hata kodu üst PowerShell'e taşınır; `unit -ProbeFailure` kontrollü
 başarısızlık denemesidir, kalıcı bozuk test yoktur.
+
+## Gün 18 — Sahte sağlayıcı adapter kontrolleri
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode adapter`
+DB/ağ/HTTP olmadan `AdapterChecks.Run` çalıştırır. Aynı kontroller unit/full
+modlarına dahil; test framework'ü veya yeni proje yoktur. Ortak harness iki
+adapter için alan, token, tek çağrı, kabul/ret/kesinti, referans, null mesaj,
+beklenmeyen exception ve cancellation'ı yeniden kullanır. TaskCompletionSource
+ile gecikmeli exception/cancel kontrol edilir; keyfi Task.Delay yoktur.
+Publish protokolünün bozuk/bilinmeyen cevapları ve referans kombinasyonları ayrıca
+sınanır. Bu gerçek sağlayıcı veya teslim testi değildir.
+
+`-Mode adapter -ProbeFailure` kontrollü assertion üretir; üst PowerShell exit1
+vermelidir. Normal adapter çalışması exit0. Deney türleri web assembly'sinde
+bulunmamalıdır. Kaynaklar yalnız geçici `obj/day5-checks/Checks.csproj` içine açıkça
+dahil edilir. Veri/süreç oluşturmazlar; core/full gerçek DB regresyonları mevcut
+izole LocalDB ve finally temizliğiyle devam eder. App/lab hedeflenmez.

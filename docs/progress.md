@@ -1075,3 +1075,55 @@ Mevcut yetki, kontenjan ve eşzamanlı kredi/program/geçiş sınırları deği�
 **Commit/push:** Kaydı içeren commit Git geçmişinden
 `git log --format=%H --grep="^feat: measure eligibility with a timing decorator$"`
 ile bulunur. Push sonucu son raporda verilir; kendi hash'i için ek commit yoktur.
+
+## Gün 18 — İki sahte bildirim sağlayıcısı için Adapter
+
+**Başlangıç kanıtı:** Çalışma ağacı temiz, branch main, origin beklenen GitHub
+reposuydu. İncelenen HEAD `4e0f4a9140b3a76fafb3a1c05bf563cdbfe697e5`;
+17. gün decorator kodu ve belgeleri dosyalarda ve Git geçmişinde mevcut. Kullanıcının
+raporladığı eski commit güncel varsayılmadı; önceki çalışma değiştirilmedi.
+
+**Katkı:** `scripts/NotificationAdapterDemo.cs` kontrollü NotificationMessage,
+üç durumlu NotificationSendResult, INotificationSender, iki Fake sağlayıcı ve
+iki adapter içerir. Aynı NotificationDemoCaller yalnız ortak sözleşmeyi kullanır.
+Mail ayrı alan/typed exception, Publish kendi request/error-code protokolüyle
+çalışır. Alanlar/referans korunur, hata ve iptal anlamları ayrılır. Bilinmeyen veya
+çelişkili Publish cevabı exception'dır. Sahte davranış delegate ile ayarlanır;
+alıcı adresindeki sihirli kelimelere dayanmaz.
+
+**Gerçek kontroller:** SDK10.0.401, mevcut paket sürümleri korundu. Restore/build
+başarılı; build0 uyarı/0 hata. Adapter modu DB/ağ olmadan geçti; derlenmiş kontrol
+programı restore olmadan tekrar çalıştırıldı ve geçti. Ortak harness iki adapter
+üzerinde kabul/alıcı reddi/kesinti, kayıpsız alan/referans, aynı token, tek çağrı,
+null mesaj, beklenmeyen aynı exception ve canceled Task anlamını doğruladı.
+TCS ile sonradan tamamlanan bilinen Mail exception'ları await/catch'e ulaştı.
+Publish bilinmeyen kod, accepted+hata, başarısız+kodsuz, başarısız+referans,
+null cevap ve boş referans kombinasyonları reddedildi; referanssız kabul desteklendi.
+Web assembly'sinde deney türlerinin bulunmadığı kontrol edildi.
+
+`unit`, `core`, `full` çalıştırıldı ve başarılı. Önceki decorator/async/sıra,
+Strategy/Factory/State, saf akademik kurallar ve gerçek LocalDB/HTTP regresyonları
+korundu. Full gerçek unique/FK, batch ilk INSERT sonrası rollback ve kesinleşmiş
+rakip satırın korunmasını, lifecycle/restart, katalog/SQL/tracking/transaction,
+seed tekrarı ve mevcut liste sözleşmelerini yeniden doğruladı. Yeni ürün davranışı
+ve migration yok. `dotnet ef migrations has-pending-model-changes`: fark yok.
+`adapter -ProbeFailure` beklenen assertion üretti; üst çalıştırıcı exit1 verdi.
+
+**İzolasyon:** Adapter deneyi veri/süreç/ağ oluşturmaz. Core/full mevcut yeni
+izole LocalDB yaklaşımını kullandı; app/lab'a yazılmadı. Finally temizliği sonrası
+core sekiz tablo boş; full2 ders/2 dönem/3 açılış seed'i, diğer beş tabloda0 satır.
+Geçici API süreç sayısı0. Log/test çıktısı ve DB dosyası repoya eklenmedi.
+
+**Sınırlar/eksikler:** Engel yok. Gerçek sağlayıcı uyumluluğu veya teslim testi
+çalıştırılmadı ve iddia edilmiyor. Accepted teslim/okunma değildir. Kesinti güvenli
+retry anlamına gelmez; timeout/yanıt kaybı ve DB/dış gönderim atomikliği çözülmez.
+Onay/ret/kayıt bağlantısı, HTTP endpoint'i, kalıcı bildirim, retry/fallback,
+queue/Outbox/Inbox, yeni paket veya Facade eklenmedi. Önceki günün ayrı decorator
+HTTP-log modu bugün ayrıca çalıştırılmadı; saf decorator ve full regresyonları
+çalıştırıldı. Temizlik arızası/Down deneyi yok (bugün migration da yok).
+
+**Sıradaki gün:** Facade; dönem kayıt özetini birleştiren işlem.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
+`feat: adapt demo notification providers` commit'inden bulunur. Push sonucu son
+raporda verilir; hash yazmak için ek commit oluşturulmaz.

@@ -19,6 +19,12 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "adapter" or "unit" or "full")
+{
+    try { await AdapterChecks.Run(mode == "adapter" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+    if (mode == "adapter") return;
+}
 if (mode is "unit" or "decorator" or "full") await DecoratorChecks.Run();
 if (mode is "state" or "full") StateChecks.Unit();
 if (mode is "eligibility" or "full") EligibilityChecks.Unit();

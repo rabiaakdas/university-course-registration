@@ -1339,3 +1339,38 @@ gerçek API'nin yapılandırılmış konsol olaylarını bellekten doğrular. Lo
 üretmez. Deneyler `scripts` altındadır ve web derlemesine/DI'a dahil değildir.
 [Test düzeni](docs/testing.md) · [Öğrenme notu](docs/day17-decorator.md) ·
 [ADR](docs/adr/0017-academic-timing-decorator.md)
+
+## Gün 18 — Tamamen sahte bildirim adapter'ları
+
+Bu öğrenme örneği yalnız `scripts/NotificationAdapterDemo.cs` içinde çalışır;
+web derlemesine, DI kayıtlarına, onay/ret/kayıt akışlarına veya DB'ye bağlı değildir.
+Ağ erişimi, gerçek e-posta/SMS hesabı ve gerçek alıcı yoktur. Test adresleri
+`example.test` kullanır; Fake sağlayıcılar gerçek SDK uyumluluğu iddia etmez.
+
+`INotificationSender` iki farklı API'yi ortak mesaj/sonuçla kullanır:
+
+| Ortak sonuç | Anlam |
+|---|---|
+| Accepted | Sahte sağlayıcı isteği kabul etti; teslim/okunma garantisi değil |
+| RecipientRejected | Bilinen alıcı reddi |
+| ProviderUnavailable | Bilinen sağlayıcı kesintisi; güvenli retry garantisi değil |
+
+Mesaj alanları null/boş/yalnız boşluk olamaz; geçerli metinler trim edilmeden ve
+kesilmeden taşınır. Referans varsa aynen korunur, yoksa üretilmez. Başarısız
+sonuçta referans bulunmaz. Çelişkili/bilinmeyen sağlayıcı cevapları exception'dır;
+beklenmeyen exception ve cancellation normal ret sonucuna dönüştürülmez.
+
+Repo kökünde:
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode adapter
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+```
+
+`adapter` DB/ağ kullanmadan sonuç/alan/token/çağrı sayısı ve async hata/iptali
+kontrol eder; `unit` ve `full` de bu kontrolleri içerir. Retry, fallback, queue,
+Outbox, kalıcı bildirim, yeni endpoint veya Facade yoktur. Adapter DB kaydıyla
+haricî gönderimi atomik yapmaz; timeout/yanıt kaybı belirsizliğini çözmez.
+[Öğrenme notu](docs/day18-notification-adapter.md) ·
+[ADR](docs/adr/0018-demo-notification-adapters.md) · [Test kılavuzu](docs/testing.md)
