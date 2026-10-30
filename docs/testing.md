@@ -332,3 +332,36 @@ gizlemez. SQL/log çıktıları yalnız bellektedir. DB şeması test sonunda ko
 sequence sıfırlanmaz. App/lab hedeflenmez. Ağ kullanımı yalnız yerel HTTP'dir;
 gerçek bildirim gönderilmez. Kalıcı teslim/çökme kurtarma/eşzamanlı onay garantisi
 bu testlerle kanıtlanmaz.
+
+## Gün 22 — Direct EF / dar repository karşılaştırması
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode repository
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Repository modu gerçek LocalDB gerektirir; birim testi değildir. Mevcut runner her
+çalışmada yeni, ad/sahiplik kontrolü yapılmış izole DB oluşturur. Üretim app/lab
+DB'leri hedeflenmez. EnrollmentRepositoryExperiment ve RepositoryChecks yalnız
+geçici test projesine açık dahil edilir; web derlemesinde bulunmadıkları sınanır.
+
+Tek harness iki erişim yoluyla Find/null/tracking, Add/Added, ayrı context'ten save
+öncesi/sonrası görünürlük, gerçek FK hatasında tek save rollback, cancellation ve
+kapalı context yaşam süresini kontrol eder. Mevcut SQL capture filtre/parametre ve
+projection'ı gerçek yürütülmüş komutta inceler; log dosyası üretmez. İki küçük bileşen
+ortak context'e ekler, SaveChanges'i çağıran çalıştırır. Repository context'i
+oluşturmaz veya dispose etmez. Başarısız context sonraki doğrulamada kullanılmaz.
+
+Full, mevcut RelatedWriteChecks.Tracking deneyini de çalıştırır: bağımsız iki
+SaveChanges artık ayrı context'lerde gerçekleştirilir; ikinci gerçek CHECK hatası
+ilk kesinleşmiş kaydı geri almaz. A/B/C/D deneyleri kopyalanmadı. Batch INSERT sonrası
+rollback ve commit sonrası observer kontrolleri mevcut testlerden yeniden kullanılır.
+
+`-Mode repository -ProbeFailure` fixture sonunda kontrollü assertion üretir;
+finally temizliği çalışır, runner exit1 döner. Yalnız testin kimlikleri FK sırasıyla
+silinir, sequence sıfırlanmaz, test DB şeması tutulur. Temizlik hatası ayrıca
+raporlanır, asıl hatayı gizlemez. Context'ler await using, API süreçleri runner finally
+ile kapatılır. GetAll/bellekte Where örneği yalnız belgede açıklanır; gerçek katalog
+SQL davranışı mevcut full kontrolleriyle sınanır. Sahte repository SQL kanıtı değildir.

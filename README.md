@@ -1482,3 +1482,20 @@ pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
 
 [Öğrenme notu](docs/day21-approval-observers.md) ·
 [ADR](docs/adr/0021-committed-approval-observers.md) · [Test kılavuzu](docs/testing.md)
+
+## Gün 22 — Veri erişim sınırları
+
+Üretimde doğrudan scoped `UniversityDbContext` korunuyor. İzlenen geçiş entity'leri,
+DTO projection ve toplu uygunluk sorgularını genel CRUD altında birleştirmek somut
+kazanç sağlamıyor. Üretime repository/IUnitOfWork eklenmedi; HTTP, şema, batch tek
+SaveChanges ve onay sonrası olay akışı değişmedi.
+
+Üretim dışı `DemoEnrollmentRepository` yalnız tracked Find ve Added yapan Add sunar;
+SaveChanges/commit ve context dispose çağırana aittir. Gerçek LocalDB karşılaştırması:
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode repository
+```
+
+[Test kılavuzu](docs/testing.md) · [Öğrenme notu](docs/day22-persistence-boundaries.md) ·
+[ADR](docs/adr/0022-direct-ef-and-repository-experiment.md).

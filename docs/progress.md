@@ -1305,3 +1305,60 @@ etkiyi atomik yapmaz. Sonraki Outbox/queue konularının garantileri önceden ku
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
 `feat: observe committed enrollment approvals` commit'inden bulunur. Push sonucu
 son raporda verilir; kendi hash'i için ek commit oluşturulmaz.
+
+## Gün 22 — Repository/UoW ve DbContext sınırları
+
+**Başlangıç:** main temiz; gerçek HEAD `39cb331` (Gün21). Git geçmişi ve 17–21
+çalışmaları incelendi, eski raporlanan commit güncel varsayılmadı. AGENTS.md bulunmadı.
+
+**Üretim kararı:** Doğrudan scoped UniversityDbContext korundu. EnrollmentOperations
+zaten toplu veri hazırlığını ortaklaştırıyor; tracked geçiş sorguları ile katalog/
+summary projection'ları aynı anlamı taşımıyor. Dar Find/Add üretim tüketicisini
+anlamlı sadeleştirmediğinden repository/IUnitOfWork/interface eklenmedi. Hiçbir üretim
+kaynağı, HTTP sözleşmesi, şema, batch tek SaveChanges veya onay olayı sınırı değişmedi.
+
+**Deney:** EnrollmentRepositoryExperiment.cs yalnız test derlemesinde. Tracked
+Find/null, Added yapan Add, çağıranın save/commit/dispose sahipliği açık.
+RepositoryChecks aynı harness ile direct/repository yollarını karşılaştırır;
+CatalogSqlCapture ve gerçek FK hata sınıflandırması yeniden kullanılır. İki küçük
+bileşenin ortak context'e hazırladığı Student/Enrollment tek SaveChanges'e katılır.
+Mevcut RelatedWriteChecks.Tracking B deneyinin ikinci yazması ayrı context'e alındı;
+transaction testleri kopyalanmadı. Generic maliyetler öğrenme notunda açıklamalı
+örneklerle, IQueryable yaşam süresi ise çalıştırılan kontrollü hata ile gösterildi.
+
+**Gerçek sonuçlar (2026-10-30):**
+- SDK10.0.401 ile restore/build başarılı; 0 hata/0 uyarı, paket yükseltme yok.
+- repository: direct ve dar repository için bulunan/yok kayıt, beklenen context'te
+  tracking, Added, save öncesi yok/save sonrası var, gerçek FK hatasında iki yeni
+  kaydın da kalıcılaşmaması, cancellation ve disposed context hatası geçti.
+- Gerçek yürütülen Find SQL'i parametreli WHERE içeriyor; ilişki JOIN'i/bütün tablo
+  yüklemesi yok. Dar scalar projection SQL'de, gereksiz CreatedAtUtc/Reason sütunu yok.
+- Ortak context'te iki bileşenin değişikliklerini tek save kalıcılaştırdı. Ayrı
+  context'lerde ikinci CHECK hatası ilk save'i geri almadı (mevcut full deneyi).
+- unit/core/full başarılı. Full: gerçek batch ilk INSERT sonrası unique rollback,
+  rakip kesinleşmiş kayıt korunması, FK dalları; akademik/state/eligibility/katalog,
+  summary ve önceki decorator/adapter/builder deneyleri geçti. Observer yeni
+  context'te Approved okudu; yazma arızasında olay yok, observer arızasında200;
+  onay SELECT sayısı önce/sonra7. Mevcut SQL sayfalama/projection ve seed tekrarı geçti.
+- `repository -ProbeFailure` kontrollü assertion exit1; finally temizliği ve süreç
+  kapatma çalıştı. Ayrı SQL bağlantısıyla bu DB'nin sekiz tablosunda toplam0 satır
+  doğrulandı: `university_registration_tests_day6_4e866b7accb844688276087e4c42dec9`.
+- Normal repository DB `university_registration_tests_day6_0d8a12ff8278406099c98fdf33032a00`
+  ve core DB boş doğrulandı. Full DB `university_registration_tests_day6_2ac53102d9214fa586103cc754ddd83e`
+  yalnız seed2 ders/2 dönem/3 açılış; kalan5 tablo0. Test şemaları tutuldu, sequence
+  sıfırlanmadı. API/check süreç kalıntısı yok; app/lab hedeflenmedi.
+- EF `has-pending-model-changes`: fark yok; repository/core pending migration kontrolü
+  temiz. Yeni migration yok. Secret/SQL/log/test çıktısı commit edilmedi.
+
+**Sınırlar/eksikler:** Engel yok. Gerçek altyapı bağlantı kesintisi ve temizlik
+arızası simülasyonu yapılmadı; disposed context'in null'a çevrilmediği, iptal ve
+gerçek FK/CHECK hataları sınandı. Generic GetAll/bellekte filtreleme anti-pattern'i
+çalıştırılmadı, açıklamalı örnektir. Repository atomiklik/teknoloji bağımsızlığı veya
+performans garantisi sağlamaz. Down uygulanmadı (yeni migration yok). Onay sonrası
+commit/yayın boşluğu, kalıcı teslim ve eşzamanlı onay sınırları aynen geçerli.
+
+**Sıradaki gün:** CQRS ve Mediator ayrımı; kayıt komutu/katalog sorgusu.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
+`refactor: evaluate enrollment persistence boundaries` commit'inden bulunur.
+Push sonucu son raporda; hash için ek commit oluşturulmaz.

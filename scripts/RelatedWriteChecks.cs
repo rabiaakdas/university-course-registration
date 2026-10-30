@@ -178,6 +178,10 @@ static class RelatedWriteChecks
         await using(var db=factory())
         {
             db.Courses.Add(new(){Code="D6_SEPARATE_OK",Name="Good",Credits=1}); await db.SaveChangesAsync();
+        }
+        // Day22: separate contexts make the independent unit-of-work boundary explicit.
+        await using(var db=factory())
+        {
             db.Courses.Add(new(){Code="D6_SEPARATE_BAD",Name="Bad",Credits=0}); await Fail(db);
         }
         await using(var read=factory()) Check(await read.Courses.AnyAsync(c=>c.Code=="D6_SEPARATE_OK") && !await read.Courses.AnyAsync(c=>c.Code=="D6_SEPARATE_BAD"),"Separate SaveChanges boundary");

@@ -1,4 +1,4 @@
-param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
+param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
 # Real LocalDB + HTTP checks, no test framework or permanent test project.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -24,11 +24,13 @@ $summary = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'S
 $builder = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'EligibilityScenarioBuilder.cs'))
 $builderChecks = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'BuilderChecks.cs'))
 $approvalObserver = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'ObserverChecks.cs'))
+$repository = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'EnrollmentRepositoryExperiment.cs'))
+$repositoryChecks = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'RepositoryChecks.cs'))
 $source = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CourseWriteChecks.cs'))
 @"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
-  <ItemGroup><ProjectReference Include="$project" /><Compile Include="$source" /><Compile Include="$approvalObserver" /><Compile Include="$builder" /><Compile Include="$builderChecks" /><Compile Include="$summary" /><Compile Include="$adapter" /><Compile Include="$notificationDemo" /><Compile Include="$decorator" /><Compile Include="$observer" /><Compile Include="$core" /><Compile Include="$priority" /><Compile Include="$factories" /><Compile Include="$specifications" /><Compile Include="$eligibility" /><Compile Include="$state" /><Compile Include="$stateExperiment" /><Compile Include="$related" /><Compile Include="$catalog" /><Compile Include="$enrollment" /><Compile Include="$batch" /><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="$project" /><Compile Include="$source" /><Compile Include="$repository" /><Compile Include="$repositoryChecks" /><Compile Include="$approvalObserver" /><Compile Include="$builder" /><Compile Include="$builderChecks" /><Compile Include="$summary" /><Compile Include="$adapter" /><Compile Include="$notificationDemo" /><Compile Include="$decorator" /><Compile Include="$observer" /><Compile Include="$core" /><Compile Include="$priority" /><Compile Include="$factories" /><Compile Include="$specifications" /><Compile Include="$eligibility" /><Compile Include="$state" /><Compile Include="$stateExperiment" /><Compile Include="$related" /><Compile Include="$catalog" /><Compile Include="$enrollment" /><Compile Include="$batch" /><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
 </Project>
 "@ | Set-Content (Join-Path $work 'Checks.csproj') -Encoding utf8
 dotnet run --project (Join-Path $work 'Checks.csproj') -- $root $Mode $Reverse.IsPresent $ProbeFailure.IsPresent
