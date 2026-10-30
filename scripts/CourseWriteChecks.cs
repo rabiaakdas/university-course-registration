@@ -19,6 +19,12 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "cqrs" or "unit" or "full")
+{
+    try { await CqrsChecks.Run(mode == "cqrs" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+    if (mode == "cqrs") return;
+}
 if (mode is "observer" or "unit" or "full")
 {
     try { await ObserverChecks.Unit(mode == "observer" && probe); }

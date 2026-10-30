@@ -1,4 +1,5 @@
 using UniversityRegistration.Contracts;
+using UniversityRegistration.Application;
 
 namespace UniversityRegistration.Endpoints;
 
@@ -17,10 +18,5 @@ public static class RegistrationInput
     }
 
     public static Dictionary<string, string[]> Enrollment(CreateEnrollmentRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
-        if (request.StudentId <= 0) errors["studentId"] = ["Öğrenci kimliği pozitif olmalıdır."];
-        if (request.CourseOfferingId <= 0) errors["courseOfferingId"] = ["Açılış kimliği pozitif olmalıdır."];
-        return errors;
-    }
+        => CreateEnrollmentCommand.Validate(request.StudentId, request.CourseOfferingId);
 }

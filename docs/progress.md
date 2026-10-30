@@ -1362,3 +1362,76 @@ commit/yayın boşluğu, kalıcı teslim ve eşzamanlı onay sınırları aynen 
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
 `refactor: evaluate enrollment persistence boundaries` commit'inden bulunur.
 Push sonucu son raporda; hash için ek commit oluşturulmaz.
+
+## Gün 23 — CQRS ve Mediator ayrımı
+
+**Başlangıç:** main temiz, gerçek HEAD `98d7ddd` (Gün22). 17–22 commit'leri ve
+progress/dosyaları bulundu; eski raporlanan commit güncel varsayılmadı. Eksik önceki
+gün uygulaması yapılmadı. Önceki kayıtlar ve davranışlar korundu.
+
+**Üretim:** CreateEnrollmentCommand get-only/pozitif kimliklerle oluşturulur;
+EnrollmentOperations.CreateAsync mevcut koordinasyonun tek sahibi olarak komutu
+kabul eder. HTTP request ayrıdır. RegistrationInput aynı komut Validate fonksiyonunu
+kullanır; alan bazlı400 önceliği korunur. Doğrudan yanlış oluşturma ilgili parametre
+ArgumentOutOfRangeException, null işlem girdisi ArgumentNullException'dır.
+CourseCatalogQuery ve scoped CourseCatalogReader SQL akışını HTTP'den ayırır;
+endpoint bağlama/alan hatası/200 yanıtını yönetir. Query constructor ve HTTP aynı
+Validate fonksiyonunu kullanır. Aynı DB/doğrudan çağrı; Mediator üretimde yoktur.
+
+**Deney:** MediatorExperiment iki typed istek/sonuç ve iki somut işleyici içerir;
+CqrsChecks doğrudan/aracı çağrıyı, doğru handler/tek çağrı/aynı token ve sonucu,
+TCS ile bekleyen task, aynı exception ve cancelled task, eksik handler hatasını
+sınar. İki sabit typed slot duplicate registration'ı temsil etmez. Kaynaklar web
+derlemesinden dışlanır; paket/reflection/pipeline eklenmedi.
+
+**Gerçek sonuçlar (2026-10-30):**
+- Restore/build başarılı, 0 hata/0 uyarı. SDK10.0.401 ve mevcut paketler korundu.
+- cqrs ve unit: doğrudan geçersiz komut/query sınırları, ortak HTTP alan hataları,
+  Trim/default/boş arama/güvenli offset/null ve Mediator deneyleri DB olmadan geçti.
+- core: gerçek HTTP başarılı kayıt, olmayan açılış400, mükerrer409 ve DB doğrulamaları
+  geçti. Full: Draft oluşturma, akademik failures sırası, durum geçişleri, unique/FK
+  kayıt anı dalları; batch ilk INSERT sonrası rollback ve rakip kaydın korunması geçti.
+- Mevcut CatalogChecks yeni reader'ı doğrudan çalıştıracak şekilde uyarlandı; ikinci
+  katalog algoritması/test seti yazılmadı. Gerçek SQL'de parametreli WHERE, ayrı COUNT,
+  Id ORDER BY/OFFSET-FETCH ve yalnız Id/Code/Name; toplam2 komut/boş tracker geçti.
+  HTTP filtreler/AND/default/6 sayfa/toplam/özel karakter/collation/400/route/eskiliste
+  sözleşmeleri geçti. Yeni context'te fixture kimlik/kod/ad/kredileri değişmemişti.
+- Full ayrıca observer commit sonrası yeni context'te Approved, SQL yazma hatasında
+  olay yok, observer hatasında200 ve commit sonrası iptal; onayda7 SELECT önce/sonra
+  kontrollerini geçti. Summary, repository karşılaştırması, tracking/transaction,
+  seed tekrarı ve önceki saf pattern deneyleri de yeniden çalıştı.
+- cqrs -ProbeFailure beklenen assertion ile exit1 üretti; DB oluşturmadı. EF
+  has-pending-model-changes fark yok. Yeni migration/şema değişikliği yok.
+- Core DB `university_registration_tests_day10_60becbad57a5437db81b2ce9a3f2f8e3`
+  boş doğrulandı. Full DB `university_registration_tests_day6_451e08273f2b4525ace98d4494efe9f2`
+  sonunda yalnız2 ders/2 dönem/3 açılış seed'i, diğer5 tablo0 ayrıca SQL ile doğrulandı.
+  API/check süreçleri kalmadı; test şemaları tutuldu, sequence sıfırlanmadı. App/lab
+  hedeflenmedi. Secret/log/test çıktısı commit edilmedi.
+
+**Sınırlar/eksikler:** Engel yok. Count/items tek snapshot değildir. Mevcut yetki,
+kontenjan, eşzamanlı geçiş/kredi/program ve commit/yayın teslim sınırları değişmedi.
+MediatR, genel bus, otomatik retry/transaction veya ayrı read DB eklenmedi.
+Logger/temizlik arızası ve bağlantı kopması simülasyonu yapılmadı; Down uygulanmadı
+(bugün migration yok). Önceki günlerin özel ProbeFailure ve decorator HTTP-log modu
+bugün ayrıca tekrarlanmadı; aşağıdaki tablo bunları geçmiş kanıt olarak ayırır.
+
+### 17–23 toplu değerlendirme kanıt haritası
+
+Commit'ler gerçek Git geçmişinden; değişiklikler ilgili günün progress kaydındandır.
+Bugün sütunu yalnız bu çalışmada gerçekten yürütülen kontrolleri gösterir.
+
+| Gün | Commit | Kayıtlı değişiklik | Bugün yeniden çalıştırılan | Geçmişten aktarılan, bugün tekrarlanmayan | Açık sınır |
+|---|---|---|---|---|---|
+|17|4e0f4a9|Akademik timing decorator|Saf sonuç/log/async/sıra; full akademik akış|Decorator modundaki50 HTTP logu (G17)|Logger arızası; benchmark değil|
+|18|21a86cb|İki Fake bildirim adapter'ı|Ortak adapter sözleşmesi/hata/iptal|Adapter ProbeFailure exit1 (G18)|Gerçek teslim/sağlayıcı uyumu yok|
+|19|4c14a16|Dönem summary facade|Full SQL/HTTP, kredi/saat/no-write|Summary ProbeFailure temizliği (G19)|Tek snapshot/yetki garantisi yok|
+|20|074c64b|Test senaryosu builder|Saf kopyalama/yapı; full uygunluk|Builder ProbeFailure exit1 (G20)|Bellek içi; DB fixture değil|
+|21|39cb331|Commit sonrası observer|Full HTTP/SQL, hata/iptal,7 SELECT|Observer ProbeFailure exit1 (G21)|Kalıcı teslim/eşzamanlı onay yok|
+|22|98d7ddd|Direct EF/repository deneyi|Full iki yol/tracking/SQL/UoW|Repository ProbeFailure temizliği (G22)|Teknoloji bağımsızlığı iddiası yok|
+|23|Bu kaydı içeren commit; aşağıdaki mesajla Git'ten bulunur|Komut/query sınırı ve Mediator deneyi|cqrs/unit/core/full; model; exit1|Yok|Count/items iki sorgu; üretimde doğrudan çağrı|
+
+**Sıradaki gün:** Kimlik verisi ile iş verisi ayrımı; ASP.NET Core Identity.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
+`refactor: separate enrollment command and catalog query` commit'inden bulunur.
+Push sonucu son raporda; kendi hash'i için ikinci commit üretilmez.

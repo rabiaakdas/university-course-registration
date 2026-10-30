@@ -1499,3 +1499,33 @@ pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode repository
 
 [Test kılavuzu](docs/testing.md) · [Öğrenme notu](docs/day22-persistence-boundaries.md) ·
 [ADR](docs/adr/0022-direct-ef-and-repository-experiment.md).
+
+## Gün 23 — Kayıt komutu ve katalog sorgusu
+
+Üretimde aynı uygulama/DB ve **doğrudan çağrı** kullanılır; Mediator yoktur.
+`Application/CreateEnrollmentCommand` pozitif kimliklerle kontrollü oluşturulur,
+mevcut `EnrollmentOperations.CreateAsync` koordinasyonu yürütür. HTTP request'i
+ayrı kalır; alan hataları mevcut400, mükerrer409 ve başarı201 sözleşmesini korur.
+
+`Application/CourseCatalogQuery` normalize arama, kredi ve güvenli sayfa sınırlarını;
+`CourseCatalogReader` SQL filtre/count/sıralama/sayfalama/DTO projection'ını üstlenir.
+`CourseCatalogEndpoint` bağlama/doğrulama ve HTTP200 ile ilgilenir. HTTP ve doğrudan
+uygulama çağrısı aynı doğrulama fonksiyonlarını kullanır; doğrudan geçersiz nesne
+oluşturma programlama hatası olarak ArgumentOutOfRangeException üretir.
+
+`/courses` ve `/courses/catalog` JSON sözleşmeleri değişmedi. Query yazmaz; Count ve
+items hâlâ iki sorgu olup tek snapshot garantisi vermez. Batch tek SaveChanges ve
+onay sonrası observer sınırı değişmedi. Yeni migration/paket/transaction pipeline yok.
+
+```powershell
+dotnet run --project .\UniversityRegistration.csproj
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode cqrs
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+CQRS modu üretim giriş sınırlarını ve iki typed istekli Mediator deneyini DB olmadan
+çalıştırır. Gerçek SQL/HTTP kanıtı full içindeki mevcut katalog/kayıt kontrolleridir.
+[Öğrenme notu](docs/day23-cqrs-and-mediator.md) ·
+[ADR](docs/adr/0023-command-and-catalog-query.md) · [Test kılavuzu](docs/testing.md).

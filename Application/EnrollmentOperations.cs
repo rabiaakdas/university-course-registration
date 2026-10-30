@@ -11,8 +11,11 @@ namespace UniversityRegistration.Application;
 public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolicy policy,
     IAcademicEligibilityEvaluator evaluator, EnrollmentApprovedPublisher approvalPublisher)
 {
-    public async Task<SingleEnrollmentResult> CreateAsync(int studentId, int offeringId, CancellationToken ct)
+    public async Task<SingleEnrollmentResult> CreateAsync(CreateEnrollmentCommand command, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(command);
+        var studentId = command.StudentId;
+        var offeringId = command.CourseOfferingId;
         var studentExists = await db.Students.AnyAsync(s => s.Id == studentId, ct);
         var offering = await Offerings([offeringId]).SingleOrDefaultAsync(ct);
         var offeringExists = offering is not null;

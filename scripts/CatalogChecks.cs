@@ -7,6 +7,7 @@ using UniversityRegistration.Contracts;
 using UniversityRegistration.Data;
 using UniversityRegistration.Endpoints;
 using UniversityRegistration.Models;
+using UniversityRegistration.Application;
 
 static class CatalogChecks
 {
@@ -79,6 +80,15 @@ static class CatalogChecks
 
             await SqlEvidence(factory);
             await Tracking(factory,samples[0].Id);
+            await using (var verify = factory())
+            {
+                var ids = samples.Select(c => c.Id).ToArray();
+                var actual = await verify.Courses.Where(c => ids.Contains(c.Id)).OrderBy(c => c.Id)
+                    .Select(c => new { c.Id, c.Code, c.Name, c.Credits }).ToListAsync();
+                Check(actual.Count == samples.Count && actual.Zip(samples.OrderBy(c => c.Id)).All(pair =>
+                    pair.First.Id == pair.Second.Id && pair.First.Code == pair.Second.Code
+                    && pair.First.Name == pair.Second.Name && pair.First.Credits == pair.Second.Credits), "Catalog fixture unchanged in fresh context");
+            }
         }
         finally
         {
@@ -95,7 +105,8 @@ static class CatalogChecks
         var capture=new CatalogSqlCapture();
         await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>()
             .UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
-        await CourseCatalogEndpoint.GetAsync(db,default,"D7C",11,2,7);
+        var reader = new CourseCatalogReader(db);
+        await reader.ReadAsync(new CourseCatalogQuery("D7C",11,2,7),default);
         Check(capture.Commands.Count==2,"Expected only two executed commands (no per-row queries)");
         foreach(var command in capture.Commands)
         {
@@ -114,7 +125,7 @@ static class CatalogChecks
         Check(capture.Commands[1].Parameters.Any(p=>p is int n && n==7),"Pagination parameter");
         Check(!db.ChangeTracker.Entries().Any(),"Catalog tracks no entity");
         capture.Commands.Clear();
-        await CourseCatalogEndpoint.GetAsync(db,default,page:0);
+        await CourseCatalogEndpoint.GetAsync(reader,default,page:0);
         Check(capture.Commands.Count==0,"Invalid catalog queried DB");
         Console.WriteLine("PASS: two real completed SQL commands; filtered COUNT and WHERE/ORDER BY/OFFSET FETCH/3-column page; parameters; no N+1");
     }

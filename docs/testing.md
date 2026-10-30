@@ -365,3 +365,27 @@ silinir, sequence sıfırlanmaz, test DB şeması tutulur. Temizlik hatası ayr�
 raporlanır, asıl hatayı gizlemez. Context'ler await using, API süreçleri runner finally
 ile kapatılır. GetAll/bellekte Where örneği yalnız belgede açıklanır; gerçek katalog
 SQL davranışı mevcut full kontrolleriyle sınanır. Sahte repository SQL kanıtı değildir.
+
+## Gün 23 — CQRS ve Mediator sınırları
+
+`-Mode cqrs`: üretim komut/query constructor sınırları, paylaşılan alan doğrulaması,
+varsayılan/Trim/Int32 offset, null uygulama çağrısı; üretim dışı typed Mediator'da
+komut ve sorgu yönlendirmesi, doğrudan eşdeğerlik, tek handler/tek çağrı, aynı token,
+sonuç nesnesi, TCS ile bekleme/hata/cancellation ve eksik handler. İki sabit typed
+constructor slot'u olduğundan duplicate registration temsil edilemez. DB gerekmez.
+`-Mode cqrs -ProbeFailure` DB oluşturmadan kontrollü assertion ve exit1 üretir.
+Deney kaynakları yalnız geçici test projesinde; üretim assembly'sinden dışlanır.
+
+Mevcut CatalogChecks.SqlEvidence artık doğrudan CourseCatalogReader'ı çalıştırır;
+WHERE/parametre/COUNT/ORDER BY/OFFSET-FETCH/yalnız DTO sütunları ve boş tracker
+beklentileri korunur. Invalid HTTP query DB sorgulamaz. Katalog HTTP senaryoları
+aynı kalır; fixture kimlik/kod/ad/kredilerinin değişmediği yeni context ile ayrıca
+karşılaştırılır. Katalog ve kayıt senaryoları kopyalanmadı. `-Mode full` bu gerçek
+SQL/HTTP kontrollerini, akademik/state/observer ve batch yazma hatası regresyonlarını
+çalıştırır; `-Mode unit` saf CQRS deneyini de içerir. Temizlik/izolasyon değişmedi.
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode cqrs
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```

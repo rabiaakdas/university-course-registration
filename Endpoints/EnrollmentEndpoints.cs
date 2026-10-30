@@ -39,7 +39,7 @@ public static class EnrollmentEndpoints
     {
         var errors = RegistrationInput.Enrollment(request);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
-        var result = await operations.CreateAsync(request.StudentId, request.CourseOfferingId, ct);
+        var result = await operations.CreateAsync(new CreateEnrollmentCommand(request.StudentId, request.CourseOfferingId), ct);
         if (result is SingleEnrollmentResult.AcademicRejected academic) return AcademicRejectionHttp.Problem(academic.Rejection);
         if (result is SingleEnrollmentResult.Created created)
             return Results.Created($"/enrollments/{created.Enrollment.Id}", created.Enrollment);
