@@ -157,7 +157,7 @@ internal static class EligibilityChecks
             await using(var template=factory())
             {
                 var capture=new CatalogSqlCapture();await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
-                var result=await new EnrollmentOperations(db,new(30),DecoratorChecks.TimedEvaluator()).EvaluateBatchAsync(queryStudent,[offers[1].Id,offers[5].Id],default);
+                var result=await new EnrollmentOperations(db,new(30),DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()).EvaluateBatchAsync(queryStudent,[offers[1].Id,offers[5].Id],default);
                 var evaluated=((EligibilityResult.Evaluated)result).Evaluation;
                 Check(evaluated.Failures.OfType<AcademicRejection.ScheduleConflict>().Count()==3,"one reason per pair despite multiple/overlapping slots");
                 Check(!db.ChangeTracker.Entries().Any(),"projection preview has no tracked changes/entities");

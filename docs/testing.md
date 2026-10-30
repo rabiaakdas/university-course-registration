@@ -309,3 +309,26 @@ DB olmadan çalıştırır; unit/full de builder sözleşmesini içerir.
 `-Mode builder -ProbeFailure` kontrollü assertion ile üst çalıştırıcıya exit1
 taşınmasını sınar. Yeni framework/proje yok; iki kaynak mevcut geçici console
 projesine açık dahil edilir, web derlemesinden dışlanır.
+
+## Gün 21 — Observer kontrolleri
+
+`-Mode unit` saf dağıtımı DB olmadan içerir. `-Mode observer`, aynı saf kontrollerin
+ardından mevcut güvenli adlandırma/sahiplik kontrolüyle yeni izole LocalDB oluşturur.
+Gerçek EnrollmentEndpoints, scoped DI ve geçici Kestrel host'unda test observer'ları
+kullanılır. `-Mode full` bu kontrolleri mevcut regresyonlarla birlikte çalıştırır.
+`-Mode observer -ProbeFailure` DB oluşturmadan assertion üretir, üst runner exit1 döner.
+
+ObserverChecks: sıfır/tek/iki observer, aynı olay/token, bir çağrı, TCS ile sıralı await,
+null, güvenli log alanları, beklenmeyen hata ve token iptal değilken OCE, işbirlikçi
+iptal. Gerçek SQL/HTTP: bağımsız context Approved okur; 200/409/404/akademik400,
+SQL CHECK ile gerçek UPDATE hatasında500 ve olay yok; observer hatasında200;
+uygulama sınırında kontrollü commit sonrası iptal; dış transaction reddi.
+Üretim log observer'ı ile onay SELECT sayısı önce/sonra7 olarak karşılaştırılır.
+
+Oluşturma/submit/reject olay üretmez. Test CHECK'i kendi yeni DB'sinde geçici olarak
+kurulur ve kaldırılır. FK sırasıyla yalnız fixture kayıtları finally temizlenir;
+host ve API süreçleri kapatılır. Temizlik hatası ayrı raporlanır, asıl assertion'ı
+gizlemez. SQL/log çıktıları yalnız bellektedir. DB şeması test sonunda korunur;
+sequence sıfırlanmaz. App/lab hedeflenmez. Ağ kullanımı yalnız yerel HTTP'dir;
+gerçek bildirim gönderilmez. Kalıcı teslim/çökme kurtarma/eşzamanlı onay garantisi
+bu testlerle kanıtlanmaz.

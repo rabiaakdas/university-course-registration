@@ -19,6 +19,11 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "observer" or "unit" or "full")
+{
+    try { await ObserverChecks.Unit(mode == "observer" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+}
 if (mode is "builder" or "unit" or "full")
 {
     try { BuilderChecks.Run(mode == "builder" && probe); }
@@ -156,7 +161,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer")
 {
     try
     {
@@ -166,6 +171,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
+        else if (mode == "observer") await ObserverChecks.Run(Db);
         else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe);
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
@@ -306,6 +312,7 @@ try
     await EligibilityChecks.Run(Db, Send);
     await StateChecks.Run(Db, Send, StopApi, StartApi);
     await SummaryChecks.Run(Db, Send);
+    await ObserverChecks.Run(Db);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

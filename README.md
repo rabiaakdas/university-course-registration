@@ -1448,3 +1448,37 @@ builder değildir. Bağımsız Build sonuçları, kopyalama ve yapısal koşulla
 ```powershell
 pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode builder
 ```
+
+## Gün 21 — Kesinleşmiş onay olayı
+
+Onaylama, başarılı bağımsız `SaveChangesAsync` sonrasında `EnrollmentApproved`
+üretir. Scoped publisher observer'ları sırayla await eder. Üretimde yalnız
+`ApprovalLogObserver` vardır: kararlı `EnrollmentApprovalObserved` (2101) olayı,
+EventId ve EnrollmentId loglanır. HTTP/JSON sözleşmeleri değişmedi.
+
+Kritik olmayan observer hatası `EnrollmentApprovalObserverFailed` (2102), EventId,
+EnrollmentId, ObserverType ve ExceptionType alanlarıyla güvenli biçimde kaydedilir;
+sonraki bağımsız observer çalışır. Onay başarısı observer başarısından farklıdır.
+Çağıran iptali sonraki observer'ları durdurur, kesinleşmiş onayı geri almaz; istemcinin
+kopmuş bağlantıdan yanıt alacağı garanti edilmez. İptal edilmeyen token ile gelen
+OperationCanceledException observer arızasıdır. Null olay ArgumentNullException'dır.
+Logger sağlayıcısının arızası için fallback yoktur.
+
+Olay kalıcı değildir: commit/yayın arasında süreç kapanması veya kısmi dağıtımda
+olay kaybolabilir. EventId, retry/dedup/exactly-once sağlamaz. Eşzamanlı onay yarışı
+çözülmedi. DB transaction'ı dış gönderimi atomik yapmaz; integration event/broker,
+gerçek bildirim veya audit kaydı yoktur. Dış transaction içinde onay işlemi erken
+reddedilir; henüz commit edilmemiş SaveChanges sonucu yayın için kullanılamaz.
+
+Repo kökünden mevcut bağlantı yapılandırmasıyla:
+
+```powershell
+dotnet run --project .\UniversityRegistration.csproj
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode observer
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+[Öğrenme notu](docs/day21-approval-observers.md) ·
+[ADR](docs/adr/0021-committed-approval-observers.md) · [Test kılavuzu](docs/testing.md)

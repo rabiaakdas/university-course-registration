@@ -84,11 +84,11 @@ static class BatchEnrollmentChecks
             {
                 var capture=new CatalogSqlCapture();
                 await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);
-                var result=await BatchEnrollmentEndpoint.CreateAsync(largeStudent,new(offeringIds.ToArray()),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default);
+                var result=await BatchEnrollmentEndpoint.CreateAsync(largeStudent,new(offeringIds.ToArray()),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default);
                 Check(((IStatusCodeHttpResult)result).StatusCode==201,"50-item boundary");
                 Check(capture.Commands.Count(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase))==8,"Expected eight bulk preflight reads, no per-item reads");
                 capture.Commands.Clear();
-                await BatchEnrollmentEndpoint.CreateAsync(int.MaxValue,new([]),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default);
+                await BatchEnrollmentEndpoint.CreateAsync(int.MaxValue,new([]),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default);
                 Check(capture.Commands.Count==0,"Invalid structure queried DB");
             }
             Check((await Read(largeStudent)).Length==50,"50 batch DB count");
@@ -99,7 +99,7 @@ static class BatchEnrollmentChecks
                 await using var db=factory();
                 try
                 {
-                    await new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()).CreateBatchAsync(largeStudent,[1],cancelled.Token);
+                    await new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()).CreateBatchAsync(largeStudent,[1],cancelled.Token);
                     throw new Exception("Cancellation was converted into an operation result");
                 }
                 catch(OperationCanceledException) { }
@@ -117,7 +117,7 @@ static class BatchEnrollmentChecks
                 // Test-only command splitting exposes a successful INSERT before a later failure.
                 await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>()
                     .UseSqlServer(template.Database.GetConnectionString(),o=>o.MaxBatchSize(1)).AddInterceptors(race,capture).Options);
-                var result=await BatchEnrollmentEndpoint.CreateAsync(raceStudent,new([1,2]),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default);
+                var result=await BatchEnrollmentEndpoint.CreateAsync(raceStudent,new([1,2]),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default);
                 Check(((IStatusCodeHttpResult)result).StatusCode==409 && race.Classification=="duplicate","Real batch save unique failure");
                 Check(capture.Commands.Any(c=>c.Text.Contains("INSERT INTO [Enrollments]",StringComparison.Ordinal)),"No successful INSERT before constraint failure");
                 Check(db.ChangeTracker.Entries<Enrollment>().Any(e=>e.State==EntityState.Added),"Failed tracker not cleared");
@@ -136,7 +136,7 @@ static class BatchEnrollmentChecks
                 });
                 await using(var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(race).Options))
                 {
-                    var result=await BatchEnrollmentEndpoint.CreateAsync(target,new([3,doomed]),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default);
+                    var result=await BatchEnrollmentEndpoint.CreateAsync(target,new([3,doomed]),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default);
                     Check(((IStatusCodeHttpResult)result).StatusCode==400 && race.Classification==missing,"Batch save FK classification");
                     Check(((ProblemHttpResult)result).ProblemDetails is HttpValidationProblemDetails detail && detail.Errors.ContainsKey(missing),"Batch FK error field");
                 }

@@ -1,4 +1,5 @@
 using UniversityRegistration.Specifications;
+using System.Transactions;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Contracts;
 using UniversityRegistration.Data;
@@ -8,7 +9,7 @@ namespace UniversityRegistration.Application;
 
 // Scoped with its DbContext. Callers validate request shape before invoking these operations.
 public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolicy policy,
-    IAcademicEligibilityEvaluator evaluator)
+    IAcademicEligibilityEvaluator evaluator, EnrollmentApprovedPublisher approvalPublisher)
 {
     public async Task<SingleEnrollmentResult> CreateAsync(int studentId, int offeringId, CancellationToken ct)
     {
@@ -78,6 +79,10 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
 
     private async Task<EnrollmentTransitionResult> AdvanceAsync(int id, bool approve, CancellationToken ct)
     {
+        // This operation owns the save boundary. An outer transaction would make publication premature.
+        if (approve && (db.Database.CurrentTransaction is not null
+            || db.Database.GetEnlistedTransaction() is not null || System.Transactions.Transaction.Current is not null))
+            throw new InvalidOperationException("Approval publication requires an independently committed save.");
         var enrollment = await db.Enrollments.SingleOrDefaultAsync(e => e.Id == id, ct);
         if (enrollment is null) return new EnrollmentTransitionResult.NotFound();
         var expected = approve ? EnrollmentStatus.Submitted : EnrollmentStatus.Draft;
@@ -89,6 +94,14 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
         var changed = approve ? enrollment.TryApprove() : enrollment.TrySubmit();
         if (!changed) return new EnrollmentTransitionResult.InvalidTransition();
         await db.SaveChangesAsync(ct);
+        if (approve)
+        {
+            var notification = new EnrollmentApproved(Guid.NewGuid(), enrollment.Id, enrollment.StudentId,
+                enrollment.CourseOfferingId, DateTimeOffset.UtcNow);
+            if (await approvalPublisher.PublishAsync(notification, ct) == ApprovalPublication.Cancelled)
+                // The approval is already committed. Delivery cancellation is not a business rejection.
+                return new EnrollmentTransitionResult.Updated(Response(enrollment));
+        }
         return new EnrollmentTransitionResult.Updated(Response(enrollment));
     }
 

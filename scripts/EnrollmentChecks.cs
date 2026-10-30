@@ -118,14 +118,14 @@ static class EnrollmentChecks
             }
             await SaveRace("studentNumber",db=>StudentEndpoints.CreateAsync(new("D8_SAVE","Test"),db,default),async()=>{
                 await using var db=factory();db.Students.Add(new(){StudentNumber="D8_SAVE",FullName="Winner"});await db.SaveChangesAsync();});
-            await SaveRace("duplicate",db=>EnrollmentEndpoints.CreateAsync(new(first,3),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default),async()=>{
+            await SaveRace("duplicate",db=>EnrollmentEndpoints.CreateAsync(new(first,3),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default),async()=>{
                 await using var db=factory();db.Enrollments.Add(NewEnrollment(first,3));await db.SaveChangesAsync();});
             var disposable=Id((await Post("/students",new {studentNumber="D8_DELETE",fullName="Test"})).Body);
-            await SaveRace("studentId",db=>EnrollmentEndpoints.CreateAsync(new(disposable,1),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default),async()=>{
+            await SaveRace("studentId",db=>EnrollmentEndpoints.CreateAsync(new(disposable,1),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default),async()=>{
                 await using var db=factory();await db.Students.Where(s=>s.Id==disposable).ExecuteDeleteAsync();});
             int offeringId;
             await using(var db=factory()) {var o=new CourseOffering{CourseId=1,AcademicTermId=1,SectionCode="D8_FK",Capacity=1};db.CourseOfferings.Add(o);await db.SaveChangesAsync();offeringId=o.Id;ownedOfferings.Add(o.Id);}
-            await SaveRace("courseOfferingId",db=>EnrollmentEndpoints.CreateAsync(new(first,offeringId),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default),async()=>{
+            await SaveRace("courseOfferingId",db=>EnrollmentEndpoints.CreateAsync(new(first,offeringId),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default),async()=>{
                 await using var db=factory();await db.CourseOfferings.Where(o=>o.Id==offeringId).ExecuteDeleteAsync();});
 
             async Task BlockDelete(Func<UniversityDbContext,Task<int>> delete,string constraint)
@@ -147,7 +147,7 @@ static class EnrollmentChecks
                 Check(!db.ChangeTracker.Entries().Any(),"Enrollment DTO tracks entity");
                 capture.Commands.Clear();
                 await StudentEndpoints.CreateAsync(new(null,null),db,default);
-                await EnrollmentEndpoints.CreateAsync(new(0,0),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator()),default);
+                await EnrollmentEndpoints.CreateAsync(new(0,0),new EnrollmentOperations(db, new EnrollmentPolicy(30), DecoratorChecks.TimedEvaluator(), ObserverChecks.EmptyPublisher()),default);
                 Check(capture.Commands.Count==0,"Invalid registration queried DB");
             }
             int count;

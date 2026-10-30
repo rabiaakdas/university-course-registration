@@ -1250,3 +1250,58 @@ uygulama içi tepki ve teslim garantisi sınırları.
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
 `test: build readable eligibility scenarios` commit'inden bulunur. Push sonucu
 son raporda verilir; hash için ikinci commit üretilmez.
+
+## Gün 21 — Observer, domain event ve integration event
+
+**Başlangıç:** main temizdi; gerçek HEAD `074c64b` (Gün20) idi. 17–20 dosyaları ve
+Git geçmişi incelendi; eski kullanıcı commit'i güncel kabul edilmedi. Önceki kayıtlar
+korundu, bugünkü değişikliklere ilgisiz dosya katılmadı.
+
+**Katkı:** Immutable EnrollmentApproved, küçük observer sözleşmesi, scoped sıralı
+publisher ve ApprovalLogObserver. Onay koordinasyonu bağımsız başarılı SaveChanges
+sonrasında olay üretip dağıtımı await eder. Dış transaction kabul edilmez; submit,
+reject, create ve retler olay üretmez. Observer arızası güvenli kimlik/tür alanlarıyla
+loglanır ve sonraki gözlemci çalışır. Çağıran iptali kalan dağıtımı durdurur;
+kesinleşmiş Approved sonucu korunur. Normal HTTP sözleşmesi/şema değişmedi.
+
+**Gerçek kontroller (2026-10-30):**
+- Restore başarılı; build 0 hata/0 uyarı. İlk derlemede eksik transaction extension
+  namespace'i ve testte HttpResponseMessage için await using hatası düzeltildi.
+- unit: mevcut saf kontroller ve yeni sıfır/tek/çoklu observer, TCS sıralı await,
+  aynı olay/token, null, immutable veri, güvenli log, beklenmeyen hata ve
+  çağıran/çağıran olmayan OCE ayrımı geçti.
+- observer: gerçek Kestrel/endpoint/test DI, yeni context Approved okuması,
+  kimlik/UTC zaman aralığı, 200/409/404/akademik400, gerçek SQL CHECK UPDATE500
+  ve olay çıkmaması; observer hatasında200; commit sonrası kontrollü iptalde
+  Approved korunması/kalan observer'ın başlamaması; dış transaction reddi geçti.
+- Üretim log observer'ıyla onay SELECT sayısı önce/sonra7; create/submit/reject
+  olay üretmedi. Son GET Approved; başarısız onaylar Submitted olarak kaldı.
+- core: başarılı kayıt/olmayan açılış/mükerrer kayıt ve temizliği geçti.
+- full: state/eligibility/specifications, katalog/tracking/transaction deneyleri,
+  gerçek unique/FK kayıt anı dalları, batch ilk INSERT sonrası rollback ve rakip
+  kaydı koruma, summary, önceki saf decorator/adapter/builder/factory kontrolleri
+  geçti. Mevcut endpoint/seed regresyonları geçti. Yeni observer kontrolleri full'e
+  de dahil edildi; önceki testler kopyalanmadı, yalnız constructor bağlantısı güncellendi.
+- `-Mode observer -ProbeFailure`: kontrollü assertion üst runner'da exit1; kalıcı
+  bozuk test yok. `dotnet ef migrations has-pending-model-changes`: fark yok.
+- Son observer DB `university_registration_tests_day6_976c8d0aa9ce46c7bc69fe91c76df16f`:
+  sekiz test tablosu boş, pending migration/model farkı yok; geçici API/host kapalı.
+  Full DB `university_registration_tests_day6_bb8e681e92354d05aeb35d2687841195`:
+  yalnız temel seed bırakıldı; test satırları temizlendi. Core DB de boş doğrulandı.
+  Süreç envanterinde bu çalışmanın API/check süreçleri kalmadı. App/lab hedeflenmedi;
+  migration üretilmedi. Log/test çıktısı veya bağlantı bilgisi repoya eklenmedi.
+
+**Sınırlar/eksikler:** Engel yok. Kalıcı teslim, retry/dedup/exactly-once ve eşzamanlı
+onay garantisi yok. Commit/yayın arası çökme ve kısmi dağıtım kaybı açık; çökme-kurtarma,
+logger arızası ve temizlik arızası simülasyonu yapılmadı. Logger arızası akışı bozabilir.
+Dış transaction koruması açık EF transaction ile sınandı; ambient/enlisted ayrı
+deney yapılmadı. Commit sonrası iptal uygulama/integration sınırında kontrollü sınandı;
+kopmuş HTTP bağlantısına yanıt teslimi iddia edilmez. Down uygulanmadı (yeni migration
+zaten yok). Integration event/broker ve gerçek bildirim yok; DB transaction'ı dış
+etkiyi atomik yapmaz. Sonraki Outbox/queue konularının garantileri önceden kurulmadı.
+
+**Sıradaki gün:** Repository/UoW, DbContext ilişkisi ve generic repository maliyeti.
+
+**Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
+`feat: observe committed enrollment approvals` commit'inden bulunur. Push sonucu
+son raporda verilir; kendi hash'i için ek commit oluşturulmaz.
