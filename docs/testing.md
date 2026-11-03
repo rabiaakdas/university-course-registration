@@ -389,3 +389,33 @@ pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode cqrs
 pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
 pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
 ```
+
+## Gün 24 — Identity model kontrolleri
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode identity-model`
+yeni, sahipliği runner tarafından doğrulanan izole LocalDB oluşturur. Önce
+AddEnrollmentLifecycle seviyesinde sentetik öğrenci/enrollment/başarı ilişkisi
+hazırlar; yeni migration'ı ileri uygular, değerleri ve UserId=NULL durumunu yeni
+context'te karşılaştırır. App/lab bu testin hedefi değildir; eski DB geri alınmaz.
+
+`IdentityModelChecks.Unit` DB'siz bağlantı koşullarını sınar; unit/full içine de
+bağlıdır. `Run` gerçek AddIdentityCore + EF store + UserManager ile parolasız test
+hesapları oluşturur. IdentityResult hata kodunu, 2601/ilgili unique index ve
+547/ilgili FK adını dar kapsamlı denetler. Mesajdaki nesne adına bağımlılık SQL
+Server sağlayıcı davranışıyla sınırlıdır; herhangi bir exception başarı sayılmaz.
+Yeni scope okumaları bağlantıyı, başarısız silme sonrası akademik veriyi ve ayrı
+CreateAsync kaydının sonraki profil hatasından sonra kaldığını doğrular.
+
+Hesap kimlikleri oluşturma öncesinde takip edilir. Finally yalnız bu çalışmanın
+öğrenci/başarı/enrollment ve hesaplarını FK sırasıyla temizler. Başarısız context
+tekrar kullanılmaz; temizlik hatası ayrı raporlanır. Test DB şeması korunur,
+sequence sıfırlanmaz. Full sonunda yalnız eski iki ders/iki dönem/üç açılış seed'i
+kalabilir; Identity test hesapları kalmaz. Eski StateChecks upgrade fixture'ı,
+UserId henüz olmayan şemada Student'ı açık SQL sütunlarıyla hazırlar.
+
+`-Mode identity-model -ProbeFailure`, DB oluşturmadan kontrollü assertion ile
+exit 1 döndürür. Normal unit/core/full alt hataları da üst çalıştırıcıya yansır.
+`sql/app/verify-identity-schema.sql` metadata kontrolü full'ün `verify.sql` akışına
+dahildir. Standalone SQL guard, yalnız app veya özel olarak işaretlenmiş test DB'sini
+kabul eder; kimlik modunun işaretsiz DB'sinde guard'ı atlayarak çalıştırmayın.
+SQL rollback örneğinde filtreli index için QUOTED_IDENTIFIER ON açık seçilmiştir.

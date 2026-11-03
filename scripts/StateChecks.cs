@@ -60,7 +60,10 @@ internal static class StateChecks
             {
                 Check(!(await db.Database.GetAppliedMigrationsAsync()).Any(m=>m.EndsWith("AddEnrollmentLifecycle")),"migration fixture must start before lifecycle; never downgrade");
                 await db.GetService<IMigrator>().MigrateAsync("20261029122117_AddCourseOfferingTimeSlots");
-                db.AddRange(c,t,s);await db.SaveChangesAsync();
+                db.AddRange(c,t);await db.SaveChangesAsync();
+                // Historical Student schema has no UserId; use its explicit columns.
+                await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.Students(StudentNumber,FullName) VALUES({s.StudentNumber},{s.FullName})");
+                s = new Student { Id = await db.Students.Where(x=>x.StudentNumber==tag).Select(x=>x.Id).SingleAsync(), StudentNumber=s.StudentNumber, FullName=s.FullName };
                 o=new(){CourseId=c.Id,AcademicTermId=t.Id,SectionCode="A",Capacity=40};db.Add(o);await db.SaveChangesAsync();
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.Enrollments(StudentId,CourseOfferingId,CreatedAtUtc) VALUES({s.Id},{o.Id},{stamp})");
             }

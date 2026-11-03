@@ -19,6 +19,11 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "identity-model" or "unit" or "full")
+{
+    try { IdentityModelChecks.Unit(mode == "identity-model" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+}
 if (mode is "cqrs" or "unit" or "full")
 {
     try { await CqrsChecks.Run(mode == "cqrs" && probe); }
@@ -167,14 +172,16 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model")
 {
     try
     {
-        if (mode == "state") await StateChecks.Upgrade(Db);
+        if (mode == "identity-model") await IdentityModelChecks.Upgrade(Db);
+        else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
+        if (mode == "identity-model") await IdentityModelChecks.Run(Db);
+        else if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
         else if (mode == "repository") await RepositoryChecks.Run(Db, probe);
@@ -183,7 +190,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await using var verify = Db();
-        Check(await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
+        Check(await verify.Users.CountAsync() == 0 && await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
             && await verify.CourseOfferings.CountAsync() == 0 && await verify.AcademicTerms.CountAsync() == 0
             && await verify.Courses.CountAsync() == 0 && await verify.CoursePrerequisites.CountAsync() == 0
             && await verify.StudentCompletedCourses.CountAsync() == 0 && await verify.CourseOfferingTimeSlots.CountAsync() == 0, "Core fixture residue");
@@ -321,6 +328,7 @@ try
     await SummaryChecks.Run(Db, Send);
     await ObserverChecks.Run(Db);
     await RepositoryChecks.Run(Db);
+    await IdentityModelChecks.Run(Db);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

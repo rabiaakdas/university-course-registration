@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using UniversityRegistration.Models;
 
 namespace UniversityRegistration.Data;
 
-public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) : DbContext(options)
+public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<AcademicTerm> AcademicTerms => Set<AcademicTerm>();
@@ -17,6 +18,7 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
         modelBuilder.HasSequence<int>("CourseIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var course = modelBuilder.Entity<Course>();
         course.ToTable("Courses", table => table.HasCheckConstraint("CK_Courses_Credits_Positive", "[Credits] > 0"));
@@ -61,6 +63,11 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
         student.Property(x => x.StudentNumber).IsRequired().HasMaxLength(30).IsUnicode();
         student.Property(x => x.FullName).IsRequired().HasMaxLength(200).IsUnicode();
         student.HasIndex(x => x.StudentNumber).IsUnique().HasDatabaseName("UX_Students_StudentNumber");
+        student.Property(x => x.UserId).HasMaxLength(450).IsUnicode();
+        student.HasIndex(x => x.UserId).IsUnique().HasFilter("[UserId] IS NOT NULL")
+            .HasDatabaseName("UX_Students_UserId");
+        student.HasOne<ApplicationUser>().WithOne().HasForeignKey<Student>(x => x.UserId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Students_AspNetUsers");
 
         modelBuilder.HasSequence<int>("EnrollmentIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var enrollment = modelBuilder.Entity<Enrollment>();

@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk on altı gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yirmi dört gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1529,3 +1529,55 @@ CQRS modu üretim giriş sınırlarını ve iki typed istekli Mediator deneyini 
 çalıştırır. Gerçek SQL/HTTP kanıtı full içindeki mevcut katalog/kayıt kontrolleridir.
 [Öğrenme notu](docs/day23-cqrs-and-mediator.md) ·
 [ADR](docs/adr/0023-command-and-catalog-query.md) · [Test kılavuzu](docs/testing.md).
+
+## 24. gün — Identity hesabı ve öğrenci profili
+
+`Models/ApplicationUser.cs` varsayılan string kimlikli IdentityUser hesabıdır;
+`Student` akademik profil olarak kalır. `Student.UserId` isteğe bağlıdır ve yalnız
+`TryLinkAccount` ile bir kez bağlanabilir. Dolu kimlikleri benzersiz yapan filtreli
+index ve NO ACTION FK, aynı hesabın iki öğrenciye bağlanmasını ve bağlı hesabın
+fiziksel silinmesini engeller. Birden fazla bağlantısız öğrenci ve öğrencisiz hesap
+geçerlidir. Ad/e-posta/öğrenci numarası üzerinden otomatik eşleştirme yoktur.
+
+`UniversityDbContext`, IdentityDbContext<ApplicationUser> tabanını kullanır;
+`Program.cs` yalnız AddIdentityCore ve EF store kaydeder. Identity EF paketi,
+EF/araçlarla aynı **10.0.14** sürümündedir. Temel modelin yedi Identity tablosu rol
+verisini de içerir; rol servisleri/atama ve giriş akışı kurulmadı.
+
+**Mevcut endpoint'ler hâlâ authentication/authorization ile korunmuyor.**
+Public hesap oluşturma/giriş/hesap–öğrenci bağlama endpoint'i, cookie/JWT,
+SignInManager veya otomatik hesap seed'i yok. Testte UserManager ile oluşturulan
+parolasız hesap, giriş yapılabildiği anlamına gelmez. API response'ları değişmedi.
+
+Proje kökünde, uygulama DB'sine yazan API süreçleri duruyorken:
+
+```powershell
+dotnet restore
+dotnet tool restore
+dotnet build --no-restore
+# Mevcut UniversityDatabase ayarı yalnız university_registration_app hedeflemeli.
+dotnet ef migrations script 20261029131736_AddEnrollmentLifecycle 20261101104350_AddIdentityAccounts --output obj/day24-migration.sql
+# Üretilen SQL'i inceleyin; lab DB'sine uygulamayın.
+dotnet ef database update
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+sqlcmd -S '(localdb)\MSSQLLocalDB' -E -d university_registration_app -b -i sql/app/verify.sql
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode identity-model
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet run --no-build --urls http://127.0.0.1:5080
+```
+
+Migration üretmek DB'yi değiştirmez; update ayrı, açık adımdır. Yeni migration
+Identity tablolarını ve Student.UserId bağlantısını ekler; eski öğrenciler NULL
+bağlantıyla kalır. Akademik tablolar yeniden oluşturulmaz. App/lab ayrı amaçlarını
+korur; mevcut akademik seed hesap oluşturmaz.
+
+24. gün restore/build, unit/core/full ve identity-model geçti. İzole önceki şema
+üzerindeki öğrenci/enrollment/başarı ilişkileri migration sonrasında korundu.
+App update iki kez çalıştı; ikinci sefer değişiklik yok, snapshot uyumlu ve sekiz
+akademik tablonun eski sütun değerleri aynı. Hesap oluşturma ve sonraki profil
+kaydetmesinin ayrı sınırları gerçek UserManager/SQL hatasıyla gösterildi.
+Down uygulanmadı. Ayrıntılar: [öğrenme notu](docs/day24-identity-and-student.md),
+[ADR](docs/adr/0024-identity-and-student-profiles.md), [test kılavuzu](docs/testing.md).

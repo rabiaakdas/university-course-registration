@@ -1435,3 +1435,69 @@ Bugün sütunu yalnız bu çalışmada gerçekten yürütülen kontrolleri göst
 **Commit/push:** Bu kaydı içeren kimlik Git geçmişindeki
 `refactor: separate enrollment command and catalog query` commit'inden bulunur.
 Push sonucu son raporda; kendi hash'i için ikinci commit üretilmez.
+
+## Gün 24 — Kimlik verisi ile iş verisi ayrımı (2026-11-01)
+
+**Başlangıç:** main, HEAD `48c239e6dbc9471c67a3ed76f1d53b1c1a2fd91f`, temiz
+çalışma ağacı. Önceki günlerin dosyaları ve kayıtları korundu. SDK10.0.401,
+EF/araç10.0.14, LocalDB17.0.4025.3; paketler yükseltilmedi.
+
+**Somut değişiklik:** Identity EF10.0.14, ApplicationUser, mevcut context'te
+IdentityDbContext tabanı/base mapping ve minimal IdentityCore/store DI. Student
+UserId nullable/private setter; TryLinkAccount boş veya tekrar bağlantıyı reddeder,
+kimliği aynen korur. Filtered unique + NO ACTION ilişki. Yeni migration
+`20261101104350_AddIdentityAccounts`, yedi Identity tablosu ve Student bağlantısı;
+akademik tablolar/kimlik stratejileri değişmedi. Rol tabloları vardır, rol
+servisi/atama yoktur. HTTP endpoint/response veya kayıt koordinasyonu değiştirilmedi.
+
+**Yeni kontroller:** IdentityModelChecks.Unit ve identity-model modu. Gerçek EF
+UserManager parolasız hesap oluşturma/IdentityResult, yeni scope'ta var/yok okuma,
+çoklu NULL profil, başarılı bağlantı, UX_Students_UserId/2601, eksik hesap FK/547,
+öğrencisiz hesap, bağlı hesap silme FK/547 ve akademik verinin korunması. Ayrı
+CreateAsync başarısından sonra aynı context'teki profil SaveChanges'i gerçek
+öğrenci numarası unique hatasıyla başarısız; yeni scope hesabın kaldığını ve profilin
+oluşmadığını gösterdi. Başarısız context yeniden kullanılmadı.
+
+**Migration kanıtı:** Identity modu DB
+`university_registration_tests_day6_c75c1953d60741c7839d4bdcda49f2fc` önceki
+migration seviyesinde sentetik öğrenci, ders/dönem/açılış, Approved enrollment ve
+başarı ilişkisi hazırladı. İleri migration sonrası kimlik/değer/durum/ilişkiler
+korundu; UserId NULL. Update tekrarı ve model uyumu geçti. Fixture temizlendi.
+Up/Down/snapshot ve üretilen SQL incelendi. App DB'ye yalnız açık update uygulandı;
+ikinci update no-op. App'in sekiz akademik tablosundaki eski sütun değerleri
+önce/sonra bellekte karşılaştırıldı, aynı kaldı. App'te kullanıcı hesabı üretilmedi;
+lab hiçbir migration/test yazmasının hedefi olmadı.
+
+**Yeniden kullanılan regresyonlar:** restore/build (0 uyarı/hata), unit ve core
+exit0. Core DB `university_registration_tests_day10_566c79e0b94943df9ed351ea8c335e92`
+sonunda boş. İlk full koşusu eski rollback-only academic-example.sql dosyasında
+SQL1934/QUOTED_IDENTIFIER nedeniyle başarısız oldu; başarı olarak sayılmadı.
+Filtreli index gereksinimi için yalnız örneğe SET QUOTED_IDENTIFIER ON eklendi.
+Eski StateChecks migration fixture'ı, o eski şemada bulunmayan UserId'yi yazmamak
+üzere Student'ın açık sütunlarını kullanacak şekilde uyarlandı.
+
+Düzeltmeden sonra full exit0: SQL şema/kısıt/seed tekrarı; ders/dönem/açılış/öğrenci/
+tekli ve batch kayıt; katalog gerçek COUNT + filtre/projection/OFFSET SQL'i;
+ön koşul/kredi/saat/state; summary; tracking/transaction/repository; saf
+Strategy/factory/decorator/adapter/builder/Mediator ve observer kontrolleri geçti.
+Gerçek ilk INSERT sonrası batch hatası kendi yazmalarını geri aldı ve kesinleşmiş
+rakip kaydı korudu. Observer yeni context'te Approved okudu; DB yazma hatasında
+olay yoktu; kritik olmayan hata/commit sonrası iptal sözleşmeleri korundu.
+Identity kontrolleri full içinde de geçti. Full DB
+`university_registration_tests_day6_0d88d5fdc92848e1a44c787ebda32b4e` sonunda SQL ile
+2 ders/2 dönem/3 açılış seed'i, diğer beş akademik tabloda0 ve AspNetUsers0 doğrulandı.
+Geçici API/check süreçleri kalmadı. Test şemaları tutuldu; sequence sıfırlanmadı.
+`identity-model -ProbeFailure` DB oluşturmadan beklenen exit1'i üst betiğe iletti.
+
+**Sınırlar/eksikler:** Authentication/authorization, public kayıt/giriş/bağlama,
+cookie/JWT, SignInManager, parola ile giriş ve provisioning akışı yok. Parolasız
+test hesabı güvenli self-servis değildir. Tek context iki SaveChanges'i atomik
+kılmaz. Down incelendi ama uygulanmadı. Logger/temizlik arızası ayrıca simüle
+edilmedi; önceki özel modların her biri ayrı komutla tekrarlanmadı, full içindeki
+ortak kontroller yeniden kullanıldı. Yeni hesap–profil yarış garantisi yok.
+
+**Sıradaki gün:** Hesap oluşturma, parola hash'i, normalizasyon ve e-posta doğrulama.
+
+**Commit/push:** Bu kaydın kimliği Git geçmişindeki
+`feat: separate identity accounts from student profiles` commit'inden bulunur.
+Push sonucu son raporda; kendi hash'i için ek commit üretilmez.

@@ -1,6 +1,7 @@
 using UniversityRegistration.Application;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Data;
+using UniversityRegistration.Models;
 using UniversityRegistration.Endpoints;
 using Microsoft.AspNetCore.Diagnostics;
 using System.Text.Json.Serialization;
@@ -14,6 +15,7 @@ var connectionString = builder.Configuration.GetConnectionString("UniversityData
 if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddIdentityCore<ApplicationUser>().AddEntityFrameworkStores<UniversityDbContext>();
 builder.Services.AddScoped<EnrollmentOperations>();
 builder.Services.AddScoped<CourseCatalogReader>();
 builder.Services.AddScoped<IEnrollmentApprovedObserver, ApprovalLogObserver>();

@@ -6,6 +6,8 @@ IF DB_NAME() NOT LIKE N'university[_]registration[_]tests[_]day6[_]%'
 IF OBJECT_ID(N'dbo.CoursePrerequisites') IS NULL OR OBJECT_ID(N'dbo.StudentCompletedCourses') IS NULL
     THROW 51000,'Apply academic migration first.',1;
 SET XACT_ABORT ON;
+-- Students now has a filtered unique index; sqlcmd defaults differ from EF connections.
+SET QUOTED_IDENTIFIER ON;
 BEGIN TRY
     BEGIN TRANSACTION;
     DECLARE @tag nvarchar(16)=N'D14_'+LEFT(REPLACE(CONVERT(nvarchar(36),NEWID()),N'-',N''),12);
