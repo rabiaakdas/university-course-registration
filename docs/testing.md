@@ -419,3 +419,34 @@ exit 1 döndürür. Normal unit/core/full alt hataları da üst çalıştırıc�
 dahildir. Standalone SQL guard, yalnız app veya özel olarak işaretlenmiş test DB'sini
 kabul eder; kimlik modunun işaretsiz DB'sinde guard'ı atlayarak çalıştırmayın.
 SQL rollback örneğinde filtreli index için QUOTED_IDENTIFIER ON açık seçilmiştir.
+
+## Gün 25 — Accounts
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode accounts` yeni izole
+LocalDB'de gerçek Kestrel/Identity EF akışını çalıştırır. Full aynı kontrolleri
+tekrar kullanır; unit yalnız tehlikeli Development kutu yapılandırması reddini
+DB'siz çalıştırır. `-Mode accounts -ProbeFailure` DB kurmadan beklenen exit1'i üretir.
+
+AccountsChecks bir test content root'u üretir: `obj/accounts-checks/a25<guid>`.
+In-process host gerçek endpoint/Identity kurulumunu kullanır; kontrollü sender,
+log yakalama ve SaveChanges interceptor yalnız test DI düzeninde eklenir. Son
+bölüm gerçek API child sürecini çalıştırır, fiziksel dosya kutusundan token'ı
+belleğe alır ve aynı ayrı key ring ile yeniden başlatarak doğrular. Dış ağ/e-posta
+kullanılmaz. Test hesabı parolası çalışma anında üretilir ve çıktıya yazılmaz.
+
+Kontroller: alan/binding hataları, minimal201/cookie yokluğu, parola/hash/check/salt,
+normalizasyon, username unique ile email non-unique metadata, gerçek yarış ve
+kaydetme anı UserNameIndex hatası; ilgisiz PK hatası500. Token wrong-user/tamper/
+Base64Url/unknown/reuse/regeneration/security-stamp; yeni context'te kalıcılık.
+Sağlayıcı TimeProvider kullanmadığı için önceden üretilen token için yalnız test
+options'ında 1 tick pozitif ömür kullanılır; ardından2 saat geri yüklenir. Bu iki
+saat beklenmiş testi değildir. Sender hata/iptal sonuçları, kapalı register'ın
+503/no-write davranışı ve Production'da açık kutunun startup reddi ayrı denetlenir.
+
+Finally, yalnız çalışmanın benzersiz UserName prefix'li hesaplarını siler; üretilen
+dizin kökünü doğrular, anahtar/mesaj dosyalarını ve kendi süreçlerini temizler.
+Kayıt öncesi/sonrası akademik sayılar ve otomatik Student bağlantısı yokluğu kontrol
+edilir; full eski davranış fixture'larını yeniden kullanır. Log/yanıt kontrolleri
+parola/hash/token'ların gözlenen çıktıda olmadığını doğrular; bütün olası dış proxy
+logları için güvence değildir. Hata mesajları yerine senaryo ve güvenli test satır
+numaraları raporlanır. Test derleme/fixture hataları başarılı sayılmaz.

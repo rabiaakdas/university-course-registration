@@ -1501,3 +1501,63 @@ ortak kontroller yeniden kullanıldı. Yeni hesap–profil yarış garantisi yok
 **Commit/push:** Bu kaydın kimliği Git geçmişindeki
 `feat: separate identity accounts from student profiles` commit'inden bulunur.
 Push sonucu son raporda; kendi hash'i için ek commit üretilmez.
+
+## Gün 25 — Identity hesap oluşturma ve yerel e-posta doğrulama (2026-11-04)
+
+Başlangıç main HEAD'i `9fdc375fc82f48adcf69f75c002793ee9e9291e3` idi.
+24. gün ApplicationUser, IdentityDbContext, UserManager store ve nullable Student.UserId
+ilişkisi gerçek dosyalarda/migration geçmişinde bulundu; yeniden uygulanmadı.
+Çalışma ağacı başlangıçta temizdi. EF/Identity 10.0.14 ve SDK 10.0.401 korundu.
+
+**Üretim katkısı:** POST /accounts/register ve /accounts/confirm-email; ayrı request/
+response türleri, Identity parola doğrulama/hash/normalizasyonu, RequireUniqueEmail
+ve gerçek UserNameIndex hatasının dar eşlemesi. E-posta Trim edilir, parola değişmez.
+12–128 karakter sınırı; diğer bileşim zorunlulukları kapalıdır. Token sağlayıcısının
+süresi iki saat; UTF8/Base64Url taşıma ve yapılandırılmış güvenilir bağlantı kullanılır.
+Development dışında açılması reddedilen, açıkça etkinleştirilen yerel dosya kutusu
+ve Data Protection anahtarları Git dışında tutulur. Gerçek dış gönderim yoktur.
+Hesap commit'inden sonraki dispatch hatası hesabı silmez: 201/failed; çağıran iptali
+cancelled olarak ayrılır. Oturum veya otomatik Student bağlantısı oluşturulmaz.
+
+**Yeni kontroller:** AccountsChecks ve accounts modu. Gerçek Kestrel/LocalDB üzerinde
+201/400/503, parola doğrulama ve farklı salt'lı hash, normalizasyon, eşzamanlı tekrar,
+UserNameIndex kayıt anı yarışı ve ilgisiz PK hatasının 500 kalması geçti. Token yanlış
+hesap/değiştirme/bozuk kodlama, kalıcı doğrulama, geçerli tekrar kullanım, yeni token'ın
+eskiyi geçersiz kılmaması ve security stamp değişiminin eskiyi reddetmesi gözlendi.
+Süre testi gerçek sağlayıcıda kontrollü pozitif bir tick ayarıyla geçti; iki saat
+beklenmedi. Ayrı gerçek uygulama süreçlerinde aynı izole anahtar alanı ve fiziksel
+mesaj kutusuyla restart sonrası doğrulama geçti. Sender hatası/iptalinde hesap kaldı;
+Production kutu yasağı ve gözlenen log/yanıtlarda parola/hash/token yokluğu doğrulandı.
+İlk test derleme ve scope hazırlığı hataları düzeltildi; başarısız koşular başarı
+sayılmadı ve kendi verileri temizlendi.
+
+**Yeniden kullanılan kontroller:** restore/build 0 uyarı/0 hata; unit, core ve full
+exit0. Full; Identity model, katalog SQL/projection, akademik uygunluk/state,
+summary, eski deneyler ve tekli/batch gerçek unique/FK kontrollerini çalıştırdı.
+İlk INSERT sonrası batch rollback ve kesinleşmiş rakip kaydının korunması geçti.
+Observer yeni context ile Approved gördü; yazma hatasında olay yoktu; observer
+hata/iptal davranışları korundu. Accounts kontrolleri full içinde tekrar geçti.
+accounts -ProbeFailure beklenen exit1'i üst çalıştırıcıya iletti.
+
+Full test DB'si `university_registration_tests_day6_10a7e79d6fed4cd5ab9640a6114be668`
+sonunda bağımsız SQL kontrolünde 2 ders/2 dönem/3 açılış seed'i; Students, Enrollments,
+CoursePrerequisites, StudentCompletedCourses, CourseOfferingTimeSlots ve AspNetUsers
+sıfırdı. Geçici uygulama/check süreçleri ve accounts-checks çalışma dizinleri kalmadı.
+Test DB şeması korundu; sequence sıfırlanmadı. App DB yalnız mevcut verify.sql ile
+okundu; lab hedef alınmadı. Model/snapshot farkı yok, yeni migration üretilmedi.
+
+**Sınırlar:** Giriş/çıkış, authentication/authorization, resend/recovery, rate limit,
+tam enumeration koruması ve gerçek posta teslimi yoktur. Accepted/queued-locally
+posta kutusuna erişimi kanıtlamaz. Token tek kullanımlık değildir. UserManager'ın
+bu API'leri request CancellationToken almaz; sınır kontrolleri ve sender token'ı
+ayrı yönetilir. Commit sonrası yanıt kaybı mümkündür. Logger arızası veya bütün dış
+proxy logları için garanti verilmez. İki saatlik duvar saati testi ve Down yapılmadı.
+Özel regresyon modları ayrıca tekrarlanmak yerine full içindeki ortak kontroller
+kullanıldı. Test geçen davranışlar üretim güvenliği/teslim garantisi değildir.
+
+**Sıradaki gün:** Authentication/authorization, cookie session ve bearer; giriş/çıkış
+ve korunan endpoint.
+
+**Commit/push:** Bu kaydın commit'i Git geçmişindeki
+`feat: register accounts and confirm email locally` mesajıyla bulunur; push sonucu
+son rapordadır. Hash yazmak için ek commit oluşturulmaz.

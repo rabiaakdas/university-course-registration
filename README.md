@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yirmi dört gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yirmi beş gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1581,3 +1581,99 @@ akademik tablonun eski sütun değerleri aynı. Hesap oluşturma ve sonraki prof
 kaydetmesinin ayrı sınırları gerçek UserManager/SQL hatasıyla gösterildi.
 Down uygulanmadı. Ayrıntılar: [öğrenme notu](docs/day24-identity-and-student.md),
 [ADR](docs/adr/0024-identity-and-student-profiles.md), [test kılavuzu](docs/testing.md).
+
+## 25. gün — Hesap oluşturma ve yerel e-posta doğrulama
+
+`POST /accounts/register`:
+
+```json
+{ "email": "student@example.test", "password": "<yerelde girilen en az 12 karakterlik parola>" }
+```
+
+Başarı **201**, Location/cookie/access token olmadan:
+
+```json
+{ "id": "hesap-kimliği", "emailConfirmationRequired": true, "confirmationDispatchStatus": "queued-locally" }
+```
+
+E-posta yalnız Trim edilir ve UserName olarak da kullanılır. Nokta/+ etiketleri
+silinmez; normalized alanları Identity hazırlar. Parola değiştirilmez: **12–128
+karakter**, null/boş/yalnız boşluk ret; büyük/küçük harf, sayı ve sembol bileşimi
+zorunlu değil. Bu uzunluk odaklı ders politikası tam üretim güvenliği değildir.
+RequireUniqueEmail açıktır; DB yarış koruması mevcut **UserNameIndex**'ten gelir,
+EmailIndex unique değildir. Bu akış e-posta/kullanıcı adı eşitliğini korur.
+
+Alan/Identity doğrulaması400; tekrar e-posta/kullanıcı adı için
+`code: account_creation_failed` ve `errors.email`. Harf farkı ve baş/son boşlukla
+tekrar aynı politikaya tabidir. Başarı/ret ayrımı hesap varlığını açığa çıkarabilir;
+tam enumeration, rate-limit ve lockout çözümü eklenmedi. Beklenmeyen DB hatası500
+olur. Student profili oluşturulmaz veya hesaba bağlanmaz.
+
+Yerel kutu **varsayılan kapalıdır**; kapalı register503 verir ve hesap yazmaz.
+Yalnız Development ortamında açıkça etkinleştirin. Production'da etkin olması
+başlangıç hatasıdır. Proje kökünde:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:Accounts__LocalMailboxEnabled = 'true'
+$env:Accounts__ConfirmationPageUrl = 'http://127.0.0.1:5080/account-confirmation'
+dotnet run --no-launch-profile --urls http://127.0.0.1:5080
+```
+
+Bu URL güvenilir yapılandırmadır; Host başlığından üretilmez. HTTPS beklenir;
+yalnız yerel geliştirmede loopback HTTP kabul edilir. Hesap/parola isteklerini
+uzak bir sunucuya HTTP üzerinden göndermeyin. Bu örnekteki GET adresi için sayfa
+**yoktur**: bağlantıyı açmak doğrulamayı tamamlamaz. Dosyadan değerleri okuyup
+`POST /accounts/confirm-email` gönderin:
+
+```json
+{ "userId": "hesap-kimliği", "token": "dosyadaki-Base64Url-token" }
+```
+
+Başarı200: `{ "emailConfirmed": true }`. Eksik alanlar alan bazlı400; bilinmeyen
+hesap, bozuk kodlama ve geçersiz token ortak `400 / confirmation_failed` döner.
+Hesap zaten doğrulanmış olsa bile token denetlenir.
+
+Mesajlar `.local/accounts/messages` altında ayrı Guid dosyalarıdır; alıcı, konu ve
+bağlantı içerir, parola/hash içermez. Kutu ve `.local/accounts/keys` Git dışındadır,
+wwwroot altında değildir; public listeleme endpoint'i yoktur. Bağlantı/token'ı
+terminale dökmeyin. Bir mesajı değişkene alıp POST etmek için (PowerShell):
+
+```powershell
+$messageFile = Get-ChildItem .local/accounts/messages/*.json | Sort-Object LastWriteTime | Select-Object -Last 1
+$message = Get-Content -LiteralPath $messageFile.FullName -Raw | ConvertFrom-Json
+$query = [System.Web.HttpUtility]::ParseQueryString(([uri]$message.link).Query)
+$body = @{ userId = $query['userId']; token = $query['token'] } | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:5080/accounts/confirm-email -Method Post -ContentType application/json -Body $body
+Remove-Variable message,query,body
+```
+
+Gerçek e-posta gönderilmez. `queued-locally` yalnız dosyanın yazıldığını belirtir;
+broker kuyruğu/teslim garantisi değildir. Mesaj/token hazırlığı hata verirse hesap
+oluşmuş kalır ve201 yanıtı `failed` taşır. Commit sonrası çağıran iptalinde
+`cancelled` kullanılır; yanıtın istemciye ulaşması garanti edilmez. Otomatik hesap
+silme, retry veya resend endpoint'i yoktur.
+
+Identity Data Protection token'ı **iki saat** geçerlidir. Gerçek deneyde aynı token
+başarıdan sonra tekrar kabul edildi, yeni token eskisini iptal etmedi. Security
+stamp değişince eski token reddedildi. Süreli token tek kullanımlık değildir.
+UTF8/Base64Url kodlama şifreleme değildir. Aynı uygun key ring/uygulama adıyla
+restart doğrulaması geçti. Windows'ta key-at-rest DPAPI kullanılır; dosya izinleri
+ve aynı kullanıcı bağlamı önemlidir. Çok instance/anahtar rotasyonu tasarlanmadı.
+
+Giriş, çıkış, cookie/JWT, e-posta doğrulamasına bağlı authorization ve öğrenci
+sahiplenme bugün yoktur; eski akademik endpoint'ler hâlâ korunmamaktadır.
+Şema değişmedi, migration eklenmedi. Mevcut app DB'nin 24. gün migration'ı yeterlidir.
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode accounts
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes
+```
+
+[Öğrenme ve resmi kaynaklar](docs/day25-account-confirmation.md) ·
+[ADR](docs/adr/0025-local-account-registration.md) · [Test kılavuzu](docs/testing.md).

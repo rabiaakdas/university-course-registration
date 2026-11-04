@@ -19,6 +19,11 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "accounts" or "unit" or "full")
+{
+    try { AccountsChecks.Unit(mode == "accounts" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+}
 if (mode is "identity-model" or "unit" or "full")
 {
     try { IdentityModelChecks.Unit(mode == "identity-model" && probe); }
@@ -172,7 +177,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts")
 {
     try
     {
@@ -180,7 +185,8 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode == "identity-model") await IdentityModelChecks.Run(Db);
+        if (mode == "accounts") await AccountsChecks.Run(root, Db);
+        else if (mode == "identity-model") await IdentityModelChecks.Run(Db);
         else if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
@@ -329,6 +335,7 @@ try
     await ObserverChecks.Run(Db);
     await RepositoryChecks.Run(Db);
     await IdentityModelChecks.Run(Db);
+    await AccountsChecks.Run(root, Db);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

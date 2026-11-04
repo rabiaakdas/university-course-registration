@@ -25,3 +25,4 @@ Thumbs.db
 *.ldf
 *.dump
 *.bacpac
+.local/accounts/

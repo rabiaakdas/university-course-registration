@@ -5,6 +5,7 @@ using UniversityRegistration.Models;
 using UniversityRegistration.Endpoints;
 using Microsoft.AspNetCore.Diagnostics;
 using System.Text.Json.Serialization;
+using UniversityRegistration.Accounts;
 
 var builder = WebApplication.CreateBuilder(args);
 if (!long.TryParse(builder.Configuration["EnrollmentPolicy:MaxCreditsPerTerm"],
@@ -15,7 +16,10 @@ var connectionString = builder.Configuration.GetConnectionString("UniversityData
 if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
-builder.Services.AddIdentityCore<ApplicationUser>().AddEntityFrameworkStores<UniversityDbContext>();
+builder.Services.AddAccountIdentity(builder.Configuration, builder.Environment);
+// A local confirmation URL contains a bearer secret. Do not log request URLs in this mode.
+if (builder.Configuration.GetValue<bool>("Accounts:LocalMailboxEnabled"))
+    builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Services.AddScoped<EnrollmentOperations>();
 builder.Services.AddScoped<CourseCatalogReader>();
 builder.Services.AddScoped<IEnrollmentApprovedObserver, ApprovalLogObserver>();
@@ -53,5 +57,6 @@ app.MapStudentEndpoints();
 app.MapTermRegistrationSummaryEndpoint();
 app.MapEnrollmentEndpoints();
 app.MapPriorityPreviewEndpoint();
+app.MapAccountEndpoints();
 
 app.Run();
