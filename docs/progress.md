@@ -1561,3 +1561,66 @@ ve korunan endpoint.
 **Commit/push:** Bu kaydın commit'i Git geçmişindeki
 `feat: register accounts and confirm email locally` mesajıyla bulunur; push sonucu
 son rapordadır. Hash yazmak için ek commit oluşturulmaz.
+
+## Gün 26 — Identity cookie giriş/çıkış ve CSRF (2026-11-04)
+
+Başlangıç main HEAD'i `3bd05f3573bcffafecc3d6c76ef7cf2c28ed700c`, çalışma ağacı
+temizdi. 24. gün `9fdc375` ve 25. gün `3bd05f3` gerçek dosyalar/geçmiş üzerinden
+doğrulandı; önceki kapsam yeniden uygulanmadı. AGENTS.md bulunmadı. SDK 10.0.401,
+net10.0 ve Identity/EF 10.0.14 korundu; paket eklenmedi/yükseltilmedi.
+
+**Değişiklik:** AddSignInManager + Identity cookie şemaları, açık authentication/
+authorization middleware; RequireConfirmedEmail, 5 hata/5 dakika lockout. Login
+email/password; e-posta Trim, parola aynen. Başarı200; olmayan/yanlış/doğrulanmamış/
+kilitli hesap ortak401. Me kimlik gerektirir ve yalnız id/email döndürür; profil
+bağlantısı gerektirmez. Logout SignOutAsync +204. GET antiforgery token sağlar;
+login/logout açık ValidateRequestAsync kullanır. Kimlik değişiminden sonra yeni
+token gerekir. HttpOnly/Secure/Strict uygulama cookie'si, 20 dakika sabit bilet,
+isPersistent:false, SlidingExpiration:false. Mevcut akademik endpoint'ler değişmedi.
+
+**Yeni gerçek HTTPS/LocalDB kontrolleri:** CookieSessionChecks ve cookie modu; her
+koşunun sertifikasına pinning (global bypass/trust-store değişimi yok). İlk iki TLS
+koşusu Windows Schannel'ın üretilmiş anahtar kullanımında bağlantı hatası verdi;
+başarı sayılmadı. Sertifika bellek içinde PFX yeniden yüklemesiyle düzeltildi.
+Bu koşuların kendi verileri/dizinleri temizlendi.
+Başarılı cookie koşusunda anonim/farklı istemci401, doğrulanmış profil olmayan
+hesap200, küçük me yanıtı, ortak giriş retleri, lockout sayacı/kilidi, bozuk JSON/
+alan400, bozuk cookie ve gerekli claim'i eksik bilet401 geçti. Login/logout eksik/
+yanlış CSRF400; anonim token'ın kimlik sonrası reddi ve oturumun korunması geçti.
+Geçerli logout204 ardından cookie jar ile me401. HttpOnly/Secure/Strict ve kalıcı
+Expires/Max-Age yokluğu doğrulandı. Cookie options kontrollü TimeProvider ile
+11.dakikada me200 ve yenileme Set-Cookie yokluğu; 21.dakikada ret gözlendi. Çıkış
+sonrası eski kopya bilet süre dolana kadar çalıştı; anında revocation iddiası yoktur.
+İlgili akademik kayıt/statuslar ve test Student.UserId bağlantısı değişmedi;
+gözlenen uygulama log/yanıtları secret taşımadı.
+
+**Yeniden kullanılan doğrulamalar:** restore/build 0 uyarı/0 hata; unit/core/full
+exit0. Full önceki Identity/account parola/token/dispatch/restart kontrollerini,
+SQL şema/seed, katalog, akademik uygunluk/state/summary ve deneyleri tekrar kullandı.
+Gerçek unique/FK yazma dalları ve ilk INSERT sonrası batch rollback/rakip kayıt
+korunması geçti. Observer yeni context'te Approved okudu; yazma hatasında olay yok,
+kritik olmayan hata/iptal davranışı korundu. Cookie kontrolleri full içinde de geçti.
+Model/snapshot farkı yok; migration oluşturulmadı. cookie -ProbeFailure beklenen
+sıfır olmayan exit code'u üst çalıştırıcıya iletti.
+
+Full DB `university_registration_tests_day6_044f0be636bd4b49a089037a5cc2b62f` bağımsız
+SQL kontrolünde yalnız 2 ders/2 dönem/3 açılış seed'i içerdi; öğrenciler, enrollment,
+ön koşul/başarı/saat ilişkileri ve AspNetUsers sıfırdı. Geçici host/süreçler ve
+cookie-checks çalışma dizinleri temizlendi. İzole test DB şemaları tutuldu;
+sequence değerleri sıfırlanmadı. App/lab test hedefi olmadı.
+
+**Açık sınırlar:** Rol403 senaryosu, 2FA kurulum/akışı ve tüm cihazlarda çıkış yok.
+Yalnız Succeeded kabul edilir; 2FA sonucu başarıya çevrilmez, ayrı gerçek 2FA fixture'ı
+kurulmadı. Browser SameSite davranışı gerçek tarayıcıyla sınanmadı; HTTP cookie
+öznitelikleri ve sunucu CSRF denetimi doğrulandı. Süre 20 dakika beklenerek değil
+sağlayıcının kontrollü saatiyle test edildi. CSRF koruması bugün login/logout'a
+uygulanır; kalan akademik endpoint'ler halen yetkisizdir. Yetkilendirilmiş öğrenci
+self-servisi, tam enumeration/rate limit, çalıntı biletin anında iptali veya dış proxy
+log güvenliği garantisi yoktur. Down uygulanmadı; şema değişmedi. Özel eski modlar
+ayrı ayrı tekrarlanmak yerine full içindeki ortak kontroller kullanıldı.
+
+**Sıradaki gün:** JWT doğrulaması.
+
+**Commit/push:** Bu kaydın kimliği Git geçmişindeki
+`feat: add cookie login logout and protected account endpoint` mesajından bulunur.
+Push sonucu son raporda; hash yazmak için ikinci commit üretilmez.

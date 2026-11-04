@@ -49,6 +49,8 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
 });
 app.UseStatusCodePages(async context => await Results.Problem(statusCode: context.HttpContext.Response.StatusCode)
     .ExecuteAsync(context.HttpContext));
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapCourseEndpoints();
 app.MapAcademicTermEndpoints();
@@ -58,5 +60,6 @@ app.MapTermRegistrationSummaryEndpoint();
 app.MapEnrollmentEndpoints();
 app.MapPriorityPreviewEndpoint();
 app.MapAccountEndpoints();
+app.MapAccountSessionEndpoints();
 
 app.Run();

@@ -450,3 +450,20 @@ edilir; full eski davranış fixture'larını yeniden kullanır. Log/yanıt kont
 parola/hash/token'ların gözlenen çıktıda olmadığını doğrular; bütün olası dış proxy
 logları için güvence değildir. Hata mesajları yerine senaryo ve güvenli test satır
 numaraları raporlanır. Test derleme/fixture hataları başarılı sayılmaz.
+
+## Cookie HTTPS kontrolleri (Gün 26)
+
+`-Mode cookie` mevcut izole LocalDB kurulumunu ve `CookieSessionChecks` HTTPS host'unu
+kullanır. `full` aynı kontrolleri tekrar kullanır. Test-only self-signed sertifika
+bellekte üretilir; HttpClient yalnız o koşunun tam sertifikasını kabul eder. Global
+TLS kabulü veya güven deposu değişimi yoktur. Cookie TimeProvider kontrollü ilerler;
+11 dakika sonrası yenileme olmaması ve 21 dakika sonrası ret gerçek HTTP'de sınanır.
+Üretim ayarı 20 dakika kalır. Beklenen sonuçlar cookie/token değerlerini yazdırmaz.
+
+Fixture'da UserManager ile doğrulanmış/doğrulanmamış hesaplar, ayrıca bağlantısı
+korunacak test profili oluşturulur. Hesapsız anonim istemci, ortak 401, lockout,
+CSRF'nin kimlik değişimi, çıkış, kopyalanmış/bozuk/kimlik claim'i eksik biletler ve
+akademik kayıt/bağlantı değişmezliği kontrol edilir. Kendi hesapları/profili ve
+`obj/cookie-checks/<çalışma-kimliği>` finally temizlenir, HTTPS host dispose edilir.
+`-Mode cookie -ProbeFailure` kontrollü assertion ile başarısız exit code üretir.
+Bu test teslim/yetkilendirme veya tüm cihazlarda revocation garantisi değildir.

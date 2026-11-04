@@ -177,7 +177,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie")
 {
     try
     {
@@ -185,7 +185,8 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode == "accounts") await AccountsChecks.Run(root, Db);
+        if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
+        else if (mode == "accounts") await AccountsChecks.Run(root, Db);
         else if (mode == "identity-model") await IdentityModelChecks.Run(Db);
         else if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
@@ -336,6 +337,7 @@ try
     await RepositoryChecks.Run(Db);
     await IdentityModelChecks.Run(Db);
     await AccountsChecks.Run(root, Db);
+    await CookieSessionChecks.Run(root, Db);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yirmi beş gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yirmi altı gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1677,3 +1677,75 @@ dotnet ef migrations has-pending-model-changes
 
 [Öğrenme ve resmi kaynaklar](docs/day25-account-confirmation.md) ·
 [ADR](docs/adr/0025-local-account-registration.md) · [Test kılavuzu](docs/testing.md).
+
+## Gün 26 — Cookie ile giriş/çıkış ve korunan hesap
+
+24–25. gün hesabı oluşturur/doğrular; bu gün giriş ekler. Mevcut akademik endpoint'ler
+halen yetkilendirilmiş öğrenci self-servisi değildir. Hesap öğrenci profili olmadan
+giriş yapabilir; Student bağlantısı otomatik kurulmaz.
+
+| Endpoint | Başarı | Ret |
+|---|---|---|
+| GET /accounts/antiforgery | 200 requestToken + CSRF cookie (no-store) | HTTPS gerekir |
+| POST /accounts/login | 200 + Identity uygulama cookie'si | CSRF/alan/JSON 400; diğer giriş retleri ortak 401 |
+| GET /accounts/me | 200 id/email | 401; redirect/HTML yok |
+| POST /accounts/logout | 204 + cookie silme | anonim 401; CSRF 400 |
+
+Login yalnız email/password alır. E-posta Trim, parola değişmeden; geçerli biçim,
+email en fazla 256/parola en fazla 128 karakter. Doğrulanmış e-posta gerekir.
+Yanlış parola/olmayan hesap/doğrulanmamış/kilitli hesap aynı 401 yanıtını alır.
+Identity lockout: yeni hesaplarda açık, 5 başarısız parola denemesinde 5 dakika.
+"Beni hatırla" yok. Cookie __Host-University.Account, HttpOnly, Secure Always,
+SameSite Strict; bilet 20 dakika, sliding kapalı, kalıcı tarayıcı cookie'si değil.
+HTTP'de Secure cookie gönderilmez; bu akış HTTPS ile kullanılmalıdır.
+
+Önce güvenilen yerel HTTPS sertifikanızı hazırlayın (`dotnet dev-certs https --trust`
+güven deposunu değiştirir; yalnız kendi geliştirme makinenizde bilinçli çalıştırın).
+Mevcut DB bağlantısı yapılandırılmışken:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT='Development'
+dotnet run --no-launch-profile --urls https://localhost:7080
+```
+
+Yeni hesap/confirmation gerekiyorsa 25. gün yerel kutu ayarlarını ayrıca etkinleştirin;
+login için kutunun açık olması gerekmez. Aşağıdaki PowerShell 7 örneğinde test/development
+hesabının e-postasını ve parolasını etkileşimli girin. Sertifika hatasını atlamayın.
+
+```powershell
+$base='https://localhost:7080'
+$session=[Microsoft.PowerShell.Commands.WebRequestSession]::new()
+$csrf=Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $session
+$email=Read-Host 'Doğrulanmış hesabın e-postası'
+$credential=Get-Credential -UserName $email -Message 'Yerel hesap parolası'
+$body=@{ email=$email; password=$credential.GetNetworkCredential().Password } | ConvertTo-Json
+try {
+    Invoke-RestMethod "$base/accounts/login" -Method Post -WebSession $session `
+        -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken} -ContentType application/json -Body $body
+} finally { Remove-Variable body,credential }
+Invoke-RestMethod "$base/accounts/me" -WebSession $session
+# Kimlik değişti: anonim token'ı logout için kullanmayın.
+$csrf=Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $session
+Invoke-WebRequest "$base/accounts/logout" -Method Post -WebSession $session `
+    -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken} | Select-Object StatusCode
+Invoke-WebRequest "$base/accounts/me" -WebSession $session -SkipHttpErrorCheck | Select-Object StatusCode
+# Son çağrı 401. Cookie/token değişkenlerini terminale yazdırmayın.
+Remove-Variable csrf,session
+```
+
+Antiforgery token kimlik bileti değildir; header ve ayrı cookie birlikte doğrulanır.
+Login/logout POST'ları korunur; SameSite tek başına koruma sayılmaz. Çıkış, istemcinin
+silme talimatını işlemesine dayanır; kopyalanmış biletin tüm cihazlarda anında iptali
+veya genel oturum tablosu yoktur. Data Protection anahtar alanı değişmedi; key dosyaları
+repoya girmez. Yeni rol/ownership/2FA/JWT akışı eklenmedi.
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode cookie
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes
+```
+
+[Öğrenme notu ve resmi kaynaklar](docs/day26-cookie-sessions.md) ·
+[Karar kaydı](docs/adr/0026-identity-cookie-session.md).
