@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using UniversityRegistration.Accounts;
 using UniversityRegistration.Data;
 using UniversityRegistration.Endpoints;
@@ -43,12 +44,13 @@ internal static class CookieSessionChecks
             public void Log<T>(LogLevel level, EventId id, T state, Exception? error, Func<T, Exception?, string> format) => owner.Lines.Enqueue(format(state, error));
         }
     }
-    public static async Task Run(string root, Func<UniversityDbContext> factory, bool probe = false)
+    public static async Task Run(string root, Func<UniversityDbContext> factory, bool probe = false, bool jwt = false)
     {
         if (probe) throw new BehaviorFailure("Cookie session: controlled runner failure");
         var tag = "c26" + Guid.NewGuid().ToString("N");
         var directory = Path.GetFullPath(Path.Combine(root, "obj", "cookie-checks", tag));
         Directory.CreateDirectory(directory);
+        var keyDirectory = Path.Combine(Path.GetTempPath(), "university-jwt-" + tag);
         var clock = new Clock(); var logs = new Logs(); var secrets = new List<string>();
         var password = " " + Guid.NewGuid().ToString("N") + "Az9! "; secrets.Add(password);
         using var rsa = RSA.Create(2048);
@@ -64,16 +66,31 @@ internal static class CookieSessionChecks
         {
             string connection; await using (var db = factory()) connection = db.Database.GetConnectionString()!;
             var b = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development", ContentRootPath = directory });
+            b.Configuration["Jwt:Enabled"] = "false";
+            b.Configuration["Jwt:DevTokenEnabled"] = "false";
             b.Logging.ClearProviders(); b.Logging.AddProvider(logs);
             b.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
             b.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.None);
             b.WebHost.ConfigureKestrel(server => server.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             b.Services.AddDbContext<UniversityDbContext>(o => o.UseSqlServer(connection));
+            var queries = new JwtChecks.SqlCounter();
+            if (jwt)
+            {
+                Directory.CreateDirectory(keyDirectory);
+                using var signingRsa = RSA.Create(2048);
+                File.WriteAllText(Path.Combine(keyDirectory, "private.pem"), signingRsa.ExportPkcs8PrivateKeyPem());
+                File.WriteAllText(Path.Combine(keyDirectory, "public.pem"), signingRsa.ExportSubjectPublicKeyInfoPem());
+                b.Configuration.AddInMemoryCollection(JwtChecks.Configuration(keyDirectory));
+                b.Services.AddDbContext<UniversityDbContext>(o => o.AddInterceptors(queries));
+                b.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLevel.None);
+                b.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+            }
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            b.Services.AddUniversityJwt(b.Configuration, b.Environment);
             b.Services.AddDataProtection().SetApplicationName(tag);
             b.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, o => o.TimeProvider = clock);
             b.Services.Configure<SecurityStampValidatorOptions>(o => o.TimeProvider = clock);
-            app = b.Build(); app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints();
+            app = b.Build(); app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints();
             await app.StartAsync();
             var address = new Uri(app.Urls.Single());
             HttpClient Client(CookieContainer? jar = null) => new(new HttpClientHandler
@@ -109,6 +126,13 @@ internal static class CookieSessionChecks
                     (await db.Courses.CountAsync()).ToString(), (await db.CourseOfferings.CountAsync()).ToString()];
             }
             var before = await Academic();
+            if (!jwt)
+            {
+                using var disabledClient = Client();
+                using var disabled = await disabledClient.PostAsync("/accounts/dev-token", null);
+                Check((int)disabled.StatusCode == 404, "disabled dev-token route absent");
+            }
+            else await JwtChecks.Run(app, () => Client(), user, password, secrets, queries, keyDirectory, certificate, directory);
             async Task<string> Csrf(HttpClient client)
             {
                 using var r = await client.GetAsync("/accounts/antiforgery"); Check(r.StatusCode == HttpStatusCode.OK, "csrf GET");
@@ -204,6 +228,11 @@ internal static class CookieSessionChecks
                 var allowed = Path.GetFullPath(Path.Combine(root, "obj", "cookie-checks")) + Path.DirectorySeparatorChar;
                 if (!directory.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(directory) != tag) throw new InvalidOperationException("Unsafe cleanup");
                 Directory.Delete(directory, true);
+                if (jwt && Directory.Exists(keyDirectory))
+                {
+                    if (Path.GetFileName(keyDirectory) != "university-jwt-" + tag || Path.GetDirectoryName(Path.GetFullPath(keyDirectory)) != Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar)) throw new InvalidOperationException("Unsafe key cleanup");
+                    Directory.Delete(keyDirectory, true);
+                }
                 Console.WriteLine("PASS: cookie test-owned profile/accounts/keys removed; HTTPS host disposed");
             }
             catch (Exception ex) { Console.Error.WriteLine("CLEANUP cookie: " + ex.GetType().Name); if (primary is null) throw new CleanupFailure(); }

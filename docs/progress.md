@@ -1624,3 +1624,81 @@ ayrı ayrı tekrarlanmak yerine full içindeki ortak kontroller kullanıldı.
 **Commit/push:** Bu kaydın kimliği Git geçmişindeki
 `feat: add cookie login logout and protected account endpoint` mesajından bulunur.
 Push sonucu son raporda; hash yazmak için ikinci commit üretilmez.
+
+## Gün 27 — JWT doğrulaması ve cookie/bearer ayrımı (2026-11-04)
+
+Başlangıç main HEAD'i `4c90ddd2388356dc6ca055c2ecbf1723c7f0ba67`; çalışma ağacı
+temizdi. 24–26. gün Identity/profile, register/confirmation ve cookie/CSRF dosyaları,
+ilerleme kaydı ve gerçek Git geçmişinden doğrulandı; yeniden uygulanmadı.
+AGENTS.md bulunmadı. net10.0/SDK 10.0.401, mevcut Identity/EF sürümleri korundu.
+Resmi Microsoft/NuGet kaynaklarıyla uyumlu kararlı JwtBearer 10.0.14 eklenmiştir.
+
+**Değişiklik:** UniversityJwtSetup/Keys, ayrı UniversityBearer/UniversityBearerOnly,
+cookie default'unu değiştirmeyen kayıt. Enabled varsayılan kapalı. Bearer-me küçük
+accountId yanıtı verir, StudentId varsaymaz ve DB sorgusu yapmaz. Development+opt-in
+dev-token cookie-only policy, antiforgery ve güncel hesap uygunluğundan sonra RS256
+üretir. Sunucudan sub/jti/iss/aud/iat/nbf/exp, 600 saniye, no-store. İstek gövdesindeki
+kimlik/rol/süre kullanılmaz. Public doğrulama anahtarı private imza nesnesinden ayrıdır;
+DI singleton sahibi host kapanınca dispose eder. Repo dışı, kullanıcı ACL'li açık
+anahtar kurulum betiği eklenmiştir; startup anahtar oluşturmaz/anahtarı ezmez.
+
+Doğrulama imza, yalnız RS256, issuer, audience, lifetime, exp ve 30 saniye skew
+koşullarını açık belirtir. MapInboundClaims=false; validated event tek dolu string
+sub'u, array ve duplicate JSON alanı dahil denetler. Query token alınmaz; uzaktan
+key URL'si güvenilmez. Handler hata ayrıntısı ve JWT/request URL logları bastırılır.
+Akademik model/transaction ve mevcut HTTP sözleşmeleri değiştirilmedi.
+
+**Yeni gerçek HTTPS kontrolleri:** JwtChecks, 26. gün CookieSessionChecks hazırlığını
+kullanır; sertifika sadece o koşuya pinlenir, RSA anahtarları repo dışı geçicidir.
+İlk koşu sağlayıcının PrivateKeyStatus=Unknown metadatasını yanlış yorumlayan test
+assertion'ında durdu; başarılı sayılmadı. Kontrol gerçek private export reddi ve ayrı
+RSA nesneleriyle düzeltildi; test verileri/anahtarları temizlendi.
+
+Başarılı jwt koşusu ve full içindeki tekrarında: cookie+CSRF üretim, doğru sunucu
+sub/claims/süre, no-store, profilsiz hesap, tüm cookie/bearer ayrımları ve bearer
+kimliği için sıfır ek DB okuması geçti. SQL interceptor önce login okumasını gördü.
+Dev-token eksik/yanlış/eski kimlik CSRF'sini reddetti; client userId/role/süre etkisiz.
+Production dev opt-in guard, eksik/yanlış ayarlar/anahtarlar, dev route404 ve yalnız
+public anahtarlı Production host'ta bearer200 doğrulandı.
+
+**HTTP ret matrisi (hepsi gerçek istekle401):** Değiştirilmiş payload/imzası korunmuş;
+yanlış RSA anahtarı; yanlış iss; yanlış aud; skew ötesi geçmiş exp; gelecekte nbf;
+exp yok; unsigned; RS512; sub yok; boş sub; sub array; yinelenen JSON sub; bozuk metin.
+Fixture oluşturma reddi API kanıtı sayılmadı. Skew içi exp=-2s/nbf=+10s kabul,
+dışı ±120s ret; uzun bekleme yapılmadı, tam sınır anı iddiası yoktur. Aynı JWT iki
+kez ve cookie logout sonrası çalıştı; jti replay veya çıkış revocation garantisi yok.
+
+**Regresyonlar:** restore/build0 uyarı/hata; unit/core/cookie/full exit0. Full önceki
+Identity/account parola/confirmation/dispatch/restart, gerçek katalog SQL, akademik
+uygunluk/state/summary, batch ilk INSERT sonrası rollback ve rakip kayıt korunması,
+gerçek FK/unique ve onay sonrası Observer kontrollerini yeniden çalıştırdı. Model/
+snapshot farkı yok; migration üretilmedi. jwt -ProbeFailure üst çalıştırıcıya sıfır
+olmayan exit code verdi. Anahtar kurulum betiği repo dışı geçici dizinde eşleşen
+3072-bit çift üretti, mevcut dizine ikinci çağrıyı reddetti; dosyalar temizlendi.
+
+Full DB `university_registration_tests_day6_b46459fd568d4f9298e5f1ea5004c71a` bağımsız
+SQL kontrolünde yalnız 2 ders/2 dönem/3 açılış seed'i; Student/Enrollment/Identity
+hesapları ve ön koşul/başarı/saat ilişkileri sıfırdı. Süreç ve geçici JWT anahtar
+dizini kalmadı. App/lab test hedefi olmadı; izole DB şemaları/sequence boşlukları
+korundu. Test token/private key/log çıktısı commit kapsamına alınmadı.
+
+**Sınırlar/eksikler:** OAuth/OIDC, refresh/rotation, JWKS/anahtar rotasyonu, denylist,
+oturum/hesap revocation ve tam öğrenci yetkilendirmesi yoktur. Cookie logout/parola/
+hesap değişikliği mevcut JWT'yi otomatik iptal etmez; bearer DB'ye bakmaz. Gerçek
+browser SameSite ve dış proxy logları bu HTTP testinin kapsamı değildir. Tam 30s
+sınırı, çok instance anahtar yönetimi ve Down denenmedi. Kaynak/setup guard'ları ve
+public-only Production HTTPS host'u kullanıldı; ayrı deployment yapılmadı. Önceki
+modların tamamı ayrıca çağrılmak yerine full içindeki ortak kontroller kullanıldı.
+
+**Sıradaki gün:** Access/refresh token ve rotation.
+
+**Commit/push:** Bu kaydın kimliği Git geçmişindeki
+`feat: validate JWT bearer tokens alongside cookie authentication` mesajından
+bulunur; push sonucu son rapordadır. Hash yazmak için ek commit oluşturulmaz.
+
+Son test izolasyonu incelemesinde, önceki account/core süreçlerinin kullanıcı JWT
+ortam değişkenlerini devralmaması için Enabled/DevTokenEnabled testte açıkça kapatıldı;
+JWT fixture kendi ayarlarını bunun üzerine kurar. Bu değişiklikten sonra full yeniden
+exit0 oldu. Son DB `university_registration_tests_day6_d0c168d65c5b493fb40740d6c669de6d`
+bağımsız SQL kontrolünde yine 2/2/3 seed, diğer akademik/Identity test tabloları0;
+JWT geçici anahtarları, cookie çalışma dizinleri ve süreçler kalmadı.

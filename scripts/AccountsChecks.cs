@@ -118,6 +118,8 @@ internal static class AccountsChecks
             start.ArgumentList.Add("--urls"); start.ArgumentList.Add($"http://127.0.0.1:{port}");
             start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
             start.Environment["ConnectionStrings__UniversityDatabase"] = connection;
+            start.Environment["Jwt__Enabled"] = "false";
+            start.Environment["Jwt__DevTokenEnabled"] = "false";
             start.Environment["EnrollmentPolicy__MaxCreditsPerTerm"] = "30";
             start.Environment["Accounts__LocalMailboxEnabled"] = "true";
             start.Environment["Accounts__ConfirmationPageUrl"] = "https://confirmation.example.test/local";

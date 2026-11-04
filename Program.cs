@@ -17,8 +17,11 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddAccountIdentity(builder.Configuration, builder.Environment);
+builder.Services.AddUniversityJwt(builder.Configuration, builder.Environment);
+// Token failures and request URLs must never become credential logs.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLevel.None);
 // A local confirmation URL contains a bearer secret. Do not log request URLs in this mode.
-if (builder.Configuration.GetValue<bool>("Accounts:LocalMailboxEnabled"))
+if (builder.Configuration.GetValue<bool>("Accounts:LocalMailboxEnabled") || builder.Configuration.GetValue<bool>("Jwt:Enabled"))
     builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Services.AddScoped<EnrollmentOperations>();
 builder.Services.AddScoped<CourseCatalogReader>();
@@ -61,5 +64,6 @@ app.MapEnrollmentEndpoints();
 app.MapPriorityPreviewEndpoint();
 app.MapAccountEndpoints();
 app.MapAccountSessionEndpoints();
+app.MapUniversityJwtEndpoints();
 
 app.Run();

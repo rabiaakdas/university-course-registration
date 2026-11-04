@@ -467,3 +467,23 @@ akademik kayıt/bağlantı değişmezliği kontrol edilir. Kendi hesapları/prof
 `obj/cookie-checks/<çalışma-kimliği>` finally temizlenir, HTTPS host dispose edilir.
 `-Mode cookie -ProbeFailure` kontrollü assertion ile başarısız exit code üretir.
 Bu test teslim/yetkilendirme veya tüm cihazlarda revocation garantisi değildir.
+
+## JWT doğrulama (Gün 27)
+
+`-Mode jwt`, CookieSessionChecks'in aynı HTTPS/cookie fixture'ını JwtChecks ile
+birlikte çalıştırır; `full` bu birleşik yolu kullanır. `cookie` JWT kapalıyken önceki
+akış ve dev-token 404'ünü korur. Anahtarlar yalnız çalışma kimlikli repo dışı geçici
+dizine yazılır; finally doğrulanmış hedefi temizler. App/lab hedef alınmaz.
+
+JWT HTTP ret matrisi: değiştirilmiş payload, yanlış RSA anahtarı, yanlış iss/aud,
+skew ötesi exp/nbf, eksik exp, imzasız, RS512, eksik/boş/array sub, yinelenen JSON sub
+alanı ve bozuk metin. Her token gerçekten HTTP'ye gönderilir. Skew içi/dışı testler
+geçmiş/gelecek imzalı veriler kullanır, uzun bekleme yoktur. Public nesnenin private
+export reddi test edilir; Windows sağlayıcısının Unknown metadata'sı kanıt sayılmaz.
+
+Şema ayrımı, CSRF, sunucudan kimlik/süre, no-store, bearer DB sorgusuzluğu,
+tekrar kullanım ve cookie logout sonrası JWT'nin geçerliliği doğrulanır. Production
+public-key-only HTTPS host'u dev-token404 ve bearer-me200 kontrolü için kullanılır.
+Unit modu başlangıç configuration guard'larını DB olmadan çalıştırır. `jwt -ProbeFailure`
+üst betiğe başarısız exit code ile yansır. Bunlar OAuth/OIDC uyumluluk veya teslim/
+revocation garantisi değildir.

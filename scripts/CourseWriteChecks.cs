@@ -19,6 +19,7 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "jwt" or "unit" or "full") JwtChecks.Unit(root);
 if (mode is "accounts" or "unit" or "full")
 {
     try { AccountsChecks.Unit(mode == "accounts" && probe); }
@@ -104,6 +105,8 @@ async Task Run(string command, params string[] arguments)
         CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardOutput = true, RedirectStandardError = true };
     foreach (var argument in arguments) info.ArgumentList.Add(argument);
     info.Environment["ConnectionStrings__UniversityDatabase"] = connection;
+    info.Environment["Jwt__Enabled"] = "false";
+    info.Environment["Jwt__DevTokenEnabled"] = "false";
     using var process = Process.Start(info)!;
     var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();
@@ -177,7 +180,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt")
 {
     try
     {
@@ -185,7 +188,8 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
+        if (mode == "jwt") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
+        else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
         else if (mode == "accounts") await AccountsChecks.Run(root, Db);
         else if (mode == "identity-model") await IdentityModelChecks.Run(Db);
         else if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
@@ -337,7 +341,7 @@ try
     await RepositoryChecks.Run(Db);
     await IdentityModelChecks.Run(Db);
     await AccountsChecks.Run(root, Db);
-    await CookieSessionChecks.Run(root, Db);
+    await CookieSessionChecks.Run(root, Db, jwt: true);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

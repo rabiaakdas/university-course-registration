@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yirmi altı gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yirmi yedi gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1749,3 +1749,67 @@ dotnet ef migrations has-pending-model-changes
 
 [Öğrenme notu ve resmi kaynaklar](docs/day26-cookie-sessions.md) ·
 [Karar kaydı](docs/adr/0026-identity-cookie-session.md).
+
+## Gün 27 — Ayrı JWT bearer doğrulaması
+
+Cookie varsayılanı korunur. `GET /accounts/bearer-me` yalnız UniversityBearer şemasını
+kabul eder; başarı `{ "accountId": "..." }`, yok/geçersiz token401. Cookie tek başına
+bu endpoint'e yetmez; bearer da `/accounts/me` veya dev-token'a yetmez. Akademik
+endpoint'lere yeni yetkilendirme eklenmedi.
+
+JWT varsayılan olarak kapalıdır. Repo dışında, Windows kullanıcı ACL'iyle korunan
+bir geliştirme anahtar dizini oluşturun; script mevcut dizini/anahtarı değiştirmez:
+
+```powershell
+pwsh -NoProfile -File scripts/New-DevelopmentJwtKey.ps1
+$keyDir=Join-Path $env:LOCALAPPDATA 'UniversityRegistration/jwt-development'
+$env:ASPNETCORE_ENVIRONMENT='Development'
+$env:Jwt__Enabled='true'
+$env:Jwt__DevTokenEnabled='true'
+$env:Jwt__Issuer='https://university.local.example'
+$env:Jwt__Audience='university-registration-api'
+$env:Jwt__PublicKeyPath=Join-Path $keyDir 'public.pem'
+$env:Jwt__PrivateKeyPath=Join-Path $keyDir 'private.pem'
+dotnet run --no-launch-profile --urls https://localhost:7080
+```
+
+Güvenilen yerel HTTPS sertifikası ve mevcut DB bağlantısı gerekir; sertifika
+hatalarını atlamayın. Anahtar içeriğini appsettings, terminal veya Git'e koymayın.
+PEM şifreli değildir; dosya izinlerini koruyun. Anahtar kaybı/değişimi eski JWT'leri
+etkiler; otomatik key üretimi/rotasyonu yok. Production'da DevTokenEnabled=true
+başlangıç hatasıdır; yalnız doğrulama için Enabled/Issuer/Audience/PublicKeyPath
+kullanılır. PrivateKeyPath yüklenmez. Dev-token route'u kapalıysa 404'tür.
+
+26. gün örneğiyle antiforgery → cookie login yaptıktan sonra, aynı `$session` ile:
+
+```powershell
+$base='https://localhost:7080'
+$csrf=Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $session
+$issued=Invoke-RestMethod "$base/accounts/dev-token" -Method Post -WebSession $session `
+    -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken}
+$headers=@{Authorization="Bearer $($issued.accessToken)"}
+Invoke-RestMethod "$base/accounts/bearer-me" -Headers $headers
+# $issued, $headers veya token değerini terminale yazdırmayın.
+Remove-Variable issued,headers,csrf
+```
+
+Önceki örneğin logout adımından önce bu bloğu çalıştırın. Dev-token gövde alanı almaz;
+kimlik/süre/claims sunucudan gelir. Yanıt accessToken/tokenType=Bearer/expiresIn=600,
+Cache-Control:no-store'dur. Token URL'ye konmaz. Bu standart OAuth token endpoint'i
+veya gerçek genel token sunucusu değildir.
+
+RS256; sub/jti/iss/aud/iat/nbf/exp; on dakika süre ve 30 saniye clock skew. JWT
+şifrelenmez; kişisel/hesap secret'ları veya rol içermez. İmza, issuer, audience ve
+süre zorunlu; yalnız tek dolu string sub kabul edilir. Cookie logout, parola değişimi
+ve hesap değişimi JWT'yi kendiliğinden iptal etmez. jti tekrar kullanımı engellemez.
+Bearer doğrulaması DB hesabı/oturumu sorgulamaz. Refresh/revocation/denylist yoktur.
+
+```powershell
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode jwt
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode cookie
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes
+```
+
+[Öğrenme notu/resmi kaynaklar](docs/day27-jwt-validation.md) ·
+[Karar kaydı](docs/adr/0027-separate-jwt-bearer.md).
