@@ -1,4 +1,4 @@
-param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository','cqrs','identity-model','accounts','cookie','jwt','refresh')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
+param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository','cqrs','identity-model','accounts','cookie','jwt','refresh','refresh-family')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
 # Real LocalDB + HTTP checks, no test framework or permanent test project.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent

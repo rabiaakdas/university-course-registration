@@ -6,6 +6,7 @@ namespace UniversityRegistration.Data;
 
 public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
+    public DbSet<RefreshTokenRecord> RefreshTokenRecords => Set<RefreshTokenRecord>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<AcademicTerm> AcademicTerms => Set<AcademicTerm>();
@@ -29,13 +30,27 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
         refresh.HasKey(x => x.Id).HasName("PK_RefreshSessions");
         refresh.Property(x => x.Id).ValueGeneratedNever();
         refresh.Property(x => x.UserId).HasMaxLength(450).IsRequired();
-        refresh.Property(x => x.RefreshTokenHash).HasColumnType("binary(32)").IsRequired();
         refresh.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset(7)").IsRequired();
         refresh.Property(x => x.ExpiresAtUtc).HasColumnType("datetimeoffset(7)").IsRequired();
         refresh.Property(x => x.RevokedAtUtc).HasColumnType("datetimeoffset(7)");
-        refresh.HasIndex(x => x.RefreshTokenHash).IsUnique().HasDatabaseName("UX_RefreshSessions_TokenHash");
         refresh.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_RefreshSessions_AspNetUsers");
+        var token = modelBuilder.Entity<RefreshTokenRecord>();
+        token.ToTable("RefreshTokenRecords", table =>
+        {
+            table.HasCheckConstraint("CK_RefreshTokens_Used", "[UsedAtUtc] IS NULL OR [UsedAtUtc] >= [CreatedAtUtc]");
+            table.HasCheckConstraint("CK_RefreshTokens_Replacement", "[ReplacedById] IS NULL OR ([UsedAtUtc] IS NOT NULL AND [ReplacedById] <> [Id])");
+        });
+        token.HasKey(x => x.Id);
+        token.Property(x => x.Id).ValueGeneratedNever();
+        token.Property(x => x.TokenHash).HasColumnType("binary(32)").IsRequired();
+        token.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset(7)");
+        token.Property(x => x.UsedAtUtc).HasColumnType("datetimeoffset(7)");
+        token.HasIndex(x => x.TokenHash).IsUnique().HasDatabaseName("UX_RefreshTokens_Hash");
+        token.HasAlternateKey(x => new { x.SessionId, x.Id });
+        token.HasOne<RefreshSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.NoAction);
+        token.HasOne<RefreshTokenRecord>().WithMany().HasForeignKey(x => new { x.SessionId, x.ReplacedById })
+            .HasPrincipalKey(x => new { x.SessionId, x.Id }).OnDelete(DeleteBehavior.NoAction);
         modelBuilder.HasSequence<int>("CourseIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var course = modelBuilder.Entity<Course>();
         course.ToTable("Courses", table => table.HasCheckConstraint("CK_Courses_Credits_Positive", "[Credits] > 0"));

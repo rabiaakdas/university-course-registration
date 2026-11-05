@@ -55,7 +55,7 @@ internal static class JwtChecks
     }
     public static async Task Run(WebApplication app, Func<HttpClient> clientFactory, ApplicationUser user, string password,
         List<string> secrets, SqlCounter counter, string keyDirectory, X509Certificate2 certificate, string contentRoot,
-        Func<UniversityRegistration.Data.UniversityDbContext> factory, RefreshChecks.SaveGate saveGate)
+        Func<UniversityRegistration.Data.UniversityDbContext> factory, RefreshChecks.SaveGate saveGate, RefreshChecks.FamilyGate familyGate)
     {
         var privatePem = File.ReadAllText(Path.Combine(keyDirectory, "private.pem")); secrets.Add(privatePem);
         using var signer = RSA.Create(); signer.ImportFromPem(privatePem);
@@ -112,7 +112,7 @@ internal static class JwtChecks
             Check(jwt.Subject == user.Id && jwt.Alg == "RS256" && jwt.Issuer == Issuer && jwt.Audiences.Single() == Audience
                 && jwt.ValidTo - jwt.ValidFrom == TimeSpan.FromMinutes(10) && jwt.IssuedAt == jwt.ValidFrom
                 && !string.IsNullOrWhiteSpace(jwt.Id) && !jwt.Claims.Any(x => x.Type is "role" or "email" or "studentId"), "server claims/time/no client override");
-            await RefreshChecks.Run(app, clientFactory, factory, user.Id, body, secrets, saveGate);
+            await RefreshChecks.Run(app, clientFactory, factory, user.Id, body, secrets, saveGate, familyGate, cookie, csrf, password);
         }
         int sessionsBefore;
         await using (var db = factory()) sessionsBefore = await db.RefreshSessions.CountAsync(s => s.UserId == user.Id);

@@ -1764,3 +1764,87 @@ sunucusu kapsam dışıdır. Anahtar/token/SQL logları commit'e alınmadı.
 **Sıradaki gün:** Token family, reuse, eşzamanlı refresh ve çoklu cihaz.
 **Commit/push:** `feat: add persistent refresh sessions and token rotation` Git kaydından
 bulunur; son rapor gerçek push sonucunu verir. Hash için ikinci commit üretilmez.
+
+## Gün 29 — Token ailesi, reuse, eşzamanlı tüketim ve sahiplik
+
+**Başlangıç:** main `8b6528b3f9070c86c745ab9bb7f48df04661e649`, temiz çalışma ağacı.
+Cookie/CSRF, ayrı bearer, TokenSessions ve gün28 migration/testleri gerçekten mevcut.
+Önceki günler yeniden uygulanmadı. Paket/framework eklenmedi veya yükseltilmedi.
+
+**Değişiklik:** RefreshSession aile olarak kaldı; current hash sütunu kaldırılıp her
+özet için RefreshTokenRecord eklendi. Kullanım/ardıl bağlantısı ve binary32 unique özet;
+(SessionId,ReplacedById) birleşik FK aynı aileyi korur. UsedAt/created ve self-replacement
+CHECK'leri var. Yeni token geçmişi dışında akademik/Identity şeması değişmedi.
+
+TokenSessions refresh ve revoke, açık transaction içinde aynı Session satırında
+parametreli UPDLOCK/HOLDLOCK kullanır. Kilit öncesi yalnız immutable aileId okunur;
+durum sonra tekrar okunur. Koşullu UsedAtUtc IS NULL tüketimi satır sayısıyla doğrulanır;
+ExecuteUpdate, ardıl SaveChanges, replacement ve commit aynı transaction'dadır.
+Kullanılmış token aile iptalini COMMIT edip ortak401 döndürür. Bilinmeyen token aile
+iptal etmez. No-tracking okumalar bulk update ile eski tracker yazmasını önler.
+
+GET /accounts/sessions ve POST /accounts/sessions/{id}/revoke açık cookie-only policy
+kullanır; POST CSRF doğrular. Liste kullanıcı filtresi ve deterministik projection;
+no-store, dört güvenli alan. Sahipsiz/olmayan aynı404, kendi iptal tekrarında204 ve aynı
+timestamp. Cookie logout ve JWT kabulü değişmedi. Yönetim de mevcut Development
+üretici opt-in sınırındadır; genel üretim OAuth/cihaz yönetimi değildir.
+
+**Migration:** `20261105103704_AddRefreshTokenHistory` SQL'i incelendi: tablo/index/FK/
+CHECK oluştur → eski her güncel özeti INSERT SELECT ile taşı → eski index/sütunu kaldır.
+Up/Down incelendi; Down çalıştırılmadı. App hedefi açık kontrol edilip uygulandı; ikinci
+update no-op, model/snapshot farkı yok. App önce/sonra2ders/2dönem/3açılış; öğrenci,
+enrollment,hesap,session/token0. Lab'a dokunulmadı. İzole Day28 şeması yükseltmesinde
+akademik kimlik/Approved kayıt/hesap-profil bağlantısı, mevcut aileId/tarihler ve özet
+korundu; taşınan token gerçek HTTPS refresh200 verdi. Gün28'in atılmış geçmişi yoktan
+üretilmedi; migration öncesi kayıp özetler için reuse tespiti iddiası yoktur.
+
+**Gerçek doğrulama:** restore/build0 uyarı/hata; unit/core/full exit0. Refresh-family
+HTTPS/LocalDB testi sıralı R1/R2/R3 ve kullanım/ardıl linklerini, aynı sabit aile sonunu,
+R1 reuse401'in kalıcı iptalini ve R3 retini doğruladı. Aynı hesabın başka ailesi çalıştı,
+bilinmeyen token onu değiştirmedi. İki ayrı connection/context kontrollü bariyerde
+aynı token ile yarıştı: tam bir200/bir401, iki token kaydı (bir ardıl), bir tüketim ve
+iptal aile. Kazananın yeni refresh token'ı da401 oldu.
+
+Ordered test interceptor'ı ilk SQL aile kilidini aldıktan sonra ikinci HTTP işlemini
+başlattı. Revoke-first → refresh401/tek token; refresh-first →200, ardından revoke204
+ve ardıl401. İki sırada da kalıcı aile iptal. Rastgele Task.Delay kullanılmadı.
+Gerçek ardıl INSERT UNIQUE ihlali koşullu tüketimden sonra oluşturuldu: HTTP500,
+eski UsedAtUtc/Replacement null, ardıl yok ve eski token yeniden kullanılabilir.
+Yeni context kalıcı durumu doğruladı. Reuse401 rollback değil commit kanıtıdır.
+
+HesapA listesi sadeceA/sıralı; B listesi A'yı içermedi; B'nin bilinenA-id ve olmayan-id
+revoke'u404/hasarsız. CSRF eksik/geçersiz400, bearer-only yönetim401, kendi revoke204/
+tekrar204/timestampkorunumu doğrulandı. Eski access JWT aile iptalinden sonra200 kaldı.
+Gerçek UNIQUE/CHECK/self/cross-family-FK/NO ACTION deneyleri beklenen SQL kısıtlarıyla
+başarılı. Cookie/JWT ortak HTTPS host'u sertifikayı sabitler ve log secret sızıntısını
+kontrol eder; eski parolasız/hesap confirmation/CSRF/süre testleri full içinde çalıştı.
+
+Full DB `university_registration_tests_day6_76ea16d367c249988a82a469cf6be3ef` bağımsız
+SQL kontrolünde yalnız2/2/3seed, Student/Enrollment/Accounts/Session/Token/önkoşul/
+başarı/saat0. Full ayrıca katalog SQL/projection, gerçek batch ilk INSERT sonrası
+rollback/rakip korunumu ve onay sonrası observer hata/iptal davranışlarını yeniden geçti.
+
+**Düzeltilen kontrol:** İlk family koşusunda ürün/HTTP testleri geçti fakat migration
+fixture temizliğine token→session sırası eklenmemişti; exit1 doğru korundu. Temizlik
+sırası düzeltildi. İlk manuel telafi SQL'i QUOTED_IDENTIFIER ayarında reddedildi ve
+transaction kesinleşmedi; sqlcmd -I ile yalnız o GUID test DB'sindeki migration29
+fixture satırları temizlendi. Sonraki family koşusu exit0 ve boş test tabloları verdi.
+Bu başarısız koşu başarılı sayılmadı; ürün endpoint'ine test anahtarı eklenmedi.
+
+**Sınırlar:** Strict reuse masum iki sekme/yanıt kaybını saldırıdan ayırmaz; yeniden
+giriş gerekebilir. Sunucu DB kilidi, istemci single-flight'tan farklıdır. Kalıcı teslim,
+çökme/ağ kopması, çok node deployment, tolerans penceresi veya otomatik retry denenmedi/
+eklenmedi. Token geçmişi otomatik temizlenmez; saklama politikası ileride gerekir.
+Cookie ve mevcut access JWT aile iptaliyle otomatik iptal olmaz. Key/token/log/build
+çıktıları commit dışındadır. Test DB şemaları korunur; kullanıcı verisi silinmez.
+
+**Sıradaki gün:** Parola sıfırlama ve tek kullanımlık süreli token.
+**Commit/push:** `feat: detect refresh token reuse and manage session families` Git
+mesajından bulunur; gerçek push sonucu son raporda. Hash için ek commit oluşturulmaz.
+
+Son ek doğrulama: `refresh-family` yeniden exit0 oldu
+(`university_registration_tests_day6_4c867fa142b64f6ba074eeb436a9661f`); aktif aileye ek
+olarak eski revoked/expired ailelerin migration'da korunumu kontrol edildi. Ardından
+`refresh-family -ProbeFailure` beklenen exit1 verdi; üst çalıştırıcı hata yayılımı
+korundu, API kapandı. Son değişiklikler test/belge kapsamındadır; üretim kodunun full
+ile doğrulanan davranışı değiştirilmedi.

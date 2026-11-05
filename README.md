@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yirmi sekiz gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yirmi dokuz gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1816,6 +1816,8 @@ dotnet ef migrations has-pending-model-changes
 
 ## Gün 28 — Kalıcı refresh oturumu ve sıralı rotation
 
+> Bu bölüm gün28 kararını açıklar; gün29 aşağıda güncel-özet modelini token geçmişi ve aile kilidiyle genişletir.
+
 `RefreshSession` Identity hesabına bağlıdır, StudentId değildir. DB yalnız güncel
 refresh token'ın SHA-256 özetini `binary(32)` olarak tutar; UNIQUE index ve NO ACTION
 hesap FK'si vardır. İlişkili oturum varken hesabın fiziksel silinmesi reddedilir.
@@ -1877,3 +1879,53 @@ kalabilir ve yeniden giriş gerekebilir. Cookie logout veya oturum iptali, önce
 token'ı iptal etmez; bearer hâlâ DB'ye bakmaz. Tüm cihazlardan çıkış/denylist yoktur.
 
 [Öğrenme notu](docs/day28-refresh-sessions.md) · [ADR](docs/adr/0028-refresh-sessions.md).
+
+## Gün 29 — Refresh ailesi ve hesap oturumları
+
+Gün28'in yalnız güncel özet modeli artık `RefreshTokenRecords` geçmişine taşındı.
+`RefreshSession` aileyi temsil eder; fiziksel cihaz kimliği/fingerprinting yoktur.
+Migration eski güncel token'ı korur; daha önce atılmış token geçmişini geri getirmez.
+Eski ve yeni uygulama yazmalarını durdurup Gün28'deki hedef kontrollü app migration
+komutunu çalıştırın. Lab'a uygulamayın. Migration yalnız token geçmişi/ilişkileri ekler
+ve artık gerekmeyen güncel özet sütununu kaldırır.
+
+```powershell
+dotnet ef migrations has-pending-model-changes
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode refresh-family
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet run --no-launch-profile --urls https://localhost:7080
+```
+
+Mevcut JWT anahtar kurulumu, Development opt-in, HTTPS ve cookie login sonrasında:
+
+```powershell
+$csrf=Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $session
+$a=Invoke-RestMethod "$base/accounts/dev-token" -Method Post -WebSession $session -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken}
+$b=Invoke-RestMethod "$base/accounts/dev-token" -Method Post -WebSession $session -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken}
+$families=Invoke-RestMethod "$base/accounts/sessions" -WebSession $session
+$families | Select-Object sessionId,createdAtUtc,expiresAtUtc,revokedAtUtc
+# Listeden iptal etmek istediğiniz kendi aile kimliğini seçin; token değerlerini yazdırmayın.
+$id=Read-Host 'İptal edilecek sessionId'
+Invoke-WebRequest "$base/accounts/sessions/$id/revoke" -Method Post -WebSession $session -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken} | Select-Object StatusCode
+Remove-Variable a,b,csrf,families,id
+```
+
+`GET /accounts/sessions` yalnız cookie hesabının ailelerini CreatedAtUtc/SessionId artan
+sırada döndürür; alanlar sessionId/createdAtUtc/expiresAtUtc/revokedAtUtc, no-store.
+`POST /accounts/sessions/{sessionId}/revoke` cookie+CSRF gerektirir. Kendi ailesinde204;
+tekrar204, iptal zamanı değişmez. Olmayan/başka hesabın ailesi aynı404. Eksik/yanlış
+CSRF400, yalnız bearer401. Her iki yönetim endpoint'i bugünkü Development üretici
+opt-in'iyle birlikte açılır. Refresh sözleşmesi ve anonim JSON yetkisi değişmedi.
+
+R1→R2→R3 geçmişi tutulur. R1 yeniden sunulursa401 ve ilgili aile kalıcı iptal edilir;
+R3 artık yenileyemez, diğer aile etkilenmez. İki eşzamanlı aynı-token isteği normal
+sona erdiğinde bir200/bir401 ve iptal aile beklenir. İki sekme veya kaybolan refresh
+yanıtı da katı reuse'u tetikleyebilir; yeniden giriş gerekebilir. İstemci single-flight
+sunucu koordinasyonunun yerine geçmez. Bilinmeyen token başka aileyi iptal etmez.
+
+İptal eski JWT'yi veya cookie'yi silmez. Cookie logout anlamı değişmedi. JWT DB'ye
+bakmadığından access token exp ve30s toleransına kadar kabul edilebilir. Ham token/
+anahtar loglanmaz; token geçmişi otomatik silinmez. Erken geçmiş temizliği reuse
+kapsamını azaltır. OAuth/OIDC, tolerans penceresi, otomatik retry ve tam teslim garantisi yok.
+
+[Öğrenme notu](docs/day29-refresh-families.md) · [ADR](docs/adr/0029-refresh-family-coordination.md).

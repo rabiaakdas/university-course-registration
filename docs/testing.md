@@ -503,3 +503,20 @@ Geçici HTTPS/anahtar dizinleri ve host'lar mevcut finally yaklaşımıyla kapan
 kontrolleri `sql/app/verify-refresh-schema.sql` içindedir. Ham token/hash/private key
 çıktıya yazılmaz. Test DB şemaları önceki düzene göre korunur; sahipliği belirsiz DB
 silinmez. Tam bağlantı kopması, eşzamanlı refresh, reuse/family ve Down bu testin kanıtı değildir.
+
+## Gün 29 refresh-family
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode refresh-family`
+Day28 şemasından yükseltme, eski token'ın gerçek HTTPS kullanımı ve ortak cookie/JWT
+host'unda geçmiş/reuse/yarış/rollback/sahiplik kontrollerini çalıştırır. `refresh` modu
+aynı güncel kontrollerin uyumlu adıdır; eski gün28 ret beklentileri kopyalanmadı.
+Full, güncel family HTTP kontrollerini mevcut hesap/cookie/JWT regresyonlarıyla çalıştırır.
+Yeni framework/paket yok. `-ProbeFailure` beklenen başarısız exit code deneyidir.
+
+Test-only FamilyGate, iki ayrı connection'ın SQL aile kilidine ulaşmasını koordine eder;
+ordered testte ilk kilidi tutarken ikinci HTTP isteğini başlatır. SaveGate tüketimden
+sonraki gerçek INSERT'i UNIQUE ihlaline sokar. Yeni context'te UsedAtUtc/ardıl/revoke
+kontrol edilir. Her koşu kendi GUID adlı DB'sini kullanır. Temizlik token kayıtları →
+aileler → hesaplar sırasındadır; fixture akademik ilişkileri de FK sırasıyla temizlenir.
+Geçmiş self-FK aynı aile kayıtları tek DELETE'de silinerek korunur. Test DB şemaları
+mevcut yaklaşım gereği tutulur; kullanıcı/app/lab verisi test hedefi değildir.

@@ -11,6 +11,7 @@ using UniversityRegistration.Models;
 namespace UniversityRegistration.Accounts;
 
 public sealed record TokenSessionPolicy(int AccessTokenSeconds, int RefreshSessionDays);
+public sealed record RefreshSessionResponse(Guid SessionId, DateTimeOffset CreatedAtUtc, DateTimeOffset ExpiresAtUtc, DateTimeOffset? RevokedAtUtc);
 public sealed record TokenPairResponse(string AccessToken, string TokenType, int ExpiresIn, string RefreshToken);
 
 public sealed class TokenSessions(UniversityDbContext db, UserManager<ApplicationUser> users,
@@ -35,26 +36,70 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         if (!await Eligible(id)) return null;
         var now = DateTimeOffset.UtcNow;
         var refresh = NewRefreshToken();
-        var session = new RefreshSession { UserId = id, CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(policy.RefreshSessionDays), RefreshTokenHash = Hash(refresh) };
+        var session = new RefreshSession { UserId = id, CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(policy.RefreshSessionDays) };
         var result = CreatePair(session, refresh, now);
         if (result is null) return null;
         db.RefreshSessions.Add(session);
+        db.RefreshTokenRecords.Add(new() { SessionId = session.Id, TokenHash = Hash(refresh), CreatedAtUtc = now });
         await db.SaveChangesAsync(ct);
         return result;
     }
+    // All existing-family writes acquire this transaction-owned SQL Server lock first.
+    private Task<RefreshSession?> LockFamily(Guid id, CancellationToken ct) => db.RefreshSessions
+        .FromSqlInterpolated($"SELECT * FROM [RefreshSessions] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {id}")
+        .AsNoTracking().SingleOrDefaultAsync(ct);
+
     public async Task<TokenPairResponse?> RefreshAsync(string token, CancellationToken ct)
     {
         if (!IsValidFormat(token)) throw new ArgumentException("Invalid refresh token format.", nameof(token));
         var hash = Hash(token);
-        var session = await db.RefreshSessions.SingleOrDefaultAsync(x => x.RefreshTokenHash == hash, ct);
-        if (session is null || session.RevokedAtUtc is not null || session.ExpiresAtUtc <= DateTimeOffset.UtcNow) return null;
+        // Only the immutable routing ID is used before the lock; state is read again below.
+        var familyId = await db.RefreshTokenRecords.Where(x => x.TokenHash == hash).Select(x => (Guid?)x.SessionId).SingleOrDefaultAsync(ct);
+        if (familyId is null) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var session = await LockFamily(familyId.Value, ct);
+        var now = DateTimeOffset.UtcNow;
+        if (session is null || session.RevokedAtUtc is not null || session.ExpiresAtUtc <= now) return null;
+        var record = await db.RefreshTokenRecords.AsNoTracking().SingleOrDefaultAsync(x => x.SessionId == session.Id && x.TokenHash == hash, ct);
+        if (record is null) return null;
+        if (record.UsedAtUtc is not null)
+        {
+            await db.RefreshSessions.Where(x => x.Id == session.Id && x.RevokedAtUtc == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAtUtc, now), ct);
+            await transaction.CommitAsync(ct); // Rejection must not roll back the revocation.
+            return null;
+        }
         if (!await Eligible(session.UserId)) return null;
+        now = DateTimeOffset.UtcNow;
         var refresh = NewRefreshToken();
-        var result = CreatePair(session, refresh, DateTimeOffset.UtcNow);
+        var result = CreatePair(session, refresh, now);
         if (result is null) return null;
-        session.RefreshTokenHash = Hash(refresh);
-        await db.SaveChangesAsync(ct); // One update; no history/reuse/concurrency guarantee.
+        var consumed = await db.RefreshTokenRecords.Where(x => x.Id == record.Id && x.UsedAtUtc == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAtUtc, now), ct);
+        if (consumed != 1) throw new InvalidOperationException("Refresh consumption invariant failed.");
+        var next = new RefreshTokenRecord { SessionId = session.Id, TokenHash = Hash(refresh), CreatedAtUtc = now };
+        db.RefreshTokenRecords.Add(next);
+        await db.SaveChangesAsync(ct);
+        await db.RefreshTokenRecords.Where(x => x.Id == record.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReplacedById, next.Id), ct);
+        await transaction.CommitAsync(ct);
         return result;
+    }
+
+    public Task<List<RefreshSessionResponse>> ListAsync(string userId, CancellationToken ct) => db.RefreshSessions
+        .Where(x => x.UserId == userId).OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id)
+        .Select(x => new RefreshSessionResponse(x.Id, x.CreatedAtUtc, x.ExpiresAtUtc, x.RevokedAtUtc)).ToListAsync(ct);
+
+    public async Task<bool> RevokeAsync(Guid sessionId, string userId, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var session = await LockFamily(sessionId, ct);
+        if (session is null || session.UserId != userId) return false;
+        if (session.RevokedAtUtc is null)
+            await db.RefreshSessions.Where(x => x.Id == sessionId && x.UserId == userId && x.RevokedAtUtc == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAtUtc, DateTimeOffset.UtcNow), ct);
+        await transaction.CommitAsync(ct);
+        return true;
     }
     private TokenPairResponse? CreatePair(RefreshSession session, string refresh, DateTimeOffset now)
     {
