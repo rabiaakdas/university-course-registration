@@ -11,6 +11,7 @@ public static class AccountSetup
 {
     public static void AddAccountIdentity(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
+        services.AddStudentAccess();
         var enabled = configuration.GetValue<bool>("Accounts:LocalMailboxEnabled");
         Uri? page = null;
         if (enabled)

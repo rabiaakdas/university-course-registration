@@ -11,7 +11,7 @@ internal static class SummaryChecks
 {
     static void Check(bool value, string label) { if (!value) throw new BehaviorFailure("Summary: " + label); }
     public static async Task Run(Func<UniversityDbContext> factory,
-        Func<string,string,object?,string?,Task<(int Status,JsonNode Body,string? Location)>> send, bool probe = false)
+        Func<string,string,object?,string?,Task<(int Status,JsonNode Body,string? Location)>> send, bool probe = false, Func<int,Task>? prepareIdentity = null)
     {
         var tag="S19_"+Guid.NewGuid().ToString("N")[..8];
         var students=new List<Student>();var terms=new List<AcademicTerm>();var courses=new List<Course>();
@@ -77,6 +77,7 @@ internal static class SummaryChecks
             Slot(offerings[3].Id,DayOfWeek.Tuesday,new(6,0),new(7,0));
             Slot(offerings[4].Id,DayOfWeek.Wednesday,new(6,0),new(7,0));
             await using(var db=factory()){db.AddRange(enrollments);db.AddRange(slots);await db.SaveChangesAsync();}
+            if (prepareIdentity is not null) foreach (var student in students) await prepareIdentity(student.Id);
             var before=await Snapshot();var summary=await Get(students[0].Id,terms[0].Id);
             Check(summary["studentId"]!.GetValue<int>()==students[0].Id&&summary["academicTermId"]!.GetValue<int>()==terms[0].Id,"identity");
             Check(summary["activeCredits"]!.GetValue<long>()==9,"multi-slot course counted once, active policy");
@@ -99,7 +100,7 @@ internal static class SummaryChecks
             Check(before==await Snapshot(),"HTTP and fresh-context facade did not change any fixture row/state");
             await using(var db=factory())Check(!await db.Students.AnyAsync(s=>s.Id==int.MaxValue)&&!await db.AcademicTerms.AnyAsync(t=>t.Id==int.MaxValue),"missing IDs verified");
             await Get(int.MaxValue,terms[0].Id,404);await Get(students[0].Id,int.MaxValue,404);
-            var invalid=await Get(0,-1,400);Check(invalid["errors"]!["studentId"] is not null&&invalid["errors"]!["termId"] is not null,"both field errors");
+            await Get(0,-1,404); var invalid=await Get(students[0].Id,-1,400);Check(invalid["errors"]!["termId"] is not null,"authorized term field validation");
             await using(var template=factory())
             {
                 var capture=new CatalogSqlCapture();await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);

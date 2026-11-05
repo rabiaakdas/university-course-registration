@@ -576,3 +576,16 @@ finally temizler. Model değişmedi; migration yoktur.
 
 `roles -ProbeFailure` beklenen sıfır olmayan exit code kontrolüdür; başarılı test değildir.
 Unit/core/full, accounts/cookie/JWT/refresh/reset kontrolleri mevcut runner'da kalır.
+
+## Gün 32 kaynak erişimi
+
+`-Mode resource-access`, mevcut pinlenmiş test sertifikalı HTTPS/izole LocalDB
+Identity hostunu kullanır. Öğrenci/danışman hesapları gerçek UserManager/RoleManager
+ile hazırlanır; ownership, advisor, CSRF, şema, retlerde yan etki ve DB FK sınanır.
+Bu mod mevcut JWT/refresh/reset/roles paketini de yeniden kullanır; yeni framework yok.
+`CatalogTestIdentity` eski pozitif HTTP fixture’larını testin oluşturduğu hesaplara
+bağlar; üretim bypass’ı veya global authorization kapatma yoktur. Kaynak erişimi negatif
+testleri kendi açık cookie istemcilerini kullanır. Saf uygulama testleri kullanıcıya
+bağlanmaz. Önceki migration fixture’ı AdvisorUserId sütunu yokken açık tarihsel SQL
+kullanır; yeni modeli eski şemaya yanlışlıkla insert etmez. Test hesabı temizlenmeden
+önce yalnız testin sahip olduğu Student bağlantıları/atamaları temizlenir.

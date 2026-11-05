@@ -71,7 +71,7 @@ static class EnrollmentChecks
             foreach(var pair in new[] {(0,0),(-1,-2),(int.MaxValue,int.MaxValue)})
             {
                 var response=await Post("/enrollments",new {studentId=pair.Item1,courseOfferingId=pair.Item2});
-                Check(response.Status==400 && response.Body["errors"]!.AsObject().ContainsKey("studentId") && response.Body["errors"]!.AsObject().ContainsKey("courseOfferingId"),"Enrollment field errors");
+                Check(response.Status==404,"Resource absent before enrollment field details");
             }
             await using(var db=factory()) Check(await db.Enrollments.CountAsync()==3,"Rejected enrollment persisted");
             Check((await Get("/enrollments/2147483647")).Status==404,"Missing enrollment detail");

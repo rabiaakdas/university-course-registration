@@ -1965,3 +1965,87 @@ son roles koşusu bunlarla yeniden geçti. Ürün kodu full sonrasında değişt
 danışman ataması, Instructor–açılış ilişkisi ve kişisel akademik okuma/yazma korumaları.
 **Commit/push:** `feat: authorize academic catalog management with Identity roles`;
 gerçek hash/push son raporda, hash için ek commit yok.
+
+## Gün 32 — kaynak bazlı yetkilendirme / öğrenci sahipliği / danışman ataması
+
+**Başlangıç kanıtı:** main, temiz çalışma ağacı, HEAD
+`f2ee3ae5093054a1f7f8433871b382f9b6cc9620` (Gün31). Mevcut Identity/cookie/JWT,
+refresh aileleri, reset ve rol kodları incelendi; önceki günler yeniden uygulanmadı.
+Bu koşuda bunların mevcut regresyonları da yeniden çalıştı.
+
+**Ürün:** `StudentAccess` cookie-only Read/Manage/Decide policy’leri, küçük resource
+projection/requirement/handler ve IAuthorizationService kullanır. Student+UserId
+sahipliği create/batch/eligibility/submit için; Advisor+AdvisorUserId ataması karar
+vermek için zorunludur. Profil/liste/enrollment detay/dönem özeti owner veya atanmış
+advisor tarafından okunabilir. StudentAffairs/Instructor bypass yoktur. Profil
+provisioning POST artık StudentAffairs+CSRF. Genel kimlik401/rol403, olmayan veya
+ilişkisiz kaynak ortak404; kaynak kontrolü akademik ayrıntılardan önce. Tüm kişisel
+route matrisi README’de; katalog okumaları public, account akışları değişmedi.
+
+**Model/komut:** nullable, nonunique, NO ACTION AdvisorUserId; private setter ve
+kontrollü AssignAdvisor. Development `students link/advisor` komutları mevcut
+hesabı/rolü denetler, public self-assignment yoktur. Bir mevcut danışman, atama
+tarihçesi yok. UserId unique bağlantısı ayrı kalır.
+
+**Migration:** `20261105134931_AddStudentAdvisor` Up/Down ve üretilen SQL incelendi;
+yalnız sütun/index/FK ekler. Açık hedef kontrolüyle yalnız app DB’ye uygulandı;
+öğrenci/enrollment sayıları korundu, mevcut AdvisorUserId değerleri NULL. İkinci
+update no-op, has-pending-model-changes temiz. İzole yükseltmede Day28’den Day31’in
+son şemasına geçilip mevcut account/profile link kontrol edildi; sonra Day32 ve
+tekrar update yapıldı. Id, UserId, StudentNumber, enrollment ilişkileri/durumu ve
+refresh oturumu korundu, yeni atama null. Down çalıştırılmadı. Lab’a dokunulmadı.
+
+**Gerçek doğrulamalar (exit0):**
+- Restore/build: 0 uyarı, 0 hata. unit ve core geçti.
+- resource-access: saf handler doğru/eksik/boş/çoklu kimlik, rol ve ilişki; gerçek
+  pinlenmiş HTTPS/LocalDB farklı öğrenci/danışman, profil yok/rol yok/çoklu rol,
+  IDOR/body-route hilesi, 401/403/404, cookie-only, CSRF, staff provisioning DTO’sunun
+  UserId/AdvisorUserId’yi almaması. Instructor/Staff onay bypass’ı yok. Yetkisiz
+  denemeler yeni context’te değişiklik/event üretmedi; reassignment eski danışmanı
+  reddetti. Yetkili create/batch/preview/submit/approve/reject çalıştı; ret gerekçesi
+  ve state409 korundu. Preview yazmadı. Liste SELECT sayısı daha çok kayıtta aynı.
+- Gerçek advisor FK547/NO ACTION547, nullable atama ve aynı danışmana çok öğrenci;
+  kontrollü komut yanlış/rolsüz hesap ve Production’ı reddetti. UserId unique/FK
+  regresyonları full içinde geçti.
+- Full: katalog SQL/projection, tekli unique/FK yarışları, batch ilk INSERT sonrası
+  gerçek yazma hatasında rollback, akademik failures/sıra/kredi/saat, state ve restart,
+  summary alan/sıra/time(7)/yazmama/N+1, repository/Identity/accounts ve önceki deneyler.
+- Observer ayrıca ayrı modda geçti: yeni context Approved okudu, DB yazma hatasında
+  olay yok; observer hatasında200, postcommit cancellation ve aynı sorgu sayısı.
+- Cookie/JWT/refresh-family/reset/roles mevcut HTTPS paketi full ve resource-access
+  içinde geçti: gerçek refresh yarışları/rollback/reuse, reset atomikliği ve yarışları,
+  cookie/stamp/JWT sınırları, rol güncelliği. Ayrı mod isimlerinin her biri ayrıca
+  çalıştırılmış gibi sayılmıyor; aynı kontroller ortak paketten çağrıldı.
+- resource-access ProbeFailure: beklenen assertion metni ve üst exit1 birlikte
+  doğrulandı; bu probe DB oluşturmaz.
+
+**Ara hatalar ve düzeltmeler:** Eski şema assertion’ı sütun sayısını10 bekliyordu;
+11 ve advisor metadata kontrolleriyle güncellendi. Eski reject testi olmayan kaynağa
+400 bekliyordu; yeni güvenlik önceliği404, var olan yetkili kaynakta alan400 testleri
+korundu. Summary fixture’ın gecikmeli hesap bağlantısı baseline’ı değiştiriyordu;
+kimlik hazırlığı baseline öncesine alındı, snapshot assertion zayıflatılmadı. İlk
+probe, full ile aynı executable yeniden derlendiği için MSB3021 dosya kilidine takıldı;
+sonradan sıralı çalıştırılıp gerçekten assertion/exit1 görüldü. App migration öncesi
+eski PowerShell System.Data sağlayıcısı handshake hatası verdi; hiçbir değişiklik
+yapmadı. Çalışan sqlcmd+EF ile hedef kontrolü/migration/tekrar doğrulandı.
+
+**Temizlik:** Bağımsız SQL sorgusunda son resource DB
+`university_registration_tests_day6_8e36a6ab72e54780ba86bd27e1c690fc`, core
+`university_registration_tests_day10_1c2a351aedee46feb09217ae4603b002` ve observer
+`university_registration_tests_day6_8b7ac3d08a5849978b8ae224b1381f19` hesap/rol/üyelik/
+oturum/token/öğrenci/kayıt/katalog tabloları0. Son full DB
+`university_registration_tests_day6_92bc02e5c7d14d8bac7496e620a074d1` ilk7 grupta0,
+yalnız2ders/2dönem/3açılış seed. Üç başarısız full koşusu da aynı temiz seed durumunda.
+Geçici catalog/cookie/JWT klasörleri ve UniversityRegistration süreç sayısı0.
+İzole DB şemaları mevcut güvenli yaklaşım gereği bırakıldı. App/lab test hedefi olmadı.
+
+**Sınırlar:** Yetki SELECT’i ile SaveChanges arasında atama değişebilir; TOCTOU
+çözülmedi/yarışı test edilmiş gibi sunulmadı. HTTP dışı EnrollmentOperations çağrıları
+güvenilen iç kullanımdır. Cookie rol güncelliği önceki sınırı korur. Instructor–açılış
+ilişkisi, atama geçmişi, Production provisioning paneli ve kapsamlı güvenlik çözümü
+kurulmadı. Full sonrasında yalnız ek açık rol/provisioning assertion’ları eklendi;
+son resource-access bunlarla geçti, üretim davranışı değiştirilmedi.
+
+**Sıradaki gün:** Enumeration, lockout ve rate limiting (Gün33).
+**Commit/push:** `feat: authorize student ownership and assigned advisor access`;
+gerçek commit ve push sonucu son raporda; kendi hash’i için ikinci commit yok.

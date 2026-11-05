@@ -19,7 +19,12 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
-if (mode is "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "unit" or "full") { JwtChecks.Unit(root); RefreshChecks.Unit(); PasswordResetChecks.Unit(root); }
+if (mode is "resource-access" or "unit" or "full")
+{
+    try { await ResourceAccessChecks.Unit(mode == "resource-access" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+}
+if (mode is "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "unit" or "full") { JwtChecks.Unit(root); RefreshChecks.Unit(); PasswordResetChecks.Unit(root); }
 if (mode is "accounts" or "unit" or "full")
 {
     try { AccountsChecks.Unit(mode == "accounts" && probe); }
@@ -146,7 +151,8 @@ async Task<(int Status, JsonNode Body, string? Location)> Send(string method, st
     using var request = new HttpRequestMessage(new HttpMethod(method), path);
     if (raw is not null) request.Content = new StringContent(raw, Encoding.UTF8, "application/json");
     else if (body is not null) request.Content = JsonContent.Create(body);
-    using var response = await client.SendAsync(request);
+    var authorizedClient = await catalogIdentity.ForRequestAsync(method, path, body, raw);
+    using var response = await authorizedClient.SendAsync(request);
     var status = (int)response.StatusCode;
     var text = await response.Content.ReadAsStringAsync();
     var json = JsonNode.Parse(text)!;
@@ -182,16 +188,16 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access")
 {
     try
     {
-        if (mode is "refresh" or "refresh-family" or "password-reset" or "roles") await RefreshChecks.Upgrade(Db, () => CookieSessionChecks.Run(root, Db, probe, jwt: true));
+        if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") await RefreshChecks.Upgrade(Db, () => CookieSessionChecks.Run(root, Db, probe, jwt: true));
         else if (mode == "identity-model") await IdentityModelChecks.Upgrade(Db);
         else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode is "refresh" or "refresh-family" or "password-reset" or "roles") { /* HTTPS checks ran while the migrated fixture existed. */ }
+        if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") { /* HTTPS checks ran while the migrated fixture existed. */ }
         else if (mode == "jwt") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
         else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
         else if (mode == "accounts") await AccountsChecks.Run(root, Db);
@@ -200,8 +206,8 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
         else if (mode == "repository") await RepositoryChecks.Run(Db, probe);
-        else if (mode == "observer") await ObserverChecks.Run(Db);
-        else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe);
+        else if (mode == "observer") await ObserverChecks.Run(root, Db);
+        else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe, async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); });
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await catalogIdentity.CleanupAsync();
@@ -341,8 +347,8 @@ try
     await SpecificationChecks.Run(Db, Send);
     await EligibilityChecks.Run(Db, Send);
     await StateChecks.Run(Db, Send, StopApi, StartApi);
-    await SummaryChecks.Run(Db, Send);
-    await ObserverChecks.Run(Db);
+    await SummaryChecks.Run(Db, Send, prepareIdentity: async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); });
+    await ObserverChecks.Run(root, Db);
     await RepositoryChecks.Run(Db);
     await IdentityModelChecks.Run(Db);
     await AccountsChecks.Run(root, Db);

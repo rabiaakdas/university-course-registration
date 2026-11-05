@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using UniversityRegistration.Application;
 
 namespace UniversityRegistration.Endpoints;
@@ -5,7 +6,7 @@ namespace UniversityRegistration.Endpoints;
 public static class TermRegistrationSummaryEndpoint
 {
     public static void MapTermRegistrationSummaryEndpoint(this WebApplication app) =>
-        app.MapGet("/students/{studentId:int}/terms/{termId:int}/registration-summary", GetAsync);
+        app.MapGet("/students/{studentId:int}/terms/{termId:int}/registration-summary", GetAsync).WithStudentAccess(StudentAccessKind.Read, routeKey: "studentId");
 
     public static async Task<IResult> GetAsync(int studentId, int termId,
         TermRegistrationSummaryFacade facade, CancellationToken ct)

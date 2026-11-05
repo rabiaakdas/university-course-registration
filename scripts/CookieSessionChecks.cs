@@ -104,6 +104,7 @@ internal static class CookieSessionChecks
             b.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, o => o.TimeProvider = clock);
             b.Services.Configure<SecurityStampValidatorOptions>(o => o.TimeProvider = clock);
             if (jwt) RolesChecks.Configure(b);
+            ResourceAccessChecks.Configure(b);
             app = b.Build();
             app.UseExceptionHandler(new Microsoft.AspNetCore.Builder.ExceptionHandlerOptions
             {
@@ -112,6 +113,7 @@ internal static class CookieSessionChecks
             });
             app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapAccountEndpoints(); app.MapCourseEndpoints(); app.MapAcademicTermEndpoints(); app.MapCourseOfferingEndpoints();
             if (jwt) RolesChecks.Map(app);
+            app.MapStudentEndpoints(); app.MapEnrollmentEndpoints(); app.MapTermRegistrationSummaryEndpoint();
             await app.StartAsync();
             var address = new Uri(app.Urls.Single());
             HttpClient Client(CookieContainer? jar = null) => new(new HttpClientHandler
@@ -228,6 +230,7 @@ internal static class CookieSessionChecks
             using (var r = await Post(lockoutClient, "/accounts/login", new { email = lockoutUser.Email, password }, lockoutToken)) Check((int)r.StatusCode == 401, "locked correct password denied");
             Check(await Manager(async m => await m.IsLockedOutAsync((await m.FindByIdAsync(lockoutUser.Id))!)), "real Identity lockout");
             if (jwt) await RolesChecks.Run(app, () => Client(), factory, Create, password, secrets, linked, clock.Advance);
+            if (jwt) await ResourceAccessChecks.Run(app, () => Client(), factory, Create, password, secrets, queries);
             if (jwt) await PasswordResetChecks.Run(app, () => Client(), factory, Create, password, clock.Advance, secrets, familyGate, resetFault, resetSender);
             var after = await Academic(); Check(before.SequenceEqual(after), "academic rows/status/account links preserved");
             Check(logs.Lines.All(line => secrets.All(secret => !line.Contains(secret, StringComparison.Ordinal))), "captured logs contain no password/hash/cookie/token");

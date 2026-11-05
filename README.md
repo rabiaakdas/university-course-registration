@@ -2094,3 +2094,94 @@ powershell -File scripts/verify-course-writes.ps1 -Mode full
 Rol tabloları zaten mevcuttu; Gün31 migration üretmez. Kod:
 [roller/policy filtresi/bakım](Accounts/UniversityRoles.cs), [Identity kaydı](Accounts/AccountSetup.cs),
 [JWT üyelikleri](Accounts/TokenSessions.cs), [test matrisi](scripts/RolesChecks.cs).
+
+## Gün 32: öğrenci sahipliği ve atanmış danışman
+
+Kişisel akademik route’lar artık public değildir. Aşağıdaki politikalar yalnız
+Identity application cookie’sini kabul eder; bearer tek başına yeterli değildir.
+Hesap kimliği cookie’den, sahiplik/atama ise her istekte DB projection’ından alınır.
+Student.Id akademik kimliktir; ApplicationUser.Id yerine kullanılamaz.
+
+| Route | İzin |
+|---|---|
+| `POST /students` | StudentAffairs + CSRF; profil provisioning, otomatik hesap bağlantısı yok |
+| `GET /students/{id}` | Student + kendi UserId bağlantısı VEYA Advisor + güncel atama |
+| `GET /students/{id}/enrollments` | Aynı okuma kararı |
+| `GET /enrollments/{id}` | Gerçek enrollment.StudentId üzerinden aynı okuma kararı |
+| `GET /students/{studentId}/terms/{termId}/registration-summary` | Aynı okuma kararı |
+| `POST /enrollments` | Student + gövdedeki hedef Student’ın sahipliği + CSRF |
+| `POST /students/{id}/enrollments/batch` | Student + route hedefinin sahipliği + CSRF |
+| `POST /students/{id}/enrollments/eligibility` | Student + route hedefinin sahipliği + CSRF; yazma yok |
+| `POST /enrollments/{id}/submit` | Student + gerçek enrollment öğrencisinin sahipliği + CSRF |
+| `POST /enrollments/{id}/approve` ve `/reject` | Advisor + gerçek enrollment öğrencisinin güncel ataması + CSRF |
+
+StudentAffairs/Instructor için örtülü bypass yoktur. Çok rollü hesap da gerekli
+ilişkiyi sağlamalıdır. Danışmanın okuma izni öğrenci adına oluşturma veya submit
+hakkı vermez. Katalog/ders/açılış okumaları public kalır; katalog yazmaları Gün 31
+StudentAffairs politikasını korur. Kişisel akademik route envanteri yukarıdadır;
+account/session/refresh/reset güvenlik sözleşmeleri değiştirilmedi.
+
+Kimlik yoksa **401**, genel rol eksikse **403**, uygun rol fakat kaynak yok/ilişki
+uyuşmuyorsa aynı **404** döner. Kimlik doğrulama/yetkilendirme middleware’i, kaynak
+filtresi, CSRF filtresi, sonra mevcut uygulama işlemi çalışır. JSON bağlama hataları
+400 olabilir. Yetkili kaynak için akademik 400/failures ve mükerrer/state 409 korunur.
+Nonpositive/olmayan kişisel kaynak kimlikleri artık kaynak 404’üdür; var olan yetkili
+öğrencide geçersiz dönem/akademik girdiler mevcut alan 400’ünü korur.
+
+`Student.AdvisorUserId` nullable, nonunique, `AspNetUsers.Id` FK ve NO ACTION’dır.
+Bir danışman çok öğrenciye atanabilir; tek mevcut atama tutulur, tarihçe/dönem yoktur.
+FK hesap varlığını korur, Advisor rolünü kanıtlamaz. Atama komutu rolü ayrıca denetler.
+`UserId` filtreli unique/NO ACTION ilişkisi değişmedi. HTTP öğrenci request DTO’su
+UserId veya AdvisorUserId bağlamaz.
+
+### Kontrollü Development hazırlığı
+
+Mevcut hesapları kullanın; komutlar hesap/parola oluşturmaz, HTTP hostu açmaz.
+`$accountId`, `$advisorAccountId` ve `$studentId` açıkça seçilmiş mevcut kimliklerdir.
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet run --no-launch-profile -- roles prepare
+dotnet run --no-launch-profile -- roles add $accountId Student
+dotnet run --no-launch-profile -- roles add $advisorAccountId Advisor
+dotnet run --no-launch-profile -- students link $studentId $accountId
+dotnet run --no-launch-profile -- students advisor $studentId $advisorAccountId
+# Atamayı kaldırmak için:
+dotnet run --no-launch-profile -- students advisor $studentId none
+```
+
+Aynı bağlantı/atama tekrarı güvenlidir. Başka hesaba relink reddedilir; hesabın başka
+profile bağlılığı denetlenir. Rol/hesap yoksa exit1; Production’da komutlar reddedilir.
+Atama değişikliği yeni kaynak sorgusunda görülür; cookie’deki rolün güncellik sınırı
+Gün 31’deki gibidir. Mevcut cookie yeni rol için yeniden login gerektirebilir.
+
+Gün 26 HTTPS/cookie login akışından sonra **yeniden** antiforgery token alın:
+
+```powershell
+# $base HTTPS adresi; $session login olmuş WebRequestSession; değerleri paylaşmayın.
+$csrf = Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $session
+$headers = @{ 'X-CSRF-TOKEN' = $csrf.requestToken }
+Invoke-RestMethod "$base/students/$studentId/enrollments" -WebSession $session
+$body = @{ studentId=$studentId; courseOfferingId=$offeringId } | ConvertTo-Json
+Invoke-RestMethod "$base/enrollments" -Method Post -WebSession $session `
+  -Headers $headers -ContentType 'application/json' -Body $body
+```
+
+Migration yalnız uygulama DB’sine uygulanır; bağlantı hedefini kontrol edin,
+lab DB’sini kullanmayın. Startup otomatik migration yoktur.
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+dotnet ef database update 20261105134931_AddStudentAdvisor
+dotnet ef migrations has-pending-model-changes
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode resource-access
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Kaynak kontrolü ile yazma arasında atama değişebilir (**TOCTOU**). Kontrol transaction’ı
+akademik yazmayı kapsamaz; kesin eşzamanlı atama garantisi eklenmedi. HTTP dışından
+EnrollmentOperations çağrısı güvenilen iç kullanımdır; işlem sınıfı tek başına erişim
+sınırı değildir. Öğretim görevlisi–açılış ilişkisi ve geniş provisioning/atama paneli
+bu kapsamda yoktur. Hesap ve rol sahibi olmak bütün öğrenci verilerine erişim vermez.

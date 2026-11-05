@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Contracts;
 using UniversityRegistration.Data;
@@ -9,16 +10,16 @@ public static class StudentEndpoints
 {
     public static void MapStudentEndpoints(this WebApplication app)
     {
-        app.MapPost("/students", CreateAsync);
+        app.MapPost("/students", CreateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();
         app.MapGet("/students/{id:int}", async (int id, UniversityDbContext db, CancellationToken ct) =>
         {
             var student = await db.Students.Where(s => s.Id == id)
                 .Select(s => new StudentResponse(s.Id, s.StudentNumber, s.FullName)).SingleOrDefaultAsync(ct);
             return student is null ? NotFound() : Results.Ok(student);
-        });
-        app.MapGet("/students/{id:int}/enrollments", ListEnrollmentsAsync);
-        app.MapPost("/students/{id:int}/enrollments/batch", BatchEnrollmentEndpoint.CreateAsync);
-        app.MapPost("/students/{id:int}/enrollments/eligibility", BatchEnrollmentEndpoint.PreviewAsync);
+        }).WithStudentAccess(StudentAccessKind.Read);
+        app.MapGet("/students/{id:int}/enrollments", ListEnrollmentsAsync).WithStudentAccess(StudentAccessKind.Read);
+        app.MapPost("/students/{id:int}/enrollments/batch", BatchEnrollmentEndpoint.CreateAsync).WithStudentAccess(StudentAccessKind.Manage).AddEndpointFilter<CatalogAntiforgeryFilter>();
+        app.MapPost("/students/{id:int}/enrollments/eligibility", BatchEnrollmentEndpoint.PreviewAsync).WithStudentAccess(StudentAccessKind.Manage).AddEndpointFilter<CatalogAntiforgeryFilter>();
     }
 
     public static async Task<IResult> CreateAsync(CreateStudentRequest request, UniversityDbContext db, CancellationToken ct)

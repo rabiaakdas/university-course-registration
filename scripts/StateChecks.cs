@@ -167,7 +167,7 @@ internal static class StateChecks
             var duplicate=await send("POST","/enrollments",new{studentId=rejected,courseOfferingId=offers[0].Id},null);Check(duplicate.Status==409,"Rejected still prevents duplicate pair");
             await using(var db=factory())Check(await db.Enrollments.CountAsync(e=>e.StudentId==rejected && e.CourseOfferingId==offers[0].Id)==1,"Rejected duplicate leaves single row");
             foreach(var action in new[]{"submit","approve","reject"})await Transition(int.MaxValue,action,404,action=="reject"?new{reason="Valid"}:null);
-            await Transition(int.MaxValue,"reject",400,new{reason=" "}); // Documented validation-before-existence.
+            await Transition(int.MaxValue,"reject",404,new{reason=" "}); // Resource access precedes domain reason validation.
 
             var batchStudent=await Student();var beforeBatch=await Rows();
             var conflict=await send("POST",$"/students/{batchStudent}/enrollments/batch",new{courseOfferingIds=new[]{offers[0].Id,offers[1].Id}},null);

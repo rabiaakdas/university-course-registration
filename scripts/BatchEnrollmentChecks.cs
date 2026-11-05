@@ -63,7 +63,7 @@ static class BatchEnrollmentChecks
                 Check((await send("POST",Path(student),null,raw)).Status==400,"Batch binding");
                 Check((await Read(student)).SequenceEqual(new[]{1,3}),"Binding changed DB");
             }
-            Check((await send("POST",Path(int.MaxValue),new{courseOfferingIds=Array.Empty<int>()},null)).Status==400,"Structure before student");
+            Check((await send("POST",Path(int.MaxValue),new{courseOfferingIds=Array.Empty<int>()},null)).Status==404,"Resource authorization before academic validation");
             Check((await send("POST",Path(int.MaxValue),new{courseOfferingIds=new[]{1}},null)).Status==404,"Missing student");
             Check((await Read(int.MaxValue)).Length==0,"Missing student persisted");
             Check((await send("POST",Path(student),new{courseOfferingIds=new[]{2,int.MaxValue}},null)).Status==400,"Missing offering");

@@ -66,18 +66,22 @@ internal static class RefreshChecks
             {
                 Check(!(await db.Database.GetAppliedMigrationsAsync()).Any(), "upgrade only on new owned DB");
                 await db.GetService<IMigrator>().MigrateAsync("20261105101325_AddRefreshSessions");
-                student = new() { StudentNumber = course.Code, FullName = "Synthetic profile" }; Check(student.TryLinkAccount(user.Id), "link");
-                db.AddRange(user, course, term, student); await db.SaveChangesAsync();
+                db.AddRange(user, course, term); await db.SaveChangesAsync();
+                var studentKeys = await db.Database.SqlQuery<int>($"INSERT INTO Students(StudentNumber,FullName,UserId) OUTPUT INSERTED.Id AS [Value] VALUES ({course.Code},{"Synthetic profile"},{user.Id})").ToListAsync();
+                student = new() { Id=studentKeys.Single(),StudentNumber=course.Code,FullName="Synthetic profile" }; Check(student.TryLinkAccount(user.Id),"link");
                 offering = new() { CourseId = course.Id, AcademicTermId = term.Id, SectionCode = "A", Capacity = 10 }; db.Add(offering); await db.SaveChangesAsync();
                 enrollment = StateChecks.Active(student.Id, offering.Id); db.Add(enrollment); await db.SaveChangesAsync();
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO RefreshSessions (Id,UserId,RefreshTokenHash,CreatedAtUtc,ExpiresAtUtc) VALUES ({sessionId},{user.Id},{hash},{created},{expires})");
                 var secondHash = TokenSessions.Hash(TokenSessions.NewRefreshToken()); var thirdHash = TokenSessions.Hash(TokenSessions.NewRefreshToken());
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO RefreshSessions (Id,UserId,RefreshTokenHash,CreatedAtUtc,ExpiresAtUtc,RevokedAtUtc) VALUES ({revokedId},{user.Id},{secondHash},{created},{expires},{created})");
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO RefreshSessions (Id,UserId,RefreshTokenHash,CreatedAtUtc,ExpiresAtUtc) VALUES ({expiredId},{user.Id},{thirdHash},{created.AddDays(-2)},{created.AddDays(-1)})");
+                // Day31's last schema: verify the existing account/profile/enrollment before adding the advisor column.
+                await db.GetService<IMigrator>().MigrateAsync("20261105103704_AddRefreshTokenHistory");
+                Check((await db.Database.SqlQuery<int>($"SELECT COUNT(*) AS [Value] FROM Students WHERE Id={student.Id} AND UserId={user.Id}").SingleAsync())==1,"pre-advisor link exists");
                 await db.Database.MigrateAsync(); await db.Database.MigrateAsync();
             }
             await using var verify = factory();
-            Check(await verify.Students.AnyAsync(s => s.Id == student.Id && s.UserId == user.Id && s.StudentNumber == course.Code), "profile/identity link preserved");
+            Check(await verify.Students.AnyAsync(s => s.Id == student.Id && s.UserId == user.Id && s.StudentNumber == course.Code && s.AdvisorUserId == null), "profile/identity link preserved");
             Check(await verify.Enrollments.AnyAsync(e => e.Id == enrollment!.Id && e.StudentId == student.Id && e.CourseOfferingId == offering!.Id && e.Status == EnrollmentStatus.Approved), "academic identity/status/FKs preserved");
             Check(await verify.Users.AnyAsync(u => u.Id == user.Id && u.UserName == user.UserName), "old account preserved");
             Check(!verify.Database.HasPendingModelChanges() && !(await verify.Database.GetPendingMigrationsAsync()).Any(), "migration replay/model");

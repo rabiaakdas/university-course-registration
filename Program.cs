@@ -39,10 +39,10 @@ builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadReq
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.None);
 var app = builder.Build();
-if (args.FirstOrDefault() == "roles")
+if (args.FirstOrDefault() is "roles" or "students")
 {
-    try { Environment.ExitCode = await RoleMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()); }
-    catch (Exception ex) { Console.Error.WriteLine("Role maintenance failed: " + ex.GetType().Name); Environment.ExitCode = 1; }
+    try { Environment.ExitCode = args[0] == "roles" ? await RoleMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()) : await StudentMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()); }
+    catch (Exception ex) { Console.Error.WriteLine("Maintenance failed: " + ex.GetType().Name); Environment.ExitCode = 1; }
     await app.DisposeAsync(); return;
 }
 app.UseExceptionHandler(new ExceptionHandlerOptions

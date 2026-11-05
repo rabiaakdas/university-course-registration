@@ -510,6 +510,11 @@ namespace UniversityRegistration.Data.Migrations
                         .HasColumnType("int")
                         .HasDefaultValueSql("NEXT VALUE FOR [dbo].[StudentIds]", "DF_Students_Id");
 
+                    b.Property<string>("AdvisorUserId")
+                        .HasMaxLength(450)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -529,6 +534,8 @@ namespace UniversityRegistration.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("PK_Students");
+
+                    b.HasIndex("AdvisorUserId");
 
                     b.HasIndex("StudentNumber")
                         .IsUnique()
@@ -697,6 +704,12 @@ namespace UniversityRegistration.Data.Migrations
 
             modelBuilder.Entity("UniversityRegistration.Models.Student", b =>
                 {
+                    b.HasOne("UniversityRegistration.Models.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AdvisorUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("FK_Students_AdvisorUser");
+
                     b.HasOne("UniversityRegistration.Models.ApplicationUser", null)
                         .WithOne()
                         .HasForeignKey("UniversityRegistration.Models.Student", "UserId")

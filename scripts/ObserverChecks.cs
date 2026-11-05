@@ -92,7 +92,7 @@ internal static class ObserverChecks
         Console.WriteLine("PASS: observer zero/null/immutable event, sequential await, same token, safe fault continuation and caller/unsolicited cancellation (no DB)");
     }
 
-    public static async Task Run(Func<UniversityDbContext> factory)
+    public static async Task Run(string root, Func<UniversityDbContext> factory)
     {
         var tag = "O21_" + Guid.NewGuid().ToString("N")[..10];
         var course = new Course { Code = tag, Name = "Synthetic observer course", Credits = 1 };
@@ -111,6 +111,8 @@ internal static class ObserverChecks
             events.Add(e);
         });
         var unreliable = new Observer((_, _) => failObserver ? Task.FromException(new InvalidOperationException("Synthetic failure")) : Task.CompletedTask);
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback,0);listener.Start();var port=((System.Net.IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();
+        await using var identity = new CatalogTestIdentity(root,port,factory);
         WebApplication? app = null;
         Exception? failure = null;
         try
@@ -124,7 +126,7 @@ internal static class ObserverChecks
             }
             // Real endpoint mapping + scoped DI + Kestrel; only observers differ from production.
             var builder = WebApplication.CreateBuilder();
-            builder.Logging.ClearProviders(); builder.WebHost.UseUrls("http://127.0.0.1:0");
+            builder.Logging.ClearProviders(); identity.Configure(builder);
             builder.Services.AddScoped(_ => factory());
             builder.Services.AddSingleton(new EnrollmentPolicy(30));
             builder.Services.AddScoped<AcademicEligibility>();
@@ -137,11 +139,12 @@ internal static class ObserverChecks
             builder.Services.AddProblemDetails();
             app = builder.Build();
             app.UseExceptionHandler(handler => handler.Run(context => Results.Problem(statusCode: 500).ExecuteAsync(context)));
-            app.MapEnrollmentEndpoints(); await app.StartAsync();
+            app.UseAuthentication();app.UseAuthorization();app.MapAccountSessionEndpoints();app.MapEnrollmentEndpoints(); await app.StartAsync();
+            await identity.LoginAsync();
             using var http = new HttpClient { BaseAddress = new Uri(app.Urls.Single()), Timeout = TimeSpan.FromSeconds(15) };
             async Task<JsonNode> Post(string suffix, int id, int expected)
             {
-                using var response = await http.PostAsync($"/enrollments/{id}/{suffix}", null);
+                using var response = await (await identity.ForRequestAsync("POST",$"/enrollments/{id}/{suffix}",null,null)).PostAsync($"/enrollments/{id}/{suffix}", null);
                 Check((int)response.StatusCode == expected, $"{suffix} enrollment={id}: expected {expected}, actual {(int)response.StatusCode}");
                 return JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
             }
@@ -157,7 +160,7 @@ internal static class ObserverChecks
             async Task State(int id, EnrollmentStatus expected)
             { await using var db = factory(); Check((await db.Enrollments.SingleAsync(e => e.Id == id)).Status == expected, $"DB state enrollment={id} expected={expected}"); }
             Enrollment e;
-            using (var created = await http.PostAsJsonAsync("/enrollments", new { studentId = student.Id, courseOfferingId = offering.Id }))
+            using (var created = await (await identity.ForRequestAsync("POST","/enrollments",new { studentId=student.Id },null)).PostAsJsonAsync("/enrollments", new { studentId = student.Id, courseOfferingId = offering.Id }))
             {
                 Check((int)created.StatusCode == 201 && events.Count == 0, "create 201 without approval event");
                 var id = (await created.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<int>();
@@ -172,7 +175,7 @@ internal static class ObserverChecks
             Check(events.Count == 1, "repeat/missing no event");
             e = await New(false); await Post("approve", e.Id, 409); await Post("submit", e.Id, 200);
             Check(events.Count == 1, "invalid/submit no event");
-            using (var response = await http.PostAsJsonAsync($"/enrollments/{e.Id}/reject", new { reason = "Synthetic" }))
+            using (var response = await (await identity.ForRequestAsync("POST",$"/enrollments/{e.Id}/reject",null,null)).PostAsJsonAsync($"/enrollments/{e.Id}/reject", new { reason = "Synthetic" }))
                 Check(response.IsSuccessStatusCode, "reject succeeds");
             Check(events.Count == 1, "reject no event");
             // Academic rejection after a legitimate Submitted fixture.
@@ -198,7 +201,7 @@ internal static class ObserverChecks
             failObserver = true;
             await Post("approve", e.Id, 200); await State(e.Id, EnrollmentStatus.Approved);
             Check(events.Count == 2 && errors.Entries.Count == 1, "observer failure preserves HTTP success; next observer sees commit");
-            using (var response = await http.GetAsync($"/enrollments/{e.Id}"))
+            using (var response = await (await identity.ForRequestAsync("GET",$"/enrollments/{e.Id}",null,null)).GetAsync($"/enrollments/{e.Id}"))
                 Check((await response.Content.ReadFromJsonAsync<JsonObject>())!["status"]!.GetValue<string>() == "Approved", "subsequent GET Approved");
             // Controlled postcommit cancellation at application boundary, not an HTTP fault endpoint.
             e = await New(); using var cancellation = new CancellationTokenSource();

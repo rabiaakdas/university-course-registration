@@ -95,6 +95,9 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
         student.Property(x => x.StudentNumber).IsRequired().HasMaxLength(30).IsUnicode();
         student.Property(x => x.FullName).IsRequired().HasMaxLength(200).IsUnicode();
         student.HasIndex(x => x.StudentNumber).IsUnique().HasDatabaseName("UX_Students_StudentNumber");
+        student.Property(x => x.AdvisorUserId).HasMaxLength(450).IsUnicode();
+        student.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AdvisorUserId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_Students_AdvisorUser");
         student.Property(x => x.UserId).HasMaxLength(450).IsUnicode();
         student.HasIndex(x => x.UserId).IsUnique().HasFilter("[UserId] IS NOT NULL")
             .HasDatabaseName("UX_Students_UserId");
