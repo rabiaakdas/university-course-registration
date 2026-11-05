@@ -1848,3 +1848,53 @@ olarak eski revoked/expired ailelerin migration'da korunumu kontrol edildi. Ard�
 `refresh-family -ProbeFailure` beklenen exit1 verdi; üst çalıştırıcı hata yayılımı
 korundu, API kapandı. Son değişiklikler test/belge kapsamındadır; üretim kodunun full
 ile doğrulanan davranışı değiştirilmedi.
+
+## Gün 30 — Süreli parola sıfırlama ve atomik aile iptali
+
+**Başlangıç:** main HEAD `8c38a415f8759e7faf9cb441da382309e205156b`, temiz çalışma
+ağacı. Gün29 refresh aileleri/koordinasyonu ve24–28 hesap altyapısı gerçek koddan
+incelendi; önceki günler yeniden uygulanmadı. Paketler10.0.14 kaldı.
+
+**Değişiklik:** Forgot/reset endpoint'leri; ayrı adlandırılmış15 dakikalık reset
+provider'ı (email2 saat değişmedi); güvenilen callback/yerel mevcut sender; UserManager
+reset + aktif ailelerin iptali tek açık transaction. Reset, refresh, revoke ve ilk
+üretim ortak hesap→aile→token kilit sırasını kullanır. İlk üretim kilit altında cookie
+stamp'ini yeniden doğrular. Yeni model/migration yok; akademik davranışlar korunur.
+
+**Gerçek doğrulama:** restore/build exit0 (0 warning/error),
+`has-pending-model-changes` fark yok; unit/core/full exit0. Full; mevcut hesap,
+Identity model, katalog, akademik uygunluk/durum, gerçek unique/FK, batch ilk INSERT
+sonrası rollback ve observer regresyonlarını yeniden çalıştırdı. Password-reset
+ayrı koşusu da exit0: pinned HTTPS, güvenilen Host'tan bağımsız callback, ortak202,
+yerel dosya ve kontrollü sender arızası, amaç/kullanıcı/token/süre retleri, yeni ve eski
+parola, normalizasyon yapılmaması, yeni scope kalıcılığı ve log secret taraması.
+
+Gerçek CHECK hatası Identity SaveChanges sonrasındaki aile iptalinde üretildi:
+500, yeni context'te parola/stamp/aileler aynı. Başarı204: iki aile iptal, başka hesap
+korundu; otomatik giriş yok. Yeni reset talebi eskisini iptal etmedi; başarılı reset
+eski ve önceden üretilmiş ikinci token'ı geçersiz kıldı. İki eşzamanlı reset bir204/
+bir400, yalnız kazanan parola kalıcı. Reset–refresh ve reset–ilk üretim iki lock
+sırasıyla sınandı; reset sonrası eski cookie aktif yeni aile üretemedi. Eski JWT200
+kaldı; cookie testte stamp kontrolü tetiklenince401 oldu.
+
+Full DB `university_registration_tests_day6_e2e12d56c53842e58d51458f048fefc3`
+bağımsız SQL kontrolünde yalnız2ders/2dönem/3açılış seed; Student/Enrollment/Account/
+Session/Token0. Son reset DB `university_registration_tests_day6_df2281444b0741e2b38b873dcf6e9330`
+tüm bu tablolarda0. Son reset koşusu süre testini yalnız teste ait10ms provider süresi/
+30ms beklemeyle tekrar geçti; üretim süresini değiştirmedi. İlk başarılı koşuda süre
+sınaması eski token'ın negatif test lifespan'ıyla yapılıyordu; son koşu gerçek yeni
+üretilen token + pozitif kısa süreyle daha açık hale getirildi. `password-reset
+-ProbeFailure` beklenen exit1 üretti; üst komut bunu doğruladı. Probe DB
+`university_registration_tests_day6_97797ffc5f034c4eb546aefbfc8fb395` tabloları da boş.
+Geçici HTTPS host/anahtar/kutu temizliği tamamlandı; DB şemaları yaklaşım gereği kaldı.
+
+**Sınırlar:** Stamp validator varsayılan30 dakika, sabit cookie20 dakika; anlık global
+logout yok. JWT kendi expiry/skew sınırına kadar kabul edilebilir. Aynı hesap aileleri
+DB kilidinde sıraya girer; generic lock/retry yok. Enumeration/timing/rate limit33.
+gün; gerçek e-posta, network loss/crash recovery, çok sunuculu deployment ve reset
+cancellation için ayrı fault testi yapılmadı. Kod cancellation'ı401'e çevirmiyor.
+Day30 şema değiştirmediğinden migration Up/Down uygulanmadı; app/lab verisine dokunulmadı.
+
+**Sıradaki gün:** Claims, roles ve policy.
+**Commit/push:** `feat: reset passwords and revoke refresh sessions atomically`;
+gerçek hash/push son raporda, hash yazmak için ek commit yok.

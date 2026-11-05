@@ -15,6 +15,7 @@ public static class AccountEndpoints
 
     public static void MapAccountEndpoints(this WebApplication app)
     {
+        app.MapPasswordResetEndpoints();
         app.MapPost("/accounts/register", RegisterAsync);
         app.MapPost("/accounts/confirm-email", ConfirmAsync);
     }

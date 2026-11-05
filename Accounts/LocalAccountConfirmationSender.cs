@@ -4,12 +4,12 @@ namespace UniversityRegistration.Accounts;
 
 public interface IAccountConfirmationSender
 {
-    Task SendAsync(string recipient, Uri confirmationLink, CancellationToken cancellationToken);
+    Task SendAsync(string recipient, Uri confirmationLink, CancellationToken cancellationToken, string subject = "E-posta doğrulama (yerel geliştirme)");
 }
 
 public sealed class LocalAccountConfirmationSender(LocalConfirmationSettings settings) : IAccountConfirmationSender
 {
-    public async Task SendAsync(string recipient, Uri confirmationLink, CancellationToken cancellationToken)
+    public async Task SendAsync(string recipient, Uri confirmationLink, CancellationToken cancellationToken, string subject = "E-posta doğrulama (yerel geliştirme)")
     {
         if (!settings.Enabled) throw new InvalidOperationException("Yerel mesaj kutusu etkin değil.");
         cancellationToken.ThrowIfCancellationRequested();
@@ -18,7 +18,7 @@ public sealed class LocalAccountConfirmationSender(LocalConfirmationSettings set
         try
         {
             await using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, true))
-                await JsonSerializer.SerializeAsync(file, new { recipient, subject = "E-posta doğrulama (yerel geliştirme)", link = confirmationLink.AbsoluteUri }, cancellationToken: cancellationToken);
+                await JsonSerializer.SerializeAsync(file, new { recipient, subject, link = confirmationLink.AbsoluteUri }, cancellationToken: cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(path, Path.ChangeExtension(path, ".json"));
         }

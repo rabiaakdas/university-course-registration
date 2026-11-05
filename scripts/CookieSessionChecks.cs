@@ -76,6 +76,8 @@ internal static class CookieSessionChecks
             var queries = new JwtChecks.SqlCounter();
             var saveGate = new RefreshChecks.SaveGate();
             var familyGate = new RefreshChecks.FamilyGate();
+            var resetFault = new PasswordResetChecks.ResetFault();
+            var resetSender = new PasswordResetChecks.Sender();
             if (jwt)
             {
                 Directory.CreateDirectory(keyDirectory);
@@ -83,11 +85,18 @@ internal static class CookieSessionChecks
                 File.WriteAllText(Path.Combine(keyDirectory, "private.pem"), signingRsa.ExportPkcs8PrivateKeyPem());
                 File.WriteAllText(Path.Combine(keyDirectory, "public.pem"), signingRsa.ExportSubjectPublicKeyInfoPem());
                 b.Configuration.AddInMemoryCollection(JwtChecks.Configuration(keyDirectory));
-                b.Services.AddDbContext<UniversityDbContext>(o => o.AddInterceptors(queries, saveGate, familyGate));
+                b.Services.AddDbContext<UniversityDbContext>(o => o.AddInterceptors(queries, saveGate, familyGate, resetFault));
                 b.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLevel.None);
                 b.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
             }
+            if (jwt)
+            {
+                b.Configuration["Accounts:LocalMailboxEnabled"] = "true";
+                b.Configuration["Accounts:ConfirmationPageUrl"] = "https://callback.example.test/confirm";
+                b.Configuration["Accounts:PasswordResetPageUrl"] = "https://callback.example.test/reset";
+            }
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            if (jwt) b.Services.AddSingleton<IAccountConfirmationSender>(sp => { resetSender.Inner = new LocalAccountConfirmationSender(sp.GetRequiredService<LocalConfirmationSettings>()); return resetSender; });
             b.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
             b.Services.AddUniversityJwt(b.Configuration, b.Environment);
             b.Services.AddDataProtection().SetApplicationName(tag);
@@ -99,7 +108,7 @@ internal static class CookieSessionChecks
                 SuppressDiagnosticsCallback = _ => true,
                 ExceptionHandler = async c => await Results.Problem(statusCode: 500, title: "İstek işlenemedi.").ExecuteAsync(c)
             });
-            app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints();
+            app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapPasswordResetEndpoints();
             await app.StartAsync();
             var address = new Uri(app.Urls.Single());
             HttpClient Client(CookieContainer? jar = null) => new(new HttpClientHandler
@@ -215,6 +224,7 @@ internal static class CookieSessionChecks
             for (var i = 0; i < 5; i++) { using var r = await Post(lockoutClient, "/accounts/login", new { email = lockoutUser.Email, password = "wrong" }, lockoutToken); Check((int)r.StatusCode == 401, "lockout attempt"); }
             using (var r = await Post(lockoutClient, "/accounts/login", new { email = lockoutUser.Email, password }, lockoutToken)) Check((int)r.StatusCode == 401, "locked correct password denied");
             Check(await Manager(async m => await m.IsLockedOutAsync((await m.FindByIdAsync(lockoutUser.Id))!)), "real Identity lockout");
+            if (jwt) await PasswordResetChecks.Run(app, () => Client(), factory, Create, password, clock.Advance, secrets, familyGate, resetFault, resetSender);
             var after = await Academic(); Check(before.SequenceEqual(after), "academic rows/status/account links preserved");
             Check(logs.Lines.All(line => secrets.All(secret => !line.Contains(secret, StringComparison.Ordinal))), "captured logs contain no password/hash/cookie/token");
             Console.WriteLine("PASS: HTTPS pinned certificate; Identity login/me/logout; common denial/lockout; CSRF identity binding; secure session cookie; controlled 20-minute expiry/no sliding; copied-cookie limit; academic data unchanged");

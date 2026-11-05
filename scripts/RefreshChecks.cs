@@ -125,12 +125,12 @@ internal static class RefreshChecks
         public void ArmOrdered() { ordered = true; entrants = 0; holdFirst = 1; Ready = NewSignal(); SecondReady = NewSignal(); Release = NewSignal(); }
         public override async ValueTask<InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command, CommandEventData data, InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken ct = default)
         {
-            if (command.CommandText.Contains("UPDLOCK") && ordered)
+            if ((command.CommandText.Contains("UPDLOCK") && command.CommandText.Contains("AspNetUsers")) && ordered)
             {
                 if (Interlocked.Increment(ref entrants) == 2) SecondReady.TrySetResult();
                 return result;
             }
-            if (command.CommandText.Contains("UPDLOCK") && Volatile.Read(ref remaining) > 0)
+            if ((command.CommandText.Contains("UPDLOCK") && command.CommandText.Contains("AspNetUsers")) && Volatile.Read(ref remaining) > 0)
             {
                 lock (Connections) Connections.Add(command.Connection!);
                 if (Interlocked.Decrement(ref remaining) == 0) Ready.TrySetResult();
@@ -140,9 +140,9 @@ internal static class RefreshChecks
         }
         public override async ValueTask<System.Data.Common.DbDataReader> ReaderExecutedAsync(System.Data.Common.DbCommand command, CommandExecutedEventData data, System.Data.Common.DbDataReader result, CancellationToken ct = default)
         {
-            if (ordered && command.CommandText.Contains("UPDLOCK") && Interlocked.Exchange(ref holdFirst, 0) == 1)
+            if (ordered && (command.CommandText.Contains("UPDLOCK") && command.CommandText.Contains("AspNetUsers")) && Interlocked.Exchange(ref holdFirst, 0) == 1)
             {
-                Ready.TrySetResult(); // SQL has acquired the first transaction's family lock.
+                Ready.TrySetResult(); // SQL has acquired the first transaction's account lock.
                 await Release.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
             }
             return result;

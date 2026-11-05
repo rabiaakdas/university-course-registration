@@ -520,3 +520,31 @@ kontrol edilir. Her koşu kendi GUID adlı DB'sini kullanır. Temizlik token kay
 aileler → hesaplar sırasındadır; fixture akademik ilişkileri de FK sırasıyla temizlenir.
 Geçmiş self-FK aynı aile kayıtları tek DELETE'de silinerek korunur. Test DB şemaları
 mevcut yaklaşım gereği tutulur; kullanıcı/app/lab verisi test hedefi değildir.
+
+## Gün 30 — Password reset kontrolü
+
+`powershell -File scripts/verify-course-writes.ps1 -Mode password-reset` ortak pinned
+HTTPS/LocalDB host'unu ve refresh upgrade fixture'ını kullanır. Yeni framework yoktur.
+`full` aynı reset kontrollerini mevcut cookie/JWT testleri üzerinden yeniden kullanır.
+`unit` callback/süre başlangıç korumalarını DB'siz çalıştırır. `-ProbeFailure` bilinçli
+assertion üretir ve üst script exit1 döndürür; başarılı test sayılmaz.
+
+`PasswordResetChecks` doğru/yanlış purpose, yanlış hesap, bozuk/expired token, politika,
+parolanın dönüştürülmemesi, iki ailenin iptali/başka hesabın korunumu, yeni talebin eski
+token'ı bozmaması ve reset sonrası tüm eski reset token'larının reddini doğrular.
+Aynı cookie host'u loglarda bilinen parola/hash/stamp/token sızıntısını tarar. Bu tarama
+bütün olası logging sağlayıcılarının güvenli olduğunu kanıtlamaz.
+
+Aile UPDATE'ine interceptor ile gerçek CHECK ihlali uygulanır; Identity'nin parola
+SaveChanges'inden sonraki hatada yeni context eski parola/stamp/aileleri görür.
+`RefreshChecks.FamilyGate` artık ilk koordinasyon noktası olan hesap kilidini tutar:
+iki resetten biri204 diğeri400; reset/refresh ve reset/ilk aile üretiminin iki sırası
+ayrı HTTPS istek/context'lerle kontrollüdür. Rastgele yarış gecikmesi kullanılmaz.
+
+DataProtectorTokenProvider UtcNow kullandığından yalnız izole testte10ms süre ve30ms
+bekleme ile gerçek üretilmiş token'ın expiration reddi ölçülür. Cookie stamp kontrolü
+yalnız testte interval0 ve kontrollü saatle tetiklenir. Üretim reset15 dakika,
+confirmation2 saat, cookie stamp30 dakika ve bilet20 dakika kalır.
+
+Testler sahip oldukları token→aile→profil→hesap kayıtlarını ve geçici key/mailbox
+klasörlerini finally ile temizler. App/lab test hedefi değildir. Day30 migration yoktur.

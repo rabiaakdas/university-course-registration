@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
@@ -30,10 +31,13 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         var user = await users.FindByIdAsync(id);
         return user is not null && await signIn.CanSignInAsync(user) && !await users.IsLockedOutAsync(user);
     }
-    public async Task<TokenPairResponse?> CreateAsync(string id, CancellationToken ct)
+    public async Task<TokenPairResponse?> CreateAsync(ClaimsPrincipal principal, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (!await Eligible(id)) return null;
+        var id = users.GetUserId(principal);
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (await AccountWriteLock.AcquireAsync(db, id, ct) is null || await signIn.ValidateSecurityStampAsync(principal) is null || !await Eligible(id)) return null;
         var now = DateTimeOffset.UtcNow;
         var refresh = NewRefreshToken();
         var session = new RefreshSession { UserId = id, CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(policy.RefreshSessionDays) };
@@ -42,9 +46,10 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         db.RefreshSessions.Add(session);
         db.RefreshTokenRecords.Add(new() { SessionId = session.Id, TokenHash = Hash(refresh), CreatedAtUtc = now });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return result;
     }
-    // All existing-family writes acquire this transaction-owned SQL Server lock first.
+    // After the account lock, existing-family writes acquire this transaction-owned lock.
     private Task<RefreshSession?> LockFamily(Guid id, CancellationToken ct) => db.RefreshSessions
         .FromSqlInterpolated($"SELECT * FROM [RefreshSessions] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {id}")
         .AsNoTracking().SingleOrDefaultAsync(ct);
@@ -57,6 +62,8 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         var familyId = await db.RefreshTokenRecords.Where(x => x.TokenHash == hash).Select(x => (Guid?)x.SessionId).SingleOrDefaultAsync(ct);
         if (familyId is null) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var userId = await db.RefreshSessions.Where(x => x.Id == familyId.Value).Select(x => x.UserId).SingleOrDefaultAsync(ct);
+        if (userId is null || await AccountWriteLock.AcquireAsync(db, userId, ct) is null) return null;
         var session = await LockFamily(familyId.Value, ct);
         var now = DateTimeOffset.UtcNow;
         if (session is null || session.RevokedAtUtc is not null || session.ExpiresAtUtc <= now) return null;
@@ -93,6 +100,7 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
     public async Task<bool> RevokeAsync(Guid sessionId, string userId, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (await AccountWriteLock.AcquireAsync(db, userId, ct) is null) return false;
         var session = await LockFamily(sessionId, ct);
         if (session is null || session.UserId != userId) return false;
         if (session.RevokedAtUtc is null)

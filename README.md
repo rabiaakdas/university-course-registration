@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yirmi dokuz gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk otuz gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1929,3 +1929,85 @@ anahtar loglanmaz; token geçmişi otomatik silinmez. Erken geçmiş temizliği 
 kapsamını azaltır. OAuth/OIDC, tolerans penceresi, otomatik retry ve tam teslim garantisi yok.
 
 [Öğrenme notu](docs/day29-refresh-families.md) · [ADR](docs/adr/0029-refresh-family-coordination.md).
+
+## Gün 30 — Parola sıfırlama
+
+`POST /accounts/forgot-password` yalnız `{ "email": "student@example.test" }` alır.
+Geçerli biçimdeki bilinmeyen, doğrulanmamış ve uygun hesaplar için aynı **202** mesajı
+verilir. E-posta Trim edilir; Identity normalizasyonu kullanılır. Yalnız doğrulanmış,
+SignInManager tarafından uygun bulunan hesaba yerel talimat hazırlanır. Bu yanıt
+hesabın varlığını veya mesaj teslimini kanıtlamaz. Beklenen dosya kutusu arızası da
+aynı yanıttır; EventId 3001 yalnız hata türünü kaydeder. DB arızaları gizlenmez.
+
+`POST /accounts/reset-password` gövdesi `userId`, Base64Url taşıma biçimindeki `token`
+ve `newPassword` içerir. Başarı **204**; bozuk/eksik girdi, yanlış kullanıcı/purpose,
+geçersiz/süresi dolmuş token **400**; parola politikası hatası `newPassword` alanında
+400; beklenmeyen DB hatası güvenli500. Cookie/access token gerekmez; hedefi reset
+izni belirler. Yeni parola dönüştürülmez; mevcut 12–128 karakter politikası geçerlidir.
+Başarı otomatik giriş, cookie veya token çifti üretmez.
+
+Ayrı `UniversityPasswordReset` provider'ı varsayılan **15 dakika** sürer;
+`Accounts:PasswordResetMinutes` 1..60 olabilir. E-posta doğrulamasının **2 saat** süresi
+değişmez. Yeni reset talebi önceki bağlantıyı iptal etmez; başarılı reset Identity
+security stamp'ini değiştirir ve önceki reset token'ları geçersiz olur. Bu davranış
+gerçek sağlayıcıyla sınandı; salt süreli olmak tek kullanımlılık sağlamaz.
+
+Yerel geliştirme (mevcut güvenilen HTTPS sertifikası ve DB ayarlarıyla):
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:Accounts__LocalMailboxEnabled = 'true'
+$env:Accounts__ConfirmationPageUrl = 'https://localhost:7080/confirm-email'
+$env:Accounts__PasswordResetPageUrl = 'https://localhost:7080/reset-password'
+$env:Accounts__PasswordResetMinutes = '15'
+dotnet run --no-launch-profile --urls https://localhost:7080
+```
+
+Callback yalnız yapılandırmadan alınır; Host/forwarded Host kullanılmaz. HTTPS
+beklenir; yalnız Development yerel HTTP istisnası vardır. URL userinfo/query/fragment
+kabul etmez. Callback sayfası uygulanmış değildir: GET hiçbir şeyi değiştirmez.
+Yerel kutu `.local/accounts/messages` içindedir, wwwroot/Git dışındadır. Production'da
+etkinleştirme reddedilir. Kutunun veya reset callback'in yapılandırılmadığı ortamda
+202 korunur, güvenli uyarı yazılır; teslim yapılmış sayılmaz. Gerçek sender yoktur.
+
+Ayrı PowerShell terminalinde; mesajı/token'ı konsola yazmadan:
+
+```powershell
+$base = 'https://localhost:7080'
+$email = Read-Host 'Test hesabı e-postası'
+Invoke-RestMethod "$base/accounts/forgot-password" -Method Post -ContentType application/json -Body (@{email=$email} | ConvertTo-Json) | Out-Null
+# Yerel kutudaki size ait yeni JSON dosyasının yolunu girin; içeriği paylaşmayın.
+$message = Get-Content -LiteralPath (Read-Host 'Yerel mesaj dosyası yolu') -Raw | ConvertFrom-Json
+$link = [uri]$message.link
+$query = [System.Web.HttpUtility]::ParseQueryString($link.Query)
+$credential = Get-Credential -UserName $email -Message 'Yeni parola'
+$body = @{userId=$query['userId']; token=$query['token']; newPassword=$credential.GetNetworkCredential().Password} | ConvertTo-Json
+Invoke-WebRequest "$base/accounts/reset-password" -Method Post -ContentType application/json -Body $body | Out-Null
+Remove-Variable body,credential,message,link,query
+# Ardından Gün 26 antiforgery → login akışında yeni parolayı kullanın.
+```
+
+Parola/stamp ve hesabın tüm henüz iptal edilmemiş refresh aileleri tek açık DB
+transaction'ında kesinleşir. Reset/refresh/revoke/ilk token üretimi aynı hesap satırında
+DB kilidi alır; sıra hesap → aile → token. İlk üretim kilit sonrası cookie stamp'ini
+yeniden doğrular. Dosya gönderimi bu kilitlerde yapılmaz. Akademik veriler değişmez.
+
+Refresh hemen reddedilir; cookie ancak stamp doğrulaması veya bilet süresi sonunda
+reddedilir. Mevcut stamp aralığı30 dakika, sabit cookie bileti20 dakika; anlık global
+çıkış garantisi yoktur. JWT ek DB sorgusu yapmaz ve kendi süresi/toleransı boyunca
+kabul edilebilir. Rate limit/timing/enumeration savunması33. gün; ağ kaybı/kalıcı teslim
+ve gerçek posta sağlayıcısı kapsam dışıdır. Data Protection anahtarları korunmalıdır.
+
+```powershell
+dotnet restore
+dotnet build
+dotnet ef migrations has-pending-model-changes
+powershell -File scripts/verify-course-writes.ps1 -Mode password-reset
+powershell -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -File scripts/verify-course-writes.ps1 -Mode core
+powershell -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Gün30 model değiştirmez; yeni migration gerekmez. Kod:
+[endpoint](Endpoints/PasswordResetEndpoints.cs), [transaction](Accounts/PasswordResetOperations.cs),
+[provider](Accounts/PasswordResetTokenProvider.cs), [ortak hesap kilidi](Accounts/AccountWriteLock.cs).

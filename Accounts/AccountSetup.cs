@@ -30,6 +30,7 @@ public static class AccountSetup
         if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
         services.AddIdentityCore<ApplicationUser>(options =>
         {
+            options.Tokens.PasswordResetTokenProvider = PasswordResetTokenProvider.ProviderName;
             options.User.RequireUniqueEmail = true;
             options.SignIn.RequireConfirmedEmail = true;
             options.Lockout.AllowedForNewUsers = true;
@@ -44,7 +45,19 @@ public static class AccountSetup
             options.Password.RequireLowercase = false;
             options.Password.RequireNonAlphanumeric = false;
         }).AddEntityFrameworkStores<UniversityDbContext>().AddSignInManager()
-          .AddTokenProvider<DataProtectorTokenProvider<ApplicationUser>>(TokenOptions.DefaultProvider);
+          .AddTokenProvider<DataProtectorTokenProvider<ApplicationUser>>(TokenOptions.DefaultProvider)
+          .AddTokenProvider<PasswordResetTokenProvider>(PasswordResetTokenProvider.ProviderName);
+        var resetMinutes = configuration.GetValue<int?>("Accounts:PasswordResetMinutes") ?? 15;
+        if (resetMinutes is < 1 or > 60) throw new InvalidOperationException("Accounts:PasswordResetMinutes 1..60 olmalıdır.");
+        services.Configure<PasswordResetProviderOptions>(options => options.TokenLifespan = TimeSpan.FromMinutes(resetMinutes));
+        Uri? resetPage = null;
+        if (configuration["Accounts:PasswordResetPageUrl"] is { } resetUrl &&
+            (!Uri.TryCreate(resetUrl, UriKind.Absolute, out resetPage) ||
+             !(resetPage.Scheme == "https" || environment.IsDevelopment() && resetPage.Scheme == "http" && resetPage.IsLoopback) ||
+             !string.IsNullOrEmpty(resetPage.UserInfo) || !string.IsNullOrEmpty(resetPage.Query) || !string.IsNullOrEmpty(resetPage.Fragment)))
+            throw new InvalidOperationException("Accounts:PasswordResetPageUrl güvenilen HTTPS (Development yerel HTTP) adresi olmalıdır; query/fragment içeremez.");
+        services.AddSingleton(new PasswordResetSettings(resetPage));
+        services.AddScoped<PasswordResetOperations>();
         services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = IdentityConstants.ApplicationScheme;

@@ -56,7 +56,7 @@ public static class UniversityJwtEndpoints
             catch (AntiforgeryValidationException) { return Results.Problem(statusCode: 400, title: "İstek doğrulanamadı."); }
             var id = users.GetUserId(context.User);
             if (string.IsNullOrWhiteSpace(id)) return Results.Unauthorized();
-            var result = await sessions.CreateAsync(id, ct);
+            var result = await sessions.CreateAsync(context.User, ct);
             return result is null ? Results.Unauthorized() : Results.Ok(result);
         }).RequireAuthorization(UniversityJwtSetup.CookiePolicy);
     }

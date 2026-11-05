@@ -44,7 +44,7 @@ internal static class AccountsChecks
     {
         public Func<CancellationToken, Task>? Failure;
         public ConcurrentQueue<Uri> Links = new();
-        public async Task SendAsync(string recipient, Uri link, CancellationToken ct)
+        public async Task SendAsync(string recipient, Uri link, CancellationToken ct, string subject = "E-posta doğrulama (yerel geliştirme)")
         { Links.Enqueue(link); if (Failure is not null) await Failure(ct); }
     }
     sealed class SaveGate : SaveChangesInterceptor
