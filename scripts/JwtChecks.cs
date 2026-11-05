@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -29,11 +30,12 @@ internal static class JwtChecks
     public static Dictionary<string, string?> Configuration(string directory) => new()
     {
         ["Jwt:Enabled"] = "true", ["Jwt:DevTokenEnabled"] = "true", ["Jwt:Issuer"] = Issuer, ["Jwt:Audience"] = Audience,
+        ["Jwt:AccessTokenSeconds"] = "600", ["Jwt:RefreshSessionDays"] = "7",
         ["Jwt:PublicKeyPath"] = Path.Combine(directory, "public.pem"), ["Jwt:PrivateKeyPath"] = Path.Combine(directory, "private.pem")
     };
     public static void Unit(string root)
     {
-        foreach (var kind in new[] { "production", "disabled", "issuer", "audience", "paths" })
+        foreach (var kind in new[] { "production", "disabled", "issuer", "audience", "paths", "access-duration", "session-duration" })
         {
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = kind == "production" ? "Production" : "Development", ContentRootPath = root });
             var values = Configuration(Path.Combine(Path.GetTempPath(), "unused-jwt"));
@@ -41,6 +43,8 @@ internal static class JwtChecks
             if (kind == "issuer") values["Jwt:Issuer"] = "not absolute";
             if (kind == "audience") values["Jwt:Audience"] = " ";
             if (kind == "paths") values["Jwt:PrivateKeyPath"] = "relative.pem";
+            if (kind == "access-duration") values["Jwt:AccessTokenSeconds"] = "0";
+            if (kind == "session-duration") values["Jwt:RefreshSessionDays"] = "-1";
             builder.Configuration.AddInMemoryCollection(values);
             var rejected = false;
             try { builder.Services.AddUniversityJwt(builder.Configuration, builder.Environment); }
@@ -50,7 +54,8 @@ internal static class JwtChecks
         Console.WriteLine("PASS: JWT Production minting/disabled/issuer/audience/path configuration guards (no DB)");
     }
     public static async Task Run(WebApplication app, Func<HttpClient> clientFactory, ApplicationUser user, string password,
-        List<string> secrets, SqlCounter counter, string keyDirectory, X509Certificate2 certificate, string contentRoot)
+        List<string> secrets, SqlCounter counter, string keyDirectory, X509Certificate2 certificate, string contentRoot,
+        Func<UniversityRegistration.Data.UniversityDbContext> factory, RefreshChecks.SaveGate saveGate)
     {
         var privatePem = File.ReadAllText(Path.Combine(keyDirectory, "private.pem")); secrets.Add(privatePem);
         using var signer = RSA.Create(); signer.ImportFromPem(privatePem);
@@ -100,14 +105,24 @@ internal static class JwtChecks
         using (var r = await Post(cookie, "/accounts/dev-token", csrf, new { userId = "attacker-choice", studentId = 999, role = "admin", expiresIn = 999999 }))
         {
             Check((int)r.StatusCode == 200 && r.Headers.CacheControl?.NoStore == true, "mint/no-store");
-            var body = JsonNode.Parse(await r.Content.ReadAsStringAsync())!.AsObject(); Check(body.Count == 3 && body["tokenType"]!.GetValue<string>() == "Bearer" && body["expiresIn"]!.GetValue<int>() == 600, "token response contract");
+            var body = JsonNode.Parse(await r.Content.ReadAsStringAsync())!.AsObject(); Check(body.Count == 4 && body["tokenType"]!.GetValue<string>() == "Bearer" && body["expiresIn"]!.GetValue<int>() == 600, "token response contract");
             valid = body["accessToken"]!.GetValue<string>(); secrets.Add(valid);
             // Inspection only for fixture assertions; production identity comes from validation.
             var jwt = new JsonWebToken(valid);
             Check(jwt.Subject == user.Id && jwt.Alg == "RS256" && jwt.Issuer == Issuer && jwt.Audiences.Single() == Audience
                 && jwt.ValidTo - jwt.ValidFrom == TimeSpan.FromMinutes(10) && jwt.IssuedAt == jwt.ValidFrom
                 && !string.IsNullOrWhiteSpace(jwt.Id) && !jwt.Claims.Any(x => x.Type is "role" or "email" or "studentId"), "server claims/time/no client override");
+            await RefreshChecks.Run(app, clientFactory, factory, user.Id, body, secrets, saveGate);
         }
+        int sessionsBefore;
+        await using (var db = factory()) sessionsBefore = await db.RefreshSessions.CountAsync(s => s.UserId == user.Id);
+        using (var another = await Post(cookie, "/accounts/dev-token", csrf))
+        {
+            Check((int)another.StatusCode == 200, "second explicit issue");
+            var pair = JsonNode.Parse(await another.Content.ReadAsStringAsync())!;
+            secrets.Add(pair["refreshToken"]!.GetValue<string>()); secrets.Add(pair["accessToken"]!.GetValue<string>());
+        }
+        await using (var db = factory()) Check(await db.RefreshSessions.CountAsync(s => s.UserId == user.Id) == sessionsBefore + 1, "each initial issue creates a session");
         await Bearer(null, 401); await Bearer(null, 401, cookie); await Bearer(valid, 200); await Bearer(valid, 200);
         await Bearer("invalid", 401, cookie);
         using (var r = new HttpRequestMessage(HttpMethod.Get, "/accounts/me"))

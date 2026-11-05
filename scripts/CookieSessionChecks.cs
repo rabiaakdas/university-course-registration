@@ -74,6 +74,7 @@ internal static class CookieSessionChecks
             b.WebHost.ConfigureKestrel(server => server.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
             b.Services.AddDbContext<UniversityDbContext>(o => o.UseSqlServer(connection));
             var queries = new JwtChecks.SqlCounter();
+            var saveGate = new RefreshChecks.SaveGate();
             if (jwt)
             {
                 Directory.CreateDirectory(keyDirectory);
@@ -81,16 +82,23 @@ internal static class CookieSessionChecks
                 File.WriteAllText(Path.Combine(keyDirectory, "private.pem"), signingRsa.ExportPkcs8PrivateKeyPem());
                 File.WriteAllText(Path.Combine(keyDirectory, "public.pem"), signingRsa.ExportSubjectPublicKeyInfoPem());
                 b.Configuration.AddInMemoryCollection(JwtChecks.Configuration(keyDirectory));
-                b.Services.AddDbContext<UniversityDbContext>(o => o.AddInterceptors(queries));
+                b.Services.AddDbContext<UniversityDbContext>(o => o.AddInterceptors(queries, saveGate));
                 b.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLevel.None);
                 b.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
             }
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            b.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
             b.Services.AddUniversityJwt(b.Configuration, b.Environment);
             b.Services.AddDataProtection().SetApplicationName(tag);
             b.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, o => o.TimeProvider = clock);
             b.Services.Configure<SecurityStampValidatorOptions>(o => o.TimeProvider = clock);
-            app = b.Build(); app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints();
+            app = b.Build();
+            app.UseExceptionHandler(new Microsoft.AspNetCore.Builder.ExceptionHandlerOptions
+            {
+                SuppressDiagnosticsCallback = _ => true,
+                ExceptionHandler = async c => await Results.Problem(statusCode: 500, title: "İstek işlenemedi.").ExecuteAsync(c)
+            });
+            app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints();
             await app.StartAsync();
             var address = new Uri(app.Urls.Single());
             HttpClient Client(CookieContainer? jar = null) => new(new HttpClientHandler
@@ -132,7 +140,7 @@ internal static class CookieSessionChecks
                 using var disabled = await disabledClient.PostAsync("/accounts/dev-token", null);
                 Check((int)disabled.StatusCode == 404, "disabled dev-token route absent");
             }
-            else await JwtChecks.Run(app, () => Client(), user, password, secrets, queries, keyDirectory, certificate, directory);
+            else await JwtChecks.Run(app, () => Client(), user, password, secrets, queries, keyDirectory, certificate, directory, factory, saveGate);
             async Task<string> Csrf(HttpClient client)
             {
                 using var r = await client.GetAsync("/accounts/antiforgery"); Check(r.StatusCode == HttpStatusCode.OK, "csrf GET");
@@ -223,6 +231,7 @@ internal static class CookieSessionChecks
             {
                 if (app is not null) { await app.StopAsync(); await app.DisposeAsync(); }
                 await using var db = factory();
+                await db.RefreshSessions.Where(x => db.Users.Any(u => u.Id == x.UserId && u.UserName!.StartsWith(tag))).ExecuteDeleteAsync();
                 if (studentId is not null) await db.Students.Where(x => x.Id == studentId).ExecuteDeleteAsync();
                 await db.Users.Where(x => x.UserName!.StartsWith(tag)).ExecuteDeleteAsync();
                 var allowed = Path.GetFullPath(Path.Combine(root, "obj", "cookie-checks")) + Path.DirectorySeparatorChar;

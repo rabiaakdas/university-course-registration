@@ -487,3 +487,19 @@ public-key-only HTTPS host'u dev-token404 ve bearer-me200 kontrolü için kullan
 Unit modu başlangıç configuration guard'larını DB olmadan çalıştırır. `jwt -ProbeFailure`
 üst betiğe başarısız exit code ile yansır. Bunlar OAuth/OIDC uyumluluk veya teslim/
 revocation garantisi değildir.
+
+## Gün 28 refresh kontrolleri
+
+`pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode refresh` yeni izole
+LocalDB'de önceki Identity şemasını kurar, ilişkili veriyi ekler, migration/replay ve
+korunumu doğrular. Cookie/JWT HTTPS host'u ve sertifika sabitlemesi yeniden kullanılır.
+R1/R2/R3, hash/sabit süre, account uygunluğu, expiry/revoked, son tarihe yakın JWT,
+gerçek UPDATE UNIQUE hatası ve FK/unique/CHECK/NOT NULL denemeleri çalışır. `unit`
+biçim/özet ve ayar doğrulamalarını DB'siz çalıştırır; `full` ortak HTTP kontrollerini içerir.
+`-Mode refresh -ProbeFailure` kontrollü hata yayılımını gösterir; başarılı test sayılmaz.
+
+Session kayıtları yalnız testin oluşturduğu hesaplara göre, hesaplardan önce temizlenir.
+Geçici HTTPS/anahtar dizinleri ve host'lar mevcut finally yaklaşımıyla kapanır. Şema
+kontrolleri `sql/app/verify-refresh-schema.sql` içindedir. Ham token/hash/private key
+çıktıya yazılmaz. Test DB şemaları önceki düzene göre korunur; sahipliği belirsiz DB
+silinmez. Tam bağlantı kopması, eşzamanlı refresh, reuse/family ve Down bu testin kanıtı değildir.

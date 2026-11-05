@@ -1,15 +1,13 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 using UniversityRegistration.Accounts;
 using UniversityRegistration.Models;
 
 namespace UniversityRegistration.Endpoints;
 
 public sealed record BearerAccountResponse(string AccountId);
-public sealed record DevTokenResponse(string AccessToken, string TokenType, int ExpiresIn);
+public sealed record RefreshRequest(string? RefreshToken);
 
 public static class UniversityJwtEndpoints
 {
@@ -22,25 +20,26 @@ public static class UniversityJwtEndpoints
             Results.Ok(new BearerAccountResponse(principal.FindFirst("sub")!.Value)))
             .RequireAuthorization(UniversityJwtSetup.Policy);
         if (!settings.DevTokenEnabled) return;
-        app.MapPost("/accounts/dev-token", async (HttpContext context, IAntiforgery antiforgery,
-            UserManager<ApplicationUser> users, SignInManager<ApplicationUser> signIn, UniversityJwtKeys keys) =>
+        // This teaching issuer stays opt-in Development-only; production remains validation-only.
+        app.MapPost("/accounts/refresh", async (RefreshRequest request, HttpContext context, TokenSessions sessions, CancellationToken ct) =>
         {
             context.Response.Headers.CacheControl = "no-store";
+            if (!context.Request.IsHttps || !TokenSessions.IsValidFormat(request.RefreshToken))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["refreshToken"] = ["Geçerli biçimde refresh token ve HTTPS gereklidir."] });
+            var result = await sessions.RefreshAsync(request.RefreshToken!, ct);
+            return result is null ? Results.Problem(statusCode: 401, title: "Oturum yenilenemedi.") : Results.Ok(result);
+        }).AllowAnonymous();
+        app.MapPost("/accounts/dev-token", async (HttpContext context, IAntiforgery antiforgery,
+            UserManager<ApplicationUser> users, TokenSessions sessions, CancellationToken ct) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            if (!context.Request.IsHttps) return Results.Problem(statusCode: 400, title: "HTTPS gereklidir.");
             try { await antiforgery.ValidateRequestAsync(context); }
             catch (AntiforgeryValidationException) { return Results.Problem(statusCode: 400, title: "İstek doğrulanamadı."); }
             var id = users.GetUserId(context.User);
             if (string.IsNullOrWhiteSpace(id)) return Results.Unauthorized();
-            var user = await users.FindByIdAsync(id);
-            if (user is null || !await signIn.CanSignInAsync(user) || await users.IsLockedOutAsync(user)) return Results.Unauthorized();
-            var now = DateTime.UtcNow;
-            var descriptor = new SecurityTokenDescriptor
-            {
-                Issuer = settings.Issuer, Audience = settings.Audience, IssuedAt = now, NotBefore = now, Expires = now.AddMinutes(10),
-                Claims = new Dictionary<string, object> { ["sub"] = user.Id, ["jti"] = Guid.NewGuid().ToString("N") },
-                SigningCredentials = new SigningCredentials(keys.SigningKey!, SecurityAlgorithms.RsaSha256)
-            };
-            var token = new JsonWebTokenHandler().CreateToken(descriptor);
-            return Results.Ok(new DevTokenResponse(token, "Bearer", 600));
+            var result = await sessions.CreateAsync(id, ct);
+            return result is null ? Results.Unauthorized() : Results.Ok(result);
         }).RequireAuthorization(UniversityJwtSetup.CookiePolicy);
     }
 }

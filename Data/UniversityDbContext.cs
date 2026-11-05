@@ -6,6 +6,7 @@ namespace UniversityRegistration.Data;
 
 public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
+    public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<AcademicTerm> AcademicTerms => Set<AcademicTerm>();
     public DbSet<CourseOffering> CourseOfferings => Set<CourseOffering>();
@@ -19,6 +20,22 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        var refresh = modelBuilder.Entity<RefreshSession>();
+        refresh.ToTable("RefreshSessions", table =>
+        {
+            table.HasCheckConstraint("CK_RefreshSessions_Expiry", "[ExpiresAtUtc] > [CreatedAtUtc]");
+            table.HasCheckConstraint("CK_RefreshSessions_Revocation", "[RevokedAtUtc] IS NULL OR [RevokedAtUtc] >= [CreatedAtUtc]");
+        });
+        refresh.HasKey(x => x.Id).HasName("PK_RefreshSessions");
+        refresh.Property(x => x.Id).ValueGeneratedNever();
+        refresh.Property(x => x.UserId).HasMaxLength(450).IsRequired();
+        refresh.Property(x => x.RefreshTokenHash).HasColumnType("binary(32)").IsRequired();
+        refresh.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset(7)").IsRequired();
+        refresh.Property(x => x.ExpiresAtUtc).HasColumnType("datetimeoffset(7)").IsRequired();
+        refresh.Property(x => x.RevokedAtUtc).HasColumnType("datetimeoffset(7)");
+        refresh.HasIndex(x => x.RefreshTokenHash).IsUnique().HasDatabaseName("UX_RefreshSessions_TokenHash");
+        refresh.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.NoAction).HasConstraintName("FK_RefreshSessions_AspNetUsers");
         modelBuilder.HasSequence<int>("CourseIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var course = modelBuilder.Entity<Course>();
         course.ToTable("Courses", table => table.HasCheckConstraint("CK_Courses_Credits_Positive", "[Credits] > 0"));

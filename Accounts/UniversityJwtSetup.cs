@@ -24,6 +24,14 @@ public static class UniversityJwtSetup
         services.AddAuthorization(options => options.AddPolicy(CookiePolicy, policy =>
             policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme).RequireAuthenticatedUser()));
         if (!enabled) return;
+        if (dev)
+        {
+            if (!int.TryParse(config["Jwt:AccessTokenSeconds"], out var access) || access is < 1 or > 3600
+                || !int.TryParse(config["Jwt:RefreshSessionDays"], out var days) || days is < 1 or > 30)
+                throw new InvalidOperationException("Jwt:AccessTokenSeconds 1..3600 ve Jwt:RefreshSessionDays 1..30 aralığında yapılandırılmalıdır.");
+            services.AddSingleton(new TokenSessionPolicy(access, days));
+            services.AddScoped<TokenSessions>();
+        }
         if (!Uri.TryCreate(issuer, UriKind.Absolute, out _) || string.IsNullOrWhiteSpace(audience))
             throw new InvalidOperationException("JWT için mutlak URI Issuer ve boş olmayan Audience gereklidir.");
         var publicPath = config["Jwt:PublicKeyPath"]; var privatePath = dev ? config["Jwt:PrivateKeyPath"] : null;

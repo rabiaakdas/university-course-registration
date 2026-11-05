@@ -19,7 +19,7 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
-if (mode is "jwt" or "unit" or "full") JwtChecks.Unit(root);
+if (mode is "jwt" or "refresh" or "unit" or "full") { JwtChecks.Unit(root); RefreshChecks.Unit(); }
 if (mode is "accounts" or "unit" or "full")
 {
     try { AccountsChecks.Unit(mode == "accounts" && probe); }
@@ -180,15 +180,16 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh")
 {
     try
     {
-        if (mode == "identity-model") await IdentityModelChecks.Upgrade(Db);
+        if (mode == "refresh") await RefreshChecks.Upgrade(Db);
+        else if (mode == "identity-model") await IdentityModelChecks.Upgrade(Db);
         else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode == "jwt") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
+        if (mode is "jwt" or "refresh") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
         else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
         else if (mode == "accounts") await AccountsChecks.Run(root, Db);
         else if (mode == "identity-model") await IdentityModelChecks.Run(Db);
@@ -201,7 +202,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await using var verify = Db();
-        Check(await verify.Users.CountAsync() == 0 && await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
+        Check(await verify.RefreshSessions.CountAsync() == 0 && await verify.Users.CountAsync() == 0 && await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
             && await verify.CourseOfferings.CountAsync() == 0 && await verify.AcademicTerms.CountAsync() == 0
             && await verify.Courses.CountAsync() == 0 && await verify.CoursePrerequisites.CountAsync() == 0
             && await verify.StudentCompletedCourses.CountAsync() == 0 && await verify.CourseOfferingTimeSlots.CountAsync() == 0, "Core fixture residue");

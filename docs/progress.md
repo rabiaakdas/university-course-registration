@@ -1702,3 +1702,65 @@ JWT fixture kendi ayarlarını bunun üzerine kurar. Bu değişiklikten sonra fu
 exit0 oldu. Son DB `university_registration_tests_day6_d0c168d65c5b493fb40740d6c669de6d`
 bağımsız SQL kontrolünde yine 2/2/3 seed, diğer akademik/Identity test tabloları0;
 JWT geçici anahtarları, cookie çalışma dizinleri ve süreçler kalmadı.
+
+## Gün 28 — Access/refresh, kalıcı oturum, sıralı rotation
+
+**İncelenen başlangıç:** main HEAD `31244599d817d7e0c00eab3d8e8d63a8b2e8e220`, temiz
+çalışma ağacı. Identity/account/cookie/JWT dosyaları ve önceki ilerleme kayıtları gerçekten
+mevcuttu; önceki günler yeniden uygulanmadı. Paket/sürüm eklenmedi veya yükseltilmedi.
+
+**Değişiklik:** RefreshSession (Guid, Identity UserId, binary(32) güncel SHA-256 özeti,
+UTC tarihler, nullable revoked), UNIQUE/NO ACTION/tarih kısıtları. TokenSessions JWT
+üretimini kopyalamadan topladı; 32 güvenli rastgele bayttan kanonik Base64Url43 üretir.
+İlk dev-token cookie+CSRF kontrolünden sonra ayrı oturum kaydeder, dört alanlı çift döner.
+Refresh HTTPS JSON/AllowAnonymous; cookie/access token yetkisine dayanmaz. Biçim400,
+bilinmeyen/eski/expired/revoked/uygunsuz hesap ortak401; beklenmeyen yazma500. Tek güncel
+hash değişir, sabit7gün sonu uzamaz. Access600s ve oturum7gün açık ayarlardır; kalan süre
+JWT exp/expiresIn'i sınırlar. Bugünkü refresh de açık Development üreticisine bağlıdır;
+Production'ın yalnız public-key doğrulama davranışı korunur.
+
+**Migration:** `20261105101325_AddRefreshSessions` Up/Down/üretilen SQL incelendi;
+yalnız yeni tablo/index/kısıtlar. Açık hedef doğrulamasından sonra app DB'sine uygulandı;
+ikinci update no-op, model/snapshot farkı yok. App önce/sonra Courses2/Terms2/Offerings3,
+Students0/Enrollments0/Accounts0; yeni RefreshSessions0. İzole önceki Identity migration
+seviyesinden yükseltmede hesap, bağlı Student ve Approved Enrollment kimlikleri/alanları/
+ilişkileri korundu; replay no-op. Lab'a dokunulmadı. Down çalıştırılmadı.
+
+**Gerçek kontroller:** restore/build0 uyarı/hata; unit/core/refresh/full exit0. Refresh
+izole DB `university_registration_tests_day6_8f267c74c87c4d16b0bdf9644c5c7d4a` yükseltme
+ve HTTPS kontrollerini geçti. R1→R2→R3, eski token401, aynı satır/id/user/son tarih,
+hash eşleşmesi, her açık ilk üretimde yeni oturum, Student'sız hesap, expired access401
+ama refresh200, önceki access hâlâ200, account lockout401, expired/revoked401, son tarihe
+yakın exp üst sınırı/no-store doğrulandı. Gerçek UPDATE UNIQUE hatasında500/no pair,
+eski hash korunumu, eski token'ın yeniden çalışması ve kaydedilmeyen yeni hash'in yokluğu
+yeni context ile kanıtlandı. FK/NO ACTION/UNIQUE/CHECK/NOT NULL gerçek SQL ile sınandı.
+
+Full `university_registration_tests_day6_c2e188916f2e47aca42ddd8c9d1cbc23` katalog gerçek
+SQL/projection, tekli/batch/state/eligibility, ilk INSERT sonrası rollback/rakip korunumu,
+onay commit sonrası Observer ve hata/iptal, Identity/account/confirmation/restart,
+cookie HTTPS/CSRF/süre ve JWT ret matrisini yeniden çalıştırdı. Bağımsız SQL temizlik
+kontrolü yalnız2/2/3 seed; Student/Enrollment/Accounts/RefreshSessions/önkoşul/başarı/saat0.
+JWT geçici anahtar dizinleri, cookie çalışma dizinleri ve geçici uygulama süreçleri kalmadı.
+İzole test DB şemaları mevcut yaklaşım gereği korundu; sequence sıfırlanmadı.
+`refresh -ProbeFailure` beklenen kontrollü assertion ile exit1 verdi ve süreç kapandı;
+bu bir ürün başarısı olarak sayılmadı. Son başarılı full'den sonra ürün kodu değişmedi.
+
+**Çözülen test sorunları:** İlk refresh host'unda bozuk JSON Development exception ayarı
+üretimden farklıydı; RouteHandlerOptions eşitlendi, ilgili koşu tekrar exit0 oldu.
+İlk full eski16tablo beklentisinde durdu;17tablo ve yeni refresh metadata kontrolü eklendi,
+full yeniden exit0 oldu. App hedef guard'ı genel connection builder alias'ını tanımadığı
+ilk denemeyi mutasyonsuz durdurdu; SqlConnectionStringBuilder ile hedef doğrulandı.
+Eski System.Data.SqlClient read-only bağlantı denemesi handshake hatası verdi; aynı
+korunum kontrolü sqlcmd ile başarıyla yapıldı. Bu başarısız adımlar başarı sayılmadı.
+
+**Sınırlar/eksikler:** Yalnız sıralı rotation kanıtı; concurrency tek başarı, history,
+family/reuse tespiti, retry/denylist yok. DB commit/HTTP teslimi ayrı; gerçek bağlantı
+kopması simüle edilmedi. Hatalı yazmanın ham yeni token'ı dışarı verilmediği için onu
+HTTP ile tekrar gönderme testi yapılmadı; kaydedilmeyen özetin DB'de olmadığı doğrulandı.
+Cookie logout/refresh iptali eski access token'ı iptal etmez. JWT30s skew korunur;
+refresh son tarihi uzamaz. Browser saklama, production refresh işletimi ve genel OAuth
+sunucusu kapsam dışıdır. Anahtar/token/SQL logları commit'e alınmadı.
+
+**Sıradaki gün:** Token family, reuse, eşzamanlı refresh ve çoklu cihaz.
+**Commit/push:** `feat: add persistent refresh sessions and token rotation` Git kaydından
+bulunur; son rapor gerçek push sonucunu verir. Hash için ikinci commit üretilmez.

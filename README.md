@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk yirmi yedi gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk yirmi sekiz gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -1794,7 +1794,7 @@ Remove-Variable issued,headers,csrf
 ```
 
 Önceki örneğin logout adımından önce bu bloğu çalıştırın. Dev-token gövde alanı almaz;
-kimlik/süre/claims sunucudan gelir. Yanıt accessToken/tokenType=Bearer/expiresIn=600,
+kimlik/süre/claims sunucudan gelir. Gün 28 ile yanıt accessToken/tokenType=Bearer/expiresIn/refreshToken,
 Cache-Control:no-store'dur. Token URL'ye konmaz. Bu standart OAuth token endpoint'i
 veya gerçek genel token sunucusu değildir.
 
@@ -1802,7 +1802,7 @@ RS256; sub/jti/iss/aud/iat/nbf/exp; on dakika süre ve 30 saniye clock skew. JWT
 şifrelenmez; kişisel/hesap secret'ları veya rol içermez. İmza, issuer, audience ve
 süre zorunlu; yalnız tek dolu string sub kabul edilir. Cookie logout, parola değişimi
 ve hesap değişimi JWT'yi kendiliğinden iptal etmez. jti tekrar kullanımı engellemez.
-Bearer doğrulaması DB hesabı/oturumu sorgulamaz. Refresh/revocation/denylist yoktur.
+Bearer doğrulaması DB hesabı/oturumu sorgulamaz. Gün 28 refresh ekler; access token revocation/denylist yoktur.
 
 ```powershell
 pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode jwt
@@ -1813,3 +1813,67 @@ dotnet ef migrations has-pending-model-changes
 
 [Öğrenme notu/resmi kaynaklar](docs/day27-jwt-validation.md) ·
 [Karar kaydı](docs/adr/0027-separate-jwt-bearer.md).
+
+## Gün 28 — Kalıcı refresh oturumu ve sıralı rotation
+
+`RefreshSession` Identity hesabına bağlıdır, StudentId değildir. DB yalnız güncel
+refresh token'ın SHA-256 özetini `binary(32)` olarak tutar; UNIQUE index ve NO ACTION
+hesap FK'si vardır. İlişkili oturum varken hesabın fiziksel silinmesi reddedilir.
+CreatedAtUtc < ExpiresAtUtc ve varsa RevokedAtUtc >= CreatedAtUtc kısıtları bulunur.
+Güncel zaman/iptal denetimi uygulamadadır; otomatik oturum temizleme yoktur.
+
+Gün 27'nin Development + Jwt:Enabled + Jwt:DevTokenEnabled anahtar kurulumunu kullanın.
+Bugün `/accounts/refresh` de bu öğretim üreticisiyle birlikte açılır; Production yalnız
+public anahtarla doğrulama yapmaya devam eder. Özel anahtar veya token üretimi fallback'i
+ve genel OAuth sunucusu eklenmedi. Her açık dev-token çağrısı ayrı oturum oluşturur.
+`Jwt:AccessTokenSeconds=600` (1..3600), `Jwt:RefreshSessionDays=7` (1..30) açık ayarlardır;
+üretici etkinse eksik/geçersiz değer başlangıçta reddedilir.
+
+Migration'ı yalnız app hedefini kontrol ederek uygulayın (bağlantı değerini yazdırmayın):
+
+```powershell
+$connection=(Get-Content appsettings.json -Raw|ConvertFrom-Json).ConnectionStrings.UniversityDatabase
+$target=[System.Data.SqlClient.SqlConnectionStringBuilder]::new($connection)
+if ($target.InitialCatalog -ne 'university_registration_app' -or $target.DataSource -ne '(localdb)\MSSQLLocalDB') { throw 'Beklenmeyen hedef' }
+dotnet ef database update --connection $connection
+Remove-Variable connection,target
+dotnet ef migrations has-pending-model-changes
+dotnet run --no-launch-profile --urls https://localhost:7080
+```
+
+HTTPS sertifikasına güvenilen istemcide, yukarıdaki cookie login adımından sonra:
+
+```powershell
+$csrf=Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $session
+$pair=Invoke-RestMethod "$base/accounts/dev-token" -Method Post -WebSession $session `
+    -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken}
+Invoke-RestMethod "$base/accounts/bearer-me" -Headers @{Authorization="Bearer $($pair.accessToken)"}
+# Refresh için WebSession/Authorization yok. Ham token yalnız JSON gövdesinde.
+$body=@{refreshToken=$pair.refreshToken}|ConvertTo-Json
+try {
+    $pair=Invoke-RestMethod "$base/accounts/refresh" -Method Post -ContentType application/json -Body $body
+} finally { Remove-Variable body }
+Invoke-RestMethod "$base/accounts/bearer-me" -Headers @{Authorization="Bearer $($pair.accessToken)"}
+Remove-Variable pair,csrf
+pwsh -NoProfile -File scripts/verify-course-writes.ps1 -Mode refresh
+```
+
+Token yanıtlarını, değişkenleri veya HTTP gövdelerini paylaşmayın/loglamayın.
+Başarılı yanıt `accessToken`, `tokenType:"Bearer"`, `expiresIn`, `refreshToken` içerir
+ve `Cache-Control:no-store` kullanır. Refresh cookie/CSRF/access token yetkisine dayanmaz;
+yalnız JSON'daki token yetkidir. Browser saklama tasarımı kapsam dışıdır. Cookie başlangıç
+üretimi CSRF korumasını sürdürür. Girdi 43 karakterlik kanonik Base64Url/32 rastgele bayt
+olmalıdır; Trim yapılmaz. Eksik/bozuk/aşırı uzun girdi400, biçimi geçerli fakat bilinmeyen,
+eski, süresi dolmuş, iptal edilmiş veya hesabı uygun olmayan token ortak401; DB hatası500.
+
+R1→R2→R3 aynı satırı değiştirir; R2 kaydedildikten sonra R1 reddedilir. Sabit oturum sonu
+uzatılmaz; yeni JWT exp kalan oturum süresini aşmaz, expiresIn tam saniye farkıdır.
+JWT doğrulamasının mevcut 30 saniye clock skew toleransı ayrıca geçerlidir. Son bir
+saniyeden kısa kalan süre yeni tam saniyelik bilet üretemiyorsa401 dönebilir.
+
+Yalnız güncel özet vardır: token family/geçmiş/reuse tespiti, eşzamanlı tek kazanan,
+güvenli otomatik retry yoktur. Commit sonrası yanıt kaybında istemci eski token'da
+kalabilir ve yeniden giriş gerekebilir. Cookie logout veya oturum iptali, önceki access
+token'ı iptal etmez; bearer hâlâ DB'ye bakmaz. Tüm cihazlardan çıkış/denylist yoktur.
+
+[Öğrenme notu](docs/day28-refresh-sessions.md) · [ADR](docs/adr/0028-refresh-sessions.md).

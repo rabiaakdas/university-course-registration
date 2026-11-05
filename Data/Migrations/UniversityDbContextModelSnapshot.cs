@@ -434,6 +434,46 @@ namespace UniversityRegistration.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.RefreshSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset(7)");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset(7)");
+
+                    b.Property<byte[]>("RefreshTokenHash")
+                        .IsRequired()
+                        .HasColumnType("binary(32)");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset(7)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id")
+                        .HasName("PK_RefreshSessions");
+
+                    b.HasIndex("RefreshTokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_RefreshSessions_TokenHash");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshSessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_RefreshSessions_Expiry", "[ExpiresAtUtc] > [CreatedAtUtc]");
+
+                            t.HasCheckConstraint("CK_RefreshSessions_Revocation", "[RevokedAtUtc] IS NULL OR [RevokedAtUtc] >= [CreatedAtUtc]");
+                        });
+                });
+
             modelBuilder.Entity("UniversityRegistration.Models.Student", b =>
                 {
                     b.Property<int>("Id")
@@ -599,6 +639,16 @@ namespace UniversityRegistration.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_Enrollments_Students");
+                });
+
+            modelBuilder.Entity("UniversityRegistration.Models.RefreshSession", b =>
+                {
+                    b.HasOne("UniversityRegistration.Models.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_RefreshSessions_AspNetUsers");
                 });
 
             modelBuilder.Entity("UniversityRegistration.Models.Student", b =>
