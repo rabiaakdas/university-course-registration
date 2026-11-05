@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Contracts;
 using UniversityRegistration.Data;
@@ -18,7 +19,7 @@ public static class AcademicTermEndpoints
                 .Select(t => new { t.Id, t.Name, t.StartsOn, t.EndsOn }).SingleOrDefaultAsync(ct);
             return term is null ? Results.Problem(statusCode: 404, title: "Dönem bulunamadı.") : Results.Ok(term);
         });
-        app.MapPost("/academic-terms", CreateAsync);
+        app.MapPost("/academic-terms", CreateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();
     }
 
     public static async Task<IResult> CreateAsync(CreateAcademicTermRequest request, UniversityDbContext db, CancellationToken ct)

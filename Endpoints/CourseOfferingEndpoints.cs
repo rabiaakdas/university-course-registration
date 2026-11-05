@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Contracts;
 using UniversityRegistration.Data;
@@ -23,7 +24,7 @@ public static class CourseOfferingEndpoints
             var offering = await Query(db).SingleOrDefaultAsync(o => o.Id == id, ct);
             return offering is null ? Results.Problem(statusCode: 404, title: "Ders açılışı bulunamadı.") : Results.Ok(offering);
         });
-        app.MapPost("/course-offerings", CreateAsync);
+        app.MapPost("/course-offerings", CreateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();
     }
 
     public static async Task<IResult> CreateAsync(CreateCourseOfferingRequest request, UniversityDbContext db, CancellationToken ct)

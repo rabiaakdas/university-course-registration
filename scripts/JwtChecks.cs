@@ -167,6 +167,7 @@ internal static class JwtChecks
             host.UseAuthentication(); host.UseAuthorization(); host.MapUniversityJwtEndpoints(); await host.StartAsync();
             using var c = clientFactory(); c.BaseAddress = new Uri(host.Urls.Single());
             using var absent = await c.PostAsync("/accounts/dev-token", null); Check((int)absent.StatusCode == 404, "production route absent");
+            using var noDemo = await c.GetAsync("/role-test/cStudent"); Check((int)noDemo.StatusCode == 404, "production role experiment absent");
             await Bearer(valid, 200, c); await host.StopAsync();
         }
         Console.WriteLine("PASS: JWT mint/CSRF/server claims, scheme isolation, no DB reads, replay/logout boundary, skew margins, public-only Production validation");

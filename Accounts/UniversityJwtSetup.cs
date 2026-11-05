@@ -53,7 +53,7 @@ public static class UniversityJwtSetup
                 ValidateAudience = true, RequireAudience = true, ValidAudience = audience,
                 IgnoreTrailingSlashWhenValidatingAudience = false,
                 ValidateLifetime = true, RequireExpirationTime = true, ClockSkew = TimeSpan.FromSeconds(30),
-                NameClaimType = "sub", IncludeTokenOnFailedValidation = false, LogTokenId = false
+                NameClaimType = "sub", RoleClaimType = UniversityRoles.JwtRoleClaim, IncludeTokenOnFailedValidation = false, LogTokenId = false
             };
             options.Events = new JwtBearerEvents
             {

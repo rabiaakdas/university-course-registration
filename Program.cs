@@ -39,6 +39,12 @@ builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadReq
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.None);
 var app = builder.Build();
+if (args.FirstOrDefault() == "roles")
+{
+    try { Environment.ExitCode = await RoleMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()); }
+    catch (Exception ex) { Console.Error.WriteLine("Role maintenance failed: " + ex.GetType().Name); Environment.ExitCode = 1; }
+    await app.DisposeAsync(); return;
+}
 app.UseExceptionHandler(new ExceptionHandlerOptions
 {
     SuppressDiagnosticsCallback = _ => true,

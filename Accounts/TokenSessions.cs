@@ -41,7 +41,7 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         var now = DateTimeOffset.UtcNow;
         var refresh = NewRefreshToken();
         var session = new RefreshSession { UserId = id, CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(policy.RefreshSessionDays) };
-        var result = CreatePair(session, refresh, now);
+        var result = await CreatePairAsync(session, refresh, now);
         if (result is null) return null;
         db.RefreshSessions.Add(session);
         db.RefreshTokenRecords.Add(new() { SessionId = session.Id, TokenHash = Hash(refresh), CreatedAtUtc = now });
@@ -79,7 +79,7 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         if (!await Eligible(session.UserId)) return null;
         now = DateTimeOffset.UtcNow;
         var refresh = NewRefreshToken();
-        var result = CreatePair(session, refresh, now);
+        var result = await CreatePairAsync(session, refresh, now);
         if (result is null) return null;
         var consumed = await db.RefreshTokenRecords.Where(x => x.Id == record.Id && x.UsedAtUtc == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAtUtc, now), ct);
@@ -109,19 +109,22 @@ public sealed class TokenSessions(UniversityDbContext db, UserManager<Applicatio
         await transaction.CommitAsync(ct);
         return true;
     }
-    private TokenPairResponse? CreatePair(RefreshSession session, string refresh, DateTimeOffset now)
+    private async Task<TokenPairResponse?> CreatePairAsync(RefreshSession session, string refresh, DateTimeOffset now)
     {
         // Whole seconds match JWT NumericDate; never round expiry past session expiry.
         var issued = now.ToUnixTimeSeconds();
         var end = Math.Min(issued + policy.AccessTokenSeconds, session.ExpiresAtUtc.ToUnixTimeSeconds());
         if (end <= issued) return null;
+        var user = await users.FindByIdAsync(session.UserId);
+        if (user is null) return null;
+        var roles = await users.GetRolesAsync(user);
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = settings.Issuer, Audience = settings.Audience,
             IssuedAt = DateTimeOffset.FromUnixTimeSeconds(issued).UtcDateTime,
             NotBefore = DateTimeOffset.FromUnixTimeSeconds(issued).UtcDateTime,
             Expires = DateTimeOffset.FromUnixTimeSeconds(end).UtcDateTime,
-            Claims = new Dictionary<string, object> { ["sub"] = session.UserId, ["jti"] = Guid.NewGuid().ToString("N") },
+            Claims = new Dictionary<string, object> { ["sub"] = session.UserId, ["jti"] = Guid.NewGuid().ToString("N"), [UniversityRoles.JwtRoleClaim] = roles.ToArray() },
             SigningCredentials = new SigningCredentials(keys.SigningKey!, SecurityAlgorithms.RsaSha256)
         };
         return new(new JsonWebTokenHandler().CreateToken(descriptor), "Bearer", checked((int)(end - issued)), refresh);

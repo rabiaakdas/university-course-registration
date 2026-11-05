@@ -96,19 +96,22 @@ internal static class CookieSessionChecks
                 b.Configuration["Accounts:PasswordResetPageUrl"] = "https://callback.example.test/reset";
             }
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            b.Services.AddScoped<UniversityRegistration.Application.CourseCatalogReader>();
             if (jwt) b.Services.AddSingleton<IAccountConfirmationSender>(sp => { resetSender.Inner = new LocalAccountConfirmationSender(sp.GetRequiredService<LocalConfirmationSettings>()); return resetSender; });
             b.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
             b.Services.AddUniversityJwt(b.Configuration, b.Environment);
             b.Services.AddDataProtection().SetApplicationName(tag);
             b.Services.Configure<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme, o => o.TimeProvider = clock);
             b.Services.Configure<SecurityStampValidatorOptions>(o => o.TimeProvider = clock);
+            if (jwt) RolesChecks.Configure(b);
             app = b.Build();
             app.UseExceptionHandler(new Microsoft.AspNetCore.Builder.ExceptionHandlerOptions
             {
                 SuppressDiagnosticsCallback = _ => true,
                 ExceptionHandler = async c => await Results.Problem(statusCode: 500, title: "İstek işlenemedi.").ExecuteAsync(c)
             });
-            app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapPasswordResetEndpoints();
+            app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapAccountEndpoints(); app.MapCourseEndpoints(); app.MapAcademicTermEndpoints(); app.MapCourseOfferingEndpoints();
+            if (jwt) RolesChecks.Map(app);
             await app.StartAsync();
             var address = new Uri(app.Urls.Single());
             HttpClient Client(CookieContainer? jar = null) => new(new HttpClientHandler
@@ -224,6 +227,7 @@ internal static class CookieSessionChecks
             for (var i = 0; i < 5; i++) { using var r = await Post(lockoutClient, "/accounts/login", new { email = lockoutUser.Email, password = "wrong" }, lockoutToken); Check((int)r.StatusCode == 401, "lockout attempt"); }
             using (var r = await Post(lockoutClient, "/accounts/login", new { email = lockoutUser.Email, password }, lockoutToken)) Check((int)r.StatusCode == 401, "locked correct password denied");
             Check(await Manager(async m => await m.IsLockedOutAsync((await m.FindByIdAsync(lockoutUser.Id))!)), "real Identity lockout");
+            if (jwt) await RolesChecks.Run(app, () => Client(), factory, Create, password, secrets, linked, clock.Advance);
             if (jwt) await PasswordResetChecks.Run(app, () => Client(), factory, Create, password, clock.Advance, secrets, familyGate, resetFault, resetSender);
             var after = await Academic(); Check(before.SequenceEqual(after), "academic rows/status/account links preserved");
             Check(logs.Lines.All(line => secrets.All(secret => !line.Contains(secret, StringComparison.Ordinal))), "captured logs contain no password/hash/cookie/token");

@@ -19,7 +19,7 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
-if (mode is "jwt" or "refresh" or "refresh-family" or "password-reset" or "unit" or "full") { JwtChecks.Unit(root); RefreshChecks.Unit(); PasswordResetChecks.Unit(root); }
+if (mode is "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "unit" or "full") { JwtChecks.Unit(root); RefreshChecks.Unit(); PasswordResetChecks.Unit(root); }
 if (mode is "accounts" or "unit" or "full")
 {
     try { AccountsChecks.Unit(mode == "accounts" && probe); }
@@ -97,7 +97,8 @@ Process? api = null;
 var evaluationLogs = new EvaluationLogObserver();
 var listener = new TcpListener(IPAddress.Loopback, 0);
 listener.Start(); var port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
-using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(15) };
+await using var catalogIdentity = new CatalogTestIdentity(root, port, Db);
+var client = catalogIdentity.Client;
 
 async Task Run(string command, params string[] arguments)
 {
@@ -126,13 +127,14 @@ async Task StartApi()
     info.Environment["ASPNETCORE_ENVIRONMENT"] = "Development"; // Errors must be safe even here.
     info.Environment["DOTNET_ENVIRONMENT"] = "Development";
     if (mode == "decorator") { info.Environment["Logging__Console__FormatterName"] = "json"; info.Environment["Logging__LogLevel__Microsoft.AspNetCore.Hosting.Diagnostics"] = "Information"; }
+    catalogIdentity.Configure(info);
     api = Process.Start(info)!;
     api.OutputDataReceived += (_, e) => { if (mode == "decorator") evaluationLogs.Receive(e.Data); }; api.ErrorDataReceived += (_, _) => { };
     api.BeginOutputReadLine(); api.BeginErrorReadLine();
     for (var i = 0; i < 50; i++)
     {
         if (api.HasExited) throw new InvalidOperationException("API exited before readiness");
-        try { using var response = await client.GetAsync("/courses"); if (response.IsSuccessStatusCode) return; }
+        try { using var response = await client.GetAsync("/courses"); if (response.IsSuccessStatusCode) { await catalogIdentity.LoginAsync(); return; } }
         catch (HttpRequestException) { }
         await Task.Delay(200);
     }
@@ -180,16 +182,16 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles")
 {
     try
     {
-        if (mode is "refresh" or "refresh-family" or "password-reset") await RefreshChecks.Upgrade(Db, () => CookieSessionChecks.Run(root, Db, probe, jwt: true));
+        if (mode is "refresh" or "refresh-family" or "password-reset" or "roles") await RefreshChecks.Upgrade(Db, () => CookieSessionChecks.Run(root, Db, probe, jwt: true));
         else if (mode == "identity-model") await IdentityModelChecks.Upgrade(Db);
         else if (mode == "state") await StateChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
-        if (mode is "refresh" or "refresh-family" or "password-reset") { /* HTTPS checks ran while the migrated fixture existed. */ }
+        if (mode is "refresh" or "refresh-family" or "password-reset" or "roles") { /* HTTPS checks ran while the migrated fixture existed. */ }
         else if (mode == "jwt") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
         else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
         else if (mode == "accounts") await AccountsChecks.Run(root, Db);
@@ -202,6 +204,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe);
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
+        await catalogIdentity.CleanupAsync();
         await using var verify = Db();
         Check(await verify.RefreshTokenRecords.CountAsync() == 0 && await verify.RefreshSessions.CountAsync() == 0 && await verify.Users.CountAsync() == 0 && await verify.Enrollments.CountAsync() == 0 && await verify.Students.CountAsync() == 0
             && await verify.CourseOfferings.CountAsync() == 0 && await verify.AcademicTerms.CountAsync() == 0

@@ -1898,3 +1898,70 @@ Day30 şema değiştirmediğinden migration Up/Down uygulanmadı; app/lab verisi
 **Sıradaki gün:** Claims, roles ve policy.
 **Commit/push:** `feat: reset passwords and revoke refresh sessions atomically`;
 gerçek hash/push son raporda, hash yazmak için ek commit yok.
+
+## Gün 31 — Identity rolleri, claim aktarımı ve katalog policy'si
+
+**Başlangıç:** main `9d217038102fdafd1559911f4ce7db29bdb7cf8f`; temiz çalışma ağacı.
+Gün28–30 refresh/koordinasyon/reset kodu ve ilerleme kayıtları gerçekten mevcuttu;
+eski27. gün hash'i HEAD varsayılmadı. Paket sürümleri10.0.14 korundu.
+
+**Üretim:** UniversityRoles sabitleri Student/Instructor/Advisor/StudentAffairs;
+AddRoles ile Identity principal factory/store; açık Development `roles prepare`,
+`roles add/remove <accountId> <role>` komutu. Startup/public register üyelik atamaz.
+JWT ilk üretim/refresh güncel manager rollerini role claim'ine taşır;
+RoleClaimType=role, MapInboundClaims=false. Hesap→aile→token koordinasyonu, reset
+transaction'ı ve akademik batch SaveChanges/observer noktaları korundu.
+
+**Bilinçli HTTP değişikliği:** POST courses, PUT courses/{id}, POST academic-terms ve
+POST course-offerings artık cookie-only ManageAcademicCatalog + StudentAffairs +
+gerçek antiforgery ister. Public GET'ler değişmez. Başka katalog yazma route'u yoktur.
+Öğrenci/kayıt/onay/özete rol tabanlı sahte sahiplik garantisi eklenmedi.
+
+**Gerçek kontroller:** restore/build exit0,0warning/error; model/snapshot fark yok.
+Unit/core/full exit0. Full; yeni yetkili HTTPS/cookie/CSRF fixture ile eski katalog
+validation/race/SQL/projection, gerçek unique/FK, batch ilk INSERT sonrası rollback,
+state/eligibility, committed observer, accounts/confirmation, cookie/JWT/refresh
+family/reset regresyonlarını yeniden çalıştırdı. Aynı testler kopyalanmadı; testler
+bypass header veya global authorization kapatma kullanmıyor.
+
+Roles modu gerçek HTTPS/LocalDB'de dört yazma için anonymous401, rolü olmayan ve
+Student/Instructor/Advisor403, StudentAffairs201/200; ek rol200; CSRF eksik/yanlış400;
+yetkili negatif kredi400, duplicate409, missing404 verdi. Retlerden sonra yeni context
+ile katalog snapshot'ı korundu. Profil bağlantısı/onaylı e-posta yetki sağlamadı.
+Public register'a role/roles/permission verilmesine rağmen üyelik yoktu. Cookie ve
+bearer rol politikaları, tampered role401, OR/AND ve Production deney route404 geçti.
+
+Rol kaldırma stamp'i değiştirmedi. Eski cookie/JWT yetkisi devam etti; yeni login,
+yeni mint ve refresh token'ında kaldırılmış rol403 oldu. Mevcut fixed20dk cookie,
+kontrollü saatte19dk eski rol200 ve21dk401; stamp aralığı30dk değişmedi. Anlık rol
+revocation veya her istekte üyelik sorgusu yoktur. Bearer-me ek DB sorgusu yapmıyor.
+
+**Komut/hata yayılımı:** Manager tabanlı prepare iki kez4rol, add/repeat/remove;
+olmayana/izin dışına exit1 ve Production reddi test edildi. Gerçek CLI süreçleri de
+geçersiz rol ve Production'da HTTP hostu açmadan exit1 verdi. Son `roles -ProbeFailure`
+beklenen assertion/exit1 üretti; başarılı test sayılmadı.
+
+**Ara başarısızlıklar:** İlk genişletilmiş cookie test hostu katalog reader DI kaydı
+eksik olduğu için başlayamadı; kayıt eklenip koşu geçti. Son fixture ayrımında kalan
+çift Advisor ataması `manager membership` assertion'ını doğru biçimde başarısız yaptı;
+yinelenen atama çıkarıldı. Son roles koşusu exit0. Bu iki koşunun verileri de temizlendi.
+
+**Temizlik kanıtı:** Full DB `university_registration_tests_day6_d17e9bad19d3411fb5f0817707c71a8f`
+bağımsız SQL sorgusunda Accounts/Roles/UserRoles/Session/Token/Student/Enrollment0,
+yalnız2ders/2dönem/3açılış seed. Core
+`university_registration_tests_day10_5fdf1def4b9243778215442f1341dd22` ve son roles
+`university_registration_tests_day6_9a8a8cb5a6c2483ab4f1a3f4fd9ddb2e` aynı tablolarda
+ve katalogda0. Probe ve iki başarısız koşunun DB'leri de boş. Geçici catalog/cookie
+fixture klasörü ve UniversityRegistration süreç sayısı0. Test DB şemaları kalır;
+app/lab test hedefi olmadı. Yeni migration/Down yoktur.
+
+**Sınırlar:** Yerel bakım Production provisioning değildir. Role değişimi/yayınlanmış
+JWT için anlık iptal ve eşzamanlı rol provisioning garantisi kurulmadı. Rate limit,
+network loss/crash, gerçek posta ve saldırı kapsamlı timing ölçümü yapılmadı. Son full
+sonrasında yalnız tek-rol/ek-rol fixture açıklığı ve temizleme hedef koruması iyileştirildi;
+son roles koşusu bunlarla yeniden geçti. Ürün kodu full sonrasında değiştirilmedi.
+
+**Sıradaki gün:** Resource-based authorization, ownership ve IDOR; Student sahipliği,
+danışman ataması, Instructor–açılış ilişkisi ve kişisel akademik okuma/yazma korumaları.
+**Commit/push:** `feat: authorize academic catalog management with Identity roles`;
+gerçek hash/push son raporda, hash için ek commit yok.

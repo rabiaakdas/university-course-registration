@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Contracts;
 using UniversityRegistration.Data;
@@ -14,8 +15,8 @@ public static class CourseEndpoints
                 .Select(c => new CourseListItemDto(c.Id, c.Code, c.Name)).ToListAsync(ct)));
         app.MapGet("/courses/catalog", CourseCatalogEndpoint.GetAsync);
         app.MapGet("/courses/{id:int}", GetAsync);
-        app.MapPost("/courses", CreateAsync);
-        app.MapPut("/courses/{id:int}", UpdateAsync);
+        app.MapPost("/courses", CreateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();
+        app.MapPut("/courses/{id:int}", UpdateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();
     }
 
     public static async Task<IResult> GetAsync(int id, UniversityDbContext db, CancellationToken ct)

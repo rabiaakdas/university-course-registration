@@ -548,3 +548,31 @@ confirmation2 saat, cookie stamp30 dakika ve bilet20 dakika kalır.
 
 Testler sahip oldukları token→aile→profil→hesap kayıtlarını ve geçici key/mailbox
 klasörlerini finally ile temizler. App/lab test hedefi değildir. Day30 migration yoktur.
+
+## Gün 31 — Rol matrisi ve yetkili katalog fixture'ı
+
+`powershell -File scripts/verify-course-writes.ps1 -Mode roles` mevcut cookie/JWT/
+refresh/reset HTTPS test hostunu yeniden kullanır. `RolesChecks` dört katalog yazması
+üzerinde anonymous401, Student/Instructor/Advisor/rolsüz403, StudentAffairs201/200,
+CSRF400 ve yetkili domain400/404/409 kontrollerini çalıştırır. Yeni context snapshot'ı
+retlerden sonra katalog verisinin değişmediğini doğrular. Katalog yazmaları approval
+olayı üretmez; mevcut approval/batch regresyonları full içinde ayrı korunur.
+
+Diğer rollerin cookie/bearer, OR/AND deney route'ları yalnız scripts test derlemesinde
+vardır. Production hostu bunları404 döndürür. Public register'a ayrıcalıklı alanlar
+verilmesine rağmen UserManager üyelik listesi boş kalır. Rol kaldırma stamp'i
+değiştirmez; eski JWT/cookie erişimi, yeni login/mint/refresh403 ve kontrollü19/21dk
+cookie sınırı gerçek HTTPS ile ölçülür. Bütün auth secret'ları mevcut log taramasına
+katılır. Bu kontroller tüm saldırıları veya anlık rol iptalini kanıtlamaz.
+
+`CatalogTestIdentity` eski dış-process HTTP katalog testlerini gerçek HTTPS'e taşır:
+her koşuya ait sertifika sabitlenir, izole doğrulanmış StudentAffairs hesabı manager
+ile hazırlanır, login/CSRF alınır. Process restart sonrası yeniden login yapılır.
+Authorization/CSRF bypass edilmez; saf/direct operation testlerine kullanıcı eklenmez.
+İlgili yardımcı yalnız kendi GUID obj/catalog-identity klasörünü ve kendi hesap/üyelik/
+oluşturduğu rol kayıtlarını temizler. Diğer fixture rollerine dokunmaz. Diğer test
+hostu kullanıcı/rol ilişkilerini, token→session→account ve yerel key/mailbox dosyalarını
+finally temizler. Model değişmedi; migration yoktur.
+
+`roles -ProbeFailure` beklenen sıfır olmayan exit code kontrolüdür; başarılı test değildir.
+Unit/core/full, accounts/cookie/JWT/refresh/reset kontrolleri mevcut runner'da kalır.

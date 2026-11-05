@@ -44,7 +44,7 @@ public static class AccountSetup
             options.Password.RequireUppercase = false;
             options.Password.RequireLowercase = false;
             options.Password.RequireNonAlphanumeric = false;
-        }).AddEntityFrameworkStores<UniversityDbContext>().AddSignInManager()
+        }).AddRoles<IdentityRole>().AddEntityFrameworkStores<UniversityDbContext>().AddSignInManager()
           .AddTokenProvider<DataProtectorTokenProvider<ApplicationUser>>(TokenOptions.DefaultProvider)
           .AddTokenProvider<PasswordResetTokenProvider>(PasswordResetTokenProvider.ProviderName);
         var resetMinutes = configuration.GetValue<int?>("Accounts:PasswordResetMinutes") ?? 15;
@@ -76,7 +76,8 @@ public static class AccountSetup
             options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
             options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
         });
-        services.AddAuthorization();
+        services.AddAuthorization(options => options.AddPolicy(UniversityRoles.ManageCatalog, policy =>
+            policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme).RequireAuthenticatedUser().RequireRole(UniversityRoles.StudentAffairs)));
         services.AddAntiforgery(options =>
         {
             options.HeaderName = "X-CSRF-TOKEN";

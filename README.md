@@ -1,6 +1,6 @@
 # Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
-106 öğrenme birimlik programın ilk otuz gün uygulaması: HTTP istek akışını görmek,
+106 öğrenme birimlik programın ilk otuz bir gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
 şema ile kısıtları öğrenmek; EF Core ile dersleri okumak, doğrulayarak oluşturmak ve düzenlemek.
 Proje tek bir ASP.NET Core Minimal API'dir. Güncel durumda bütün listeleme
@@ -2011,3 +2011,86 @@ powershell -File scripts/verify-course-writes.ps1 -Mode full
 Gün30 model değiştirmez; yeni migration gerekmez. Kod:
 [endpoint](Endpoints/PasswordResetEndpoints.cs), [transaction](Accounts/PasswordResetOperations.cs),
 [provider](Accounts/PasswordResetTokenProvider.cs), [ortak hesap kilidi](Accounts/AccountWriteLock.cs).
+
+## Gün 31 — Identity rolleri ve katalog yönetimi
+
+Roller tek yerde `UniversityRoles`: **Student, Instructor, Advisor, StudentAffairs**.
+`AddRoles<IdentityRole>` Identity'nin rol destekli principal factory/store servislerini
+bağlar. Public register rol/permission kabul eden bir DTO değildir; ek JSON alanları
+üyelik oluşturmaz. E-posta doğrulaması veya Student profili bağlantısı rol kazandırmaz.
+
+Bilinçli HTTP değişikliği: aşağıdaki dört mevcut yazma route'u artık yalnız Identity
+application cookie + `ManageAcademicCatalog` (StudentAffairs) + geçerli CSRF ister:
+
+| Route | Anonymous / yalnız bearer | Cookie, gerekli rol yok | StudentAffairs + CSRF |
+|---|---|---|---|
+| POST /courses | 401 | 403 | Mevcut201/400/409 |
+| PUT /courses/{id} | 401 | 403 | Mevcut200/400/404/409 |
+| POST /academic-terms | 401 | 403 | Mevcut201/400 |
+| POST /course-offerings | 401 | 403 | Mevcut201/400/409 |
+
+Student, Instructor, Advisor ve rolsüz hesaplar yönetimde403 alır. StudentAffairs
+yanında ek rol bulunması hakkı kaldırmaz. Yetkili cookie'de CSRF eksik/geçersizse400.
+Login HTML/302 yoktur. GET katalog/detay okumaları public kalır. Bu kapsamda başka
+katalog yazma route'u yoktur; yeni CRUD eklenmedi.
+
+Açık Development bakım komutu (mevcut yapılandırılmış DB üzerinde, HTTP hostu açmaz):
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:DOTNET_ENVIRONMENT = 'Development'
+dotnet run --no-launch-profile -- roles prepare
+$accountId = Read-Host 'Mevcut hesabın Identity Id değeri'
+dotnet run --no-launch-profile -- roles add $accountId StudentAffairs
+dotnet run --no-launch-profile -- roles remove $accountId StudentAffairs
+```
+
+Prepare yalnız eksik dört rolü oluşturur; tekrar üyelik işlemi güvenlidir. Kullanıcı,
+parola veya ilk-admin seed'i yoktur. İlgisiz üyelikler silinmez. Production, geçersiz
+rol, olmayan hesap ve başarısız IdentityResult sıfır olmayan exit code verir. Komut
+bir Production provisioning sistemi değildir; yalnız güvenilen yerel geliştirici
+çalıştırmalıdır. Rol kaldırmak mevcut cookie/JWT'leri anında değiştirmez.
+
+Yetkili HTTPS yazma örneği (güvenilen yerel sertifika, önceki HTTPS kurulumu):
+
+```powershell
+$base = 'https://localhost:7080'
+$credentials = Get-Credential -Message 'Doğrulanmış StudentAffairs test hesabı'
+$csrf = Invoke-RestMethod "$base/accounts/antiforgery" -SessionVariable browser
+$login = @{email=$credentials.UserName; password=$credentials.GetNetworkCredential().Password} | ConvertTo-Json
+Invoke-RestMethod "$base/accounts/login" -Method Post -WebSession $browser -ContentType application/json -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken} -Body $login | Out-Null
+Remove-Variable login,credentials
+$csrf = Invoke-RestMethod "$base/accounts/antiforgery" -WebSession $browser
+Invoke-RestMethod "$base/courses" -Method Post -WebSession $browser -ContentType application/json -Headers @{'X-CSRF-TOKEN'=$csrf.requestToken} -Body (@{code='DEMO31';name='Yetkili örnek';credits=3} | ConvertTo-Json)
+```
+
+Cookie rollerini Identity üretir. JWT üreticisi her ilk üretim ve refresh'te güncel
+`UserManager.GetRolesAsync` sonucunu `role` claim'lerine dönüştürür; bearer RoleClaimType
+aynı addır, MapInboundClaims=false kalır. Eski principal'dan rol kopyalanmaz.
+Rol ekleme/kaldırma security stamp'i otomatik değiştirmedi (gerçek test). Mevcut
+cookie kaldırılmış rolü19. dakikada hâlâ taşıdı; sabit20 dakikalık bilet21. dakikada401
+oldu. Stamp doğrulama aralığı30 dakika kaldığı için bu akışta önce bilet sona erer.
+Yeni login güncel rolü alır. Geçerli stamp doğrulaması principal'ı yeniden üretir;
+ancak bunu her istekte rol sorgusu/anlık iptal olarak sunmuyoruz. JWT kendi süre/skew
+sınırına kadar eski rolü taşır; yeni mint/refresh güncel üyeliği alır.
+
+**32. güne kalanlar:** Öğrenci oluşturma/listeleme/detay, enrollment oluşturma/batch/
+submit, approve/reject, eligibility ve dönem özeti için sahiplik/danışman ataması ve
+IDOR kontrolleri tamamlanmış değildir. Instructor–açılış ilişkisi yoktur. Bugün bu
+route'lara eksik modelle rol hakları dağıtılmadı; güvenli self-servis ilan edilmez.
+Diğer üç rol, yalnız test derlemesinde sabit `allowed:true` döndüren policy route'larıyla
+sınanır; Production/normal uygulama bu route'ları içermez.
+
+```powershell
+dotnet restore
+dotnet build
+dotnet ef migrations has-pending-model-changes
+powershell -File scripts/verify-course-writes.ps1 -Mode roles
+powershell -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -File scripts/verify-course-writes.ps1 -Mode core
+powershell -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Rol tabloları zaten mevcuttu; Gün31 migration üretmez. Kod:
+[roller/policy filtresi/bakım](Accounts/UniversityRoles.cs), [Identity kaydı](Accounts/AccountSetup.cs),
+[JWT üyelikleri](Accounts/TokenSessions.cs), [test matrisi](scripts/RolesChecks.cs).
