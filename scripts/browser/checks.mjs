@@ -22,6 +22,7 @@ try {
     const csp = html.headers()["content-security-policy"];
     check(csp.includes("script-src 'self'") && csp.includes("frame-ancestors 'none'") && !csp.includes("unsafe-"), "CSP");
     check(html.headers()["cache-control"] === "no-store", "static no-store");
+    check(await page.locator("#external-form").isHidden(), "disabled provider hidden; local login remains available");
     await page.waitForFunction(() => document.querySelectorAll("#courses li").length > 0);
     check(await page.locator("#courses").textContent().then(t => t.includes("<img src=x onerror=window.web34Xss=1>")), "literal DB fixture");
     check(await page.locator("#courses img, #courses script").count() === 0 && await page.evaluate(() => !window.web34Xss), "safe DOM independently of CSP execution blocking");

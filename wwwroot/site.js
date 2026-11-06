@@ -3,7 +3,9 @@
     const byId = id => document.getElementById(id);
     const form = byId("login-form"), password = byId("password"), account = byId("account");
     const message = byId("account-message"), session = byId("session");
-    let csrf = null, busy = false, courseBusy = false;
+    let csrf = null, busy = false, courseBusy = false, providerEnabled = false, externalStarting = false;
+    const externalFailure = new URLSearchParams(location.search).get("external") === "failed";
+    if (externalFailure) history.replaceState(null, "", location.pathname);
     const request = (path, options = {}) => fetch(path, { ...options, credentials: "same-origin", cache: "no-store" });
     async function failure(response) {
         if (response.status === 401) return "Giriş yapılamadı veya oturumunuz artık geçerli değil.";
@@ -24,6 +26,7 @@
     }
     function showAnonymous() {
         account.textContent = ""; account.hidden = true; form.hidden = false;
+        byId("external-form").hidden = !providerEnabled;
         byId("logout").hidden = true; session.textContent = "Giriş yapılmamış.";
     }
     async function me() {
@@ -40,16 +43,16 @@
         }
         const user = await r.json();
         account.textContent = typeof user.email === "string" ? user.email : "Hesabınız";
-        account.hidden = false; form.hidden = true; byId("logout").hidden = false;
+        account.hidden = false; form.hidden = true; byId("external-form").hidden = true; byId("logout").hidden = false;
         session.textContent = "Giriş yapıldı.";
     }
     async function action(work) {
         if (busy) return;
         busy = true; message.textContent = "İşlem sürüyor…";
-        for (const id of ["login", "logout", "check-session"]) byId(id).disabled = true;
+        for (const id of ["login", "logout", "check-session", "external-login"]) byId(id).disabled = true;
         try { await work(); message.textContent = ""; }
         catch (error) { message.textContent = error instanceof TypeError ? "Bağlantı kurulamadı. Oturum durumunu yeniden kontrol edin." : error.message; }
-        finally { busy = false; for (const id of ["login", "logout", "check-session"]) byId(id).disabled = false; }
+        finally { busy = false; for (const id of ["login", "logout", "check-session", "external-login"]) byId(id).disabled = false; }
     }
     form.addEventListener("submit", event => {
         event.preventDefault();
@@ -60,6 +63,14 @@
                 if (!r.ok) throw new Error(await failure(r));
                 csrf = null; await me(); await token();
             } finally { password.value = ""; }
+        });
+    });
+    byId("external-form").addEventListener("submit", event => {
+        event.preventDefault();
+        if (externalStarting) return;
+        void action(async () => {
+            await token(); byId("external-csrf").value = csrf; password.value = "";
+            externalStarting = true; HTMLFormElement.prototype.submit.call(byId("external-form"));
         });
     });
     byId("logout").addEventListener("click", () => void action(async () => {
@@ -89,5 +100,10 @@
         finally { courseBusy = false; byId("reload-courses").disabled = false; }
     }
     byId("reload-courses").addEventListener("click", () => void courses());
-    void action(async () => { await me(); await token(); }); void courses();
+    void action(async () => {
+        const options = await request("/accounts/external/options");
+        if (options.ok) { const provider = await options.json(); providerEnabled = provider.enabled === true; byId("external-login").textContent = provider.displayName; }
+        await me(); await token();
+        if (externalFailure) throw new Error("Harici giriş tamamlanamadı. Yerel hesabınızı veya sağlayıcı erişimini kontrol edin.");
+    }); void courses();
 })();

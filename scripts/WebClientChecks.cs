@@ -27,6 +27,7 @@ internal static class WebClientChecks
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production"; start.Environment["DOTNET_ENVIRONMENT"] = "Production";
         start.Environment["Kestrel__Certificates__Default__Path"] = certPath; start.Environment["Kestrel__Certificates__Default__Password"] = certPassword;
         start.Environment["EnrollmentPolicy__MaxCreditsPerTerm"] = "30";
+        start.Environment["Oidc__Enabled"] = "false";
         start.Environment["Accounts__LocalMailboxEnabled"] = "false"; start.Environment["Jwt__Enabled"] = "false"; start.Environment["Jwt__DevTokenEnabled"] = "false";
         AuthAbuseTestSettings.Configure(start);
         await using (var db = factory()) start.Environment["ConnectionStrings__UniversityDatabase"] = db.Database.GetConnectionString();
@@ -38,9 +39,10 @@ internal static class WebClientChecks
             for (var i = 0; i < 100 && !process.HasExited; i++)
             { try { using var response = await http.GetAsync("/"); if (response.IsSuccessStatusCode) { started = true; break; } } catch (HttpRequestException) { } await Task.Delay(100); }
             Check(started, "actual Production process serves web root over pinned HTTPS");
-            foreach (var path in new[] { "/open", "/closed", "/docs/web34-canary.txt", "/.local/accounts/messages/web34-canary.txt", "/.local/accounts/keys/web34-canary.txt" })
+            foreach (var path in new[] { "/open", "/closed", "/test/oidc-local", "/accounts/external/callback", "/docs/web34-canary.txt", "/.local/accounts/messages/web34-canary.txt", "/.local/accounts/keys/web34-canary.txt" })
             { using var r = await http.GetAsync(path); Check((int)r.StatusCode == 404, "Production no lab/private routes"); }
             using var noToken = await http.PostAsync("/accounts/dev-token", null); Check((int)noToken.StatusCode == 404, "Production dev-token absent");
+            using var noExternal = await http.PostAsync("/accounts/external/login", null); Check((int)noExternal.StatusCode == 404, "Production external login absent");
             Console.WriteLine("PASS: actual Production executable HTTPS static page; no CORS lab/dev-token/private canary routes");
         }
         finally { if (!process.HasExited) process.Kill(true); await process.WaitForExitAsync(); _ = await stdout; _ = await stderr; }

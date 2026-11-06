@@ -44,7 +44,7 @@ internal static class CookieSessionChecks
             public void Log<T>(LogLevel level, EventId id, T state, Exception? error, Func<T, Exception?, string> format) => owner.Lines.Enqueue(format(state, error));
         }
     }
-    public static async Task Run(string root, Func<UniversityDbContext> factory, bool probe = false, bool jwt = false, bool abuse = false, bool web = false, bool corsLab = false)
+    public static async Task Run(string root, Func<UniversityDbContext> factory, bool probe = false, bool jwt = false, bool abuse = false, bool web = false, bool corsLab = false, bool oidc = false)
     {
         if (probe) throw new BehaviorFailure("Cookie session: controlled runner failure");
         var tag = "c26" + Guid.NewGuid().ToString("N");
@@ -62,17 +62,19 @@ internal static class CookieSessionChecks
         using var generatedCertificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
         // Reimport for Windows Schannel; no certificate/private-key file or trust-store mutation.
         using var certificate = X509CertificateLoader.LoadPkcs12(generatedCertificate.Export(X509ContentType.Pfx), null, X509KeyStorageFlags.Exportable);
+        await using var oidcChecks = oidc ? new OidcChecks() : null;
         WebApplication? app = null; int? studentId = null; Exception? primary = null;
         try
         {
+            if (oidcChecks is not null) await oidcChecks.Start(root, certificate);
             string connection; await using (var db = factory()) connection = db.Database.GetConnectionString()!;
-            var b = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development", ContentRootPath = directory, WebRootPath = web ? Path.Combine(root, "wwwroot") : null });
+            var b = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development", ContentRootPath = directory, WebRootPath = web || oidc ? Path.Combine(root, "wwwroot") : null });
             b.Configuration["Jwt:Enabled"] = "false";
             b.Configuration["Jwt:DevTokenEnabled"] = "false";
             b.Logging.ClearProviders(); b.Logging.AddProvider(logs);
             b.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
             b.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.None);
-            b.WebHost.ConfigureKestrel(server => server.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
+            b.WebHost.ConfigureKestrel(server => server.Listen(IPAddress.Loopback, oidcChecks?.Port ?? 0, listen => listen.UseHttps(certificate)));
             b.Services.AddDbContext<UniversityDbContext>(o => o.UseSqlServer(connection));
             var queries = new JwtChecks.SqlCounter();
             var saveGate = new RefreshChecks.SaveGate();
@@ -96,7 +98,9 @@ internal static class CookieSessionChecks
                 b.Configuration["Accounts:ConfirmationPageUrl"] = "https://callback.example.test/confirm";
                 b.Configuration["Accounts:PasswordResetPageUrl"] = "https://callback.example.test/reset";
             }
+            if (oidcChecks is not null) oidcChecks.SetConfiguration(b);
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            if (oidcChecks is not null) { oidcChecks.Configure(b, certificate); b.Logging.AddFilter("Microsoft.AspNetCore.Authentication.OpenIdConnect", LogLevel.None); b.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning); }
             AuthAbuseTestSettings.Configure(b, abuse || web, browser: web);
             if (abuse) AuthAbuseChecks.Configure(b, abuseObservation);
             b.Services.AddScoped<UniversityRegistration.Application.CourseCatalogReader>();
@@ -115,7 +119,8 @@ internal static class CookieSessionChecks
                 ExceptionHandler = async c => await Results.Problem(statusCode: 500, title: "İstek işlenemedi.").ExecuteAsync(c)
             });
             if (abuse) app.Use(async (context, next) => { context.Connection.RemoteIpAddress = abuseObservation.Address; await next(context); });
-            if (web) app.UseUniversityWebClient();
+            if (web || oidc) app.UseUniversityWebClient();
+            if (oidc) OidcChecks.Map(app);
             app.UseRouting(); app.UseAuthentication(); app.UseAuthenticationAbuse(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapAccountEndpoints(); app.MapCourseEndpoints(); app.MapAcademicTermEndpoints(); app.MapCourseOfferingEndpoints();
             if (jwt) RolesChecks.Map(app);
             app.MapStudentEndpoints(); app.MapEnrollmentEndpoints(); app.MapTermRegistrationSummaryEndpoint();
@@ -154,6 +159,7 @@ internal static class CookieSessionChecks
                     (await db.Courses.CountAsync()).ToString(), (await db.CourseOfferings.CountAsync()).ToString()];
             }
             var before = await Academic();
+            if (oidcChecks is not null) { await oidcChecks.Run(app, factory, Create, user, unconfirmed); var afterOidc = await Academic(); Check(before.SequenceEqual(afterOidc), "OIDC preserves academics"); Check(logs.Lines.All(line => secrets.Concat(oidcChecks.Secrets).All(secret => !line.Contains(secret, StringComparison.Ordinal))), "OIDC logs contain no fixture password/hash/code/verifier/token/client secret"); return; }
             if (web)
             {
                 await WebClientChecks.Run(root, app, factory, user, password, certificate, directory, corsLab);
@@ -270,7 +276,9 @@ internal static class CookieSessionChecks
                 await db.RefreshTokenRecords.Where(x => db.RefreshSessions.Any(s => s.Id == x.SessionId && db.Users.Any(u => u.Id == s.UserId && u.UserName!.StartsWith(tag)))).ExecuteDeleteAsync();
                 await db.RefreshSessions.Where(x => db.Users.Any(u => u.Id == x.UserId && u.UserName!.StartsWith(tag))).ExecuteDeleteAsync();
                 if (studentId is not null) await db.Students.Where(x => x.Id == studentId).ExecuteDeleteAsync();
+                await db.UserLogins.Where(x => db.Users.Any(u => u.Id == x.UserId && u.UserName!.StartsWith(tag))).ExecuteDeleteAsync();
                 await db.Users.Where(x => x.UserName!.StartsWith(tag)).ExecuteDeleteAsync();
+                if (oidcChecks?.OwnedRoleId is { } roleId) await db.Roles.Where(r => r.Id == roleId).ExecuteDeleteAsync();
                 var allowed = Path.GetFullPath(Path.Combine(root, "obj", "cookie-checks")) + Path.DirectorySeparatorChar;
                 if (!directory.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(directory) != tag) throw new InvalidOperationException("Unsafe cleanup");
                 Directory.Delete(directory, true);

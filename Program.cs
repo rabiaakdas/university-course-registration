@@ -20,9 +20,10 @@ builder.Services.AddAccountIdentity(builder.Configuration, builder.Environment);
 builder.Services.AddAuthenticationAbuse(builder.Configuration);
 builder.Services.AddUniversityJwt(builder.Configuration, builder.Environment);
 // Token failures and request URLs must never become credential logs.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Authentication.OpenIdConnect", LogLevel.None);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLevel.None);
 // A local confirmation URL contains a bearer secret. Do not log request URLs in this mode.
-if (builder.Configuration.GetValue<bool>("Accounts:LocalMailboxEnabled") || builder.Configuration.GetValue<bool>("Jwt:Enabled"))
+if (builder.Configuration.GetValue<bool>("Oidc:Enabled") || builder.Configuration.GetValue<bool>("Accounts:LocalMailboxEnabled") || builder.Configuration.GetValue<bool>("Jwt:Enabled"))
     builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Services.AddScoped<EnrollmentOperations>();
 builder.Services.AddScoped<CourseCatalogReader>();
@@ -40,9 +41,9 @@ builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadReq
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.None);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.None);
 var app = builder.Build();
-if (args.FirstOrDefault() is "roles" or "students")
+if (args.FirstOrDefault() is "roles" or "students" or "external")
 {
-    try { Environment.ExitCode = args[0] == "roles" ? await RoleMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()) : await StudentMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()); }
+    try { Environment.ExitCode = args[0] == "external" ? await ExternalLoginMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()) : args[0] == "roles" ? await RoleMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()) : await StudentMaintenance.RunAsync(app.Services, app.Environment, args.Skip(1).ToArray()); }
     catch (Exception ex) { Console.Error.WriteLine("Maintenance failed: " + ex.GetType().Name); Environment.ExitCode = 1; }
     await app.DisposeAsync(); return;
 }

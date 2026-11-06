@@ -1,1 +1,1 @@
-{"name":"university-browser-checks","private":true,"type":"module","devDependencies":{"playwright-core":"1.65.0"}}
+{"name":"university-browser-checks","private":true,"type":"module","devDependencies":{"jose":"6.2.15","oidc-provider":"9.13.3","playwright-core":"1.65.0"}}

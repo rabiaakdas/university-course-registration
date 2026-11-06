@@ -8,6 +8,7 @@
 <form id="login-form"><label for="email">E-posta adresi</label><input id="email" name="email" type="email" autocomplete="username" maxlength="256" required>
 <label for="password">Parola</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
 <button id="login" type="submit">Giriş yap</button></form>
+<form id="external-form" action="/accounts/external/login" method="post" hidden><input type="hidden" name="__RequestVerificationToken" id="external-csrf"><input type="hidden" name="returnUrl" value="/"><button id="external-login" class="secondary" type="submit">Harici hesapla giriş</button></form>
 <button id="logout" type="button" hidden>Güvenli çıkış</button><button id="check-session" class="secondary" type="button">Oturumu kontrol et</button>
 <p id="account-message" class="message" role="status" aria-live="polite"></p><p class="hint">Giriş için e-posta adresiniz doğrulanmış olmalıdır.</p></section>
 <section class="card catalog" aria-labelledby="catalog-title"><div class="section-heading"><div><p class="eyebrow">KATALOĞU KEŞFEDİN</p><h2 id="catalog-title">Dersler</h2></div><button id="reload-courses" class="secondary" type="button">Yenile</button></div>

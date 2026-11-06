@@ -14,6 +14,7 @@ public static class AccountSessionEndpoints
 {
     public static void MapAccountSessionEndpoints(this WebApplication app)
     {
+        app.MapExternalLoginEndpoints();
         app.MapGet("/accounts/antiforgery", (HttpContext context, IAntiforgery antiforgery) =>
         {
             context.Response.Headers.CacheControl = "no-store";

@@ -2200,3 +2200,75 @@ TOCTOU, ortak IP ve dağıtık limiter sınırları önceki gibi. Ayrı BFF/OAut
 **Sıradaki gün:** Gün35 OAuth2/OIDC Authorization Code + PKCE.
 **Commit/push:** `feat: add a secure same-origin web client`; gerçek hash ve push
 son raporda; kendi hash'i için ek commit yok.
+
+## Gün 35 — OIDC Authorization Code + PKCE
+
+**Başlangıç kanıtı:** main HEAD `0874ee3d2d587f38939c3fbec8a4beb3c5bd99ef` ve temiz
+çalışma ağacı incelendi. Gün24–34 kodları/ilerleme kaydı vardı; önceki kapsam yeniden
+uygulanmadı. Identity.External ve AspNetUserLogins zaten mevcuttu.
+
+**Değişiklik:** Uyumlu OpenIdConnect10.0.14 paketi, tek açık Development sağlayıcısı,
+code/form_post + PKCE S256, HTTPS discovery/JWKS, issuer/audience/RS256/lifetime,
+state/correlation/nonce; openid ve SaveTokens=false. Default cookie ve ayrı bearer
+şemaları korunuyor. `/accounts/external/options`, CSRF korumalı login POST,
+framework `/signin-oidc` ve yerel callback eklendi. Önceden bağlanmış issuer/sub
+Identity login ilişkisi gerekir; email merge/otomatik hesap/Student/rol yoktur.
+`external link` manager komutu Development'ta çalışıp host açmadan çıkar. UI yalnız
+etkin sağlayıcı için form navigasyonu sunar; CSP sadece form hedefinde dar genişler.
+
+**Gerçek sağlayıcı:** MIT/OpenID Certified oidc-provider9.13.3, izole Node süreci;
+Node24/Edge, gerçek LocalDB ve HTTPS. jose6.2.15 yalnız negatif protokol fixture'ı;
+playwright-core mevcut test bağımlılığı. Uygulama sağlayıcı veya OAuth server içermez.
+Başarı token'ı kütüphanenin kendi işlemlerinden gelir; bozuk ID token deneyleri
+ayrı kontrollü fixture'dır. TLS yalnız teste ait sertifika/SPKI ile doğrulandı.
+
+**Gerçek sonuçlar:** `oidc` exit0. Gerçek sağlayıcı ekranı → code/S256 → backend
+exchange → önceden bağlı yerel hesap/me200; yerel Instructor korunurken sağlayıcının
+fiilen gönderdiği StudentAffairs yetkisi alınmadı. Aynı e-posta/farklı bağlanmamış sub,
+doğrulanmamış, kilitli ve2FA hesaplar reddedildi. Otomatik hesap/Student yok;
+AccessFailedCount artmadı. Aynı link tekrarında0, başka hesaba linkte1. Issuer'a bağlı
+provider anahtarı farklı Authority'de farklı; yanlış issuer imzalı fixture reddedildi.
+İkinci ayrı gerçek IdP kurulmadı.
+
+State/correlation retleri token kabulünden önce; yanlış/eksik nonce signature/issuer/
+audience geçtikten sonra gerçek InvalidNonceException ile reddedildi. Yanlış issuer,
+audience, imza ve geçmiş exp kendi exception türlerine ulaştı. Boş sub ve array sub
+reddedildi; array fixture JSON/claim ayrıştırmasında kesildi, handler'ın çoklu claim
+koluna ulaştığı iddia edilmiyor. Yanlış verifier ve yeniden kullanılan code gerçek
+provider token endpoint'inde400; ilk replay exchange200, ikinci400 gözlendi.
+Token endpoint503, kullanıcı iptali, dış/protocol-relative returnUrl, kayıtsız provider
+redirect URI ve eksik/geçersiz başlangıç CSRF reddedildi. Her başarısız akışta yeni
+application cookie yok; external cookie temiz. Mevcut girişte start409 ve oturum
+korunuyor. Yerel logout sonrası provider session ile yeniden kimlik girişi mümkün.
+Uygulama loglarında fixture parola/hash/code/verifier/token/client secret yok.
+
+**Regresyon:** restore/build0uyarı0hata; unit/core/full exit0. Full mevcut hesap,
+cookie/JWT, refresh aile/yariş/rollback, reset atomikliği, roles/resource-access,
+auth-abuse, akademik kurallar, gerçek unique/FK/batch rollback ve commit sonrası
+Observer kontrollerini içerdi. Web-client exit0: gerçek Edge local login/reload/logout,
+CSRF, XSS literal DOM, storage/cookie/static güvenliği, UI429/403/500/network ve
+izole CORS/preflight geçti. Özellik kapalı seçenek gizli, yerel login çalışıyor;
+Production gerçek executable'da external/lab yolları yok. Etkin Production veya
+eksik/HTTP Authority/client/secret yapılandırmaları kayıt aşamasında reddedildi.
+Kontrollü oidc ProbeFailure exit1; üst script hata yayılımını koruyor.
+
+**Model/temizlik:** EF has-pending-model-changes fark yok. Migration/DB update/Down
+uygulanmadı. App/lab test hedefi olmadı. Test kullanıcı external login ilişkileri,
+roller, öğrenci ve diğer owned kayıtlar temizlendi; izole DB şemaları önceki düzen
+gereği bırakıldı. Geliştirme sırasında başarısız üç test DB'sinde kalan yalnız bu
+çalışmanın Instructor rolleri, users/profiles/logins0 doğrulandıktan sonra temizlendi.
+Provider/browser/HTTPS süreçleri kapatıldı; key/secret/token yalnız pipe/bellekte,
+DP/test dosyaları owned fixture temizliğinde kaldırıldı. Obj çıktıları Git dışıdır.
+
+**Sınırlar/yapılmayanlar:** Ayrı cross-site host testi, Firefox/Safari, gerçek dış IdP,
+federated logout, Production provisioning, crash/network-loss ve reset/external-login
+atomik yarış garantisi yok. Token endpoint503 kontrollü gerçekHTTP deneyidir; fiziksel
+bağlantı kopması denenmedi. Yetki kontrolü-cookie yazımı arası TOCTOU ve mevcut
+security-stamp doğrulama aralığı sürer. Harici hata mesajı yerel hesabın varlığını
+ayırmaz; tam timing/enumeration garantisi yok. Elle `--serve` terminal kurulumu için
+adımlar belgelendi; otomatik provider/browser akışından ayrı manuel kullanıcı
+oturumu yapılmadı. CSP/None protokol cookie ayarları cross-site test kanıtı değildir.
+
+**Sıradaki gün:** Gün36 check-update yarışı, lost update ve son kontenjan deneyi.
+**Commit/push:** Tek çalışma commit mesajı `feat: add OIDC code flow with PKCE and explicit account mapping`.
+Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.

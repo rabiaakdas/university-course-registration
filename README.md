@@ -2336,3 +2336,84 @@ HTTP regresyonuyla sınanır. Buton gizleme rol/sahiplik kontrolünün yerine ge
 
 Browser UI429 ayrıca gerçek login kotası (10/60s) doldurularak doğrulanır; test hostu
 forgot kotası3/60s, diğer backend regresyonları10000/60s kullanır.
+
+## Gün 35: Development OIDC Code + PKCE
+
+Harici giriş yalnız önceden bağlanmış yerel hesaplara açıktır; e-posta eşleştirme,
+otomatik hesap/öğrenci/rol oluşturma yoktur. Yerel parola girişi ve bearer politikası
+aynı kalır. Bu uygulama OAuth sunucusu veya Production IdP çözümü değildir.
+
+**Otomatik gerçek sağlayıcı/browser deneyi (Docker gerekmez):** Node24 ve yüklü Edge,
+.NET10/LocalDB gerekir. `npm ci` yalnız test bağımlılıklarını kurar:
+
+```powershell
+npm ci --prefix scripts/browser --ignore-scripts --no-audit --no-fund
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode oidc
+```
+
+Bu komut izole DB/HTTPS uygulaması, oidc-provider9.13.3 ve Edge açar; dinamik client
+secret/sertifika yalnız pipe/bellekten aktarılır. Gerçek discovery, JWKS, code ve
+PKCE kullanılır; provider/hesap/veri/browser süreçleri test sonunda temizlenir.
+Sağlayıcı [resmi kaynak ve MIT lisansı](https://github.com/panva/node-oidc-provider).
+Test paketleri üretim derlemesi/publish'e girmez. Ret fixture'ları normal sağlayıcı
+başarısından ayrıdır; ayrıntılar [öğrenme notunda](docs/day35-oidc.md).
+
+**Elle yerel kurulum:** Aynı hazır kütüphane test sunucusu `--serve` ile tutulabilir.
+Önce repo dışında yalnız geliştirmeye ait HTTPS PEM sertifikası/private key hazırlayın;
+sertifika127.0.0.1 SAN içermeli ve yalnız bu sertifika Windows/tarayıcı güvenine açıkça
+alınmalıdır. Genel sertifika doğrulaması kapatılmamalıdır. Production sertifikası veya
+JWT anahtarı kullanmayın. Anahtar/secret dosyasını paylaşmayın.
+
+İki terminale aynı client secret'ı güvenli yerel secret kaynağından sağlayın
+(örnekte ortam değişkeni; değeri ekrana yazdırmayın). Provider terminali:
+
+```powershell
+# Oidc__ClientSecret önceden güvenli yerel kaynaktan sağlanmış olmalı.
+$lab = @{
+  address = 'https://localhost:7043' # uygulamanın tam origin'i
+  port = 5443
+  secret = $env:Oidc__ClientSecret
+  cert = Get-Content "$env:USERPROFILE\university-oidc-lab\localhost-cert.pem" -Raw
+  key = Get-Content "$env:USERPROFILE\university-oidc-lab\localhost-key.pem" -Raw
+}
+$lab | ConvertTo-Json -Compress | node scripts/browser/oidc-checks.mjs --serve
+# Ctrl+C: in-memory sağlayıcı oturumları/code'lar ve geçici imza anahtarı kaybolur.
+```
+
+Uygulama terminalinde mevcut DB/HTTPS/Data Protection ayarlarını koruyun:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:Oidc__Enabled = 'true'
+$env:Oidc__Authority = 'https://127.0.0.1:5443'
+$env:Oidc__ClientId = 'university-test'
+# Aynı Oidc__ClientSecret güvenli kaynaktan sağlanır; appsettings/Git'e yazılmaz.
+dotnet run --no-launch-profile -- external link '<mevcut-yerel-account-id>' linked
+dotnet run --no-launch-profile --urls https://localhost:7043
+```
+
+`linked` yalnız bu izole test sağlayıcısının kurulumdan bilinen subject'idir.
+Komut kullanıcı/parola/rol oluşturmaz; hesabı mevcut güvenli hazırlama yöntemiyle
+önceden oluşturup e-postasını doğrulayın. Tekrar aynı bağlantı güvenlidir; başka
+hesaba bağlı key reddedilir. Komut HTTP hostu açmadan çıkar; hata exit1.
+Sağlayıcı ekranı gerçek kullanıcı giriş sistemi değil, açık fixture seçimidir.
+
+Sayfada harici giriş → CSRF korumalı form POST → sağlayıcı ekranı → `linked` seçimi
+→ yerel hesap. Client redirect URI tam `https://localhost:7043/signin-oidc` olmalıdır.
+`/signin-oidc` handler callback'i; `/accounts/external/callback` yerel eşleştirme
+callback'idir. İzinli dönüş yolları yalnız `/` ve `/index.html`dir. Token/code/state
+ve nonce'ı kopyalamayın, trace/HAR/screenshot paylaşmayın. SaveTokens=false; JS'ye
+ID/access token verilmez. Mevcut yerel rol ve doğrulanmış e-posta/lockout koşulları
+uygulanır; desteklenmeyen2FA reddedilir. Yerel logout sağlayıcı oturumunu kapatmaz.
+
+Özellik kapalıyken seçenek gizlidir ve yerel giriş çalışır. Etkin fakat eksik veya
+HTTP Authority/secret/client ayarı başlangıçta reddedilir. Bu test özelliği
+Production ortamında açılamaz. Authority değişimi eski sub bağlantısını devralmaz.
+Başlatma login IP kotasını paylaşır; cookie API401/403 sağlayıcı redirect'ine dönmez.
+Nonce/correlation Secure/None, geçici external cookie Secure/HttpOnly/Lax; uygulama
+cookie'sinin Strict/süre/stamp politikası değişmez. Reset ile giriş arasında anlık
+iptal garantisi ve federated logout yoktur.
+
+Diğer kontroller: `-Mode unit`, `core`, `full`, `web-client`, `cors-lab`.
+`dotnet ef migrations has-pending-model-changes` ile model kontrol edilir;
+AspNetUserLogins zaten mevcut olduğu için yeni migration yoktur.

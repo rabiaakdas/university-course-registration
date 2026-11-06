@@ -646,3 +646,15 @@ DOM'da img/script oluşmaması CSP'den bağımsız güvenli yazma kanıtıdır. 
 uygulama executable'ı da izole DB/anahtar/content root ve exact-cert HTTP istemcisiyle
 başlatılır; statik sayfa200, lab/dev-token/özel canary404 ölçülür. Bu HTTP kontrolü
 browser CORS kanıtı yerine kullanılmaz. Publish'te scripts/browser dışlanır.
+
+### OIDC — gün35
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode oidc`
+Node24, Edge ve `npm ci --prefix scripts/browser --ignore-scripts --no-audit --no-fund`
+gerektirir. Full backend kontrollerinden ayrı çalışır. Gerçek oidc-provider9.13.3,
+HTTPS uygulaması/Edge ve LocalDB; app/lab hedef alınmaz. Secret'lar pipe'tan geçer;
+provider token response bozma ve backchannel verifier/replay yalnız test kodudur.
+Kontrol adları/exception türleri yazılır; token, code, nonce, secret yazılmaz.
+`-ProbeFailure` üst script'in exit1 yayılımını doğrular. Fixture/HTTPS/provider/browser
+finally ile temizlenir. Production assembly/publish test sağlayıcısını içermez.
+Ayrıntılı kontrol noktaları ve yapılmayan deneyler `docs/progress.md` Gün35'tedir.

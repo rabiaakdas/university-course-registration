@@ -87,6 +87,7 @@ public static class AccountSetup
             options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
             options.Cookie.SameSite = SameSiteMode.Strict;
         });
+        services.AddUniversityOidc(configuration, environment);
         services.Configure<DataProtectionTokenProviderOptions>(options => options.TokenLifespan = TimeSpan.FromHours(2));
     }
 }
