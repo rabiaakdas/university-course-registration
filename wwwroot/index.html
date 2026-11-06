@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Üniversite · Dersler ve hesabım</title><link rel="stylesheet" href="/site.css"><script src="/site.js" defer></script></head>
+<body><header><a href="/" class="brand">ÜNİVERSİTE <span>Öğrenci hizmetleri</span></a><span class="edition">Dersler ve hesabım</span></header>
+<main><section class="intro"><p class="eyebrow">AKADEMİK YAŞAM</p><h1>Bir sonraki dersinizi keşfedin.</h1><p>Ders kataloğuna göz atın, hesabınızın oturum durumunu kontrol edin.</p></section>
+<div class="layout"><section class="card account" aria-labelledby="account-title"><p class="eyebrow">HESABIM</p><h2 id="account-title">Oturumunuz</h2>
+<p id="session" role="status" aria-live="polite">Oturum kontrol ediliyor…</p><p id="account" hidden></p>
+<form id="login-form"><label for="email">E-posta adresi</label><input id="email" name="email" type="email" autocomplete="username" maxlength="256" required>
+<label for="password">Parola</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+<button id="login" type="submit">Giriş yap</button></form>
+<button id="logout" type="button" hidden>Güvenli çıkış</button><button id="check-session" class="secondary" type="button">Oturumu kontrol et</button>
+<p id="account-message" class="message" role="status" aria-live="polite"></p><p class="hint">Giriş için e-posta adresiniz doğrulanmış olmalıdır.</p></section>
+<section class="card catalog" aria-labelledby="catalog-title"><div class="section-heading"><div><p class="eyebrow">KATALOĞU KEŞFEDİN</p><h2 id="catalog-title">Dersler</h2></div><button id="reload-courses" class="secondary" type="button">Yenile</button></div>
+<p id="course-message" class="message" role="status" aria-live="polite">Dersler yükleniyor…</p><ul id="courses" class="courses"></ul></section></div>
+<noscript>Bu sayfanın giriş ve ders listesi özellikleri için JavaScript gereklidir.</noscript></main>
+<footer>Üniversite · Ders kayıt sistemi <span>Katalog herkese açıktır.</span></footer></body></html>

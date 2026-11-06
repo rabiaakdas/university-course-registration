@@ -6,12 +6,12 @@ using UniversityRegistration.Accounts;
 // Explicit high quotas only for isolated regression hosts. Real low quotas are exercised by auth-abuse.
 internal static class AuthAbuseTestSettings
 {
-    public static void Configure(WebApplicationBuilder b, bool low = false)
+    public static void Configure(WebApplicationBuilder b, bool low = false, bool browser = false)
     {
         b.Configuration["AuthenticationLimits:Login:PermitLimit"] = low ? "10" : "10000";
-        b.Configuration["AuthenticationLimits:Login:WindowSeconds"] = low ? "5" : "60";
+        b.Configuration["AuthenticationLimits:Login:WindowSeconds"] = low && !browser ? "5" : "60";
         b.Configuration["AuthenticationLimits:ForgotPassword:PermitLimit"] = low ? "3" : "10000";
-        b.Configuration["AuthenticationLimits:ForgotPassword:WindowSeconds"] = low ? "5" : "60";
+        b.Configuration["AuthenticationLimits:ForgotPassword:WindowSeconds"] = low && !browser ? "5" : "60";
         b.Services.AddAuthenticationAbuse(b.Configuration);
     }
     public static void Configure(ProcessStartInfo process)

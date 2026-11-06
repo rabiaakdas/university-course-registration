@@ -27,3 +27,4 @@ Thumbs.db
 *.dump
 *.bacpac
 .local/accounts/
+scripts/browser/node_modules/

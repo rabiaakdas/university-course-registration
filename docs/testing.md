@@ -616,3 +616,33 @@ cookie/DB işi, olmayan hesap ise ret işi yapar; sonuçlar hasher sayımının 
 geçmez. Tam zaman eşitliği, gerçek farklı ağ IP'leri veya dağıtık kota kanıtı yoktur.
 Geçici test çıktıları obj altında Git dışındadır; parola/hash/token yalnız bellekte
 sızıntı assertion'ı için tutulur ve rapora basılmaz. Mevcut finally cleanup kullanılır.
+
+
+## Gün 34: web-client ve cors-lab
+
+Önce `npm ci --prefix scripts/browser --ignore-scripts --no-audit --no-fund`.
+Node20+ ve kurulu Edge gerekir; üretim NuGet/JS build sistemi eklenmez.
+`verify-course-writes.ps1 -Mode web-client` mevcut CookieSessionChecks LocalDB,
+Identity, HTTPS sertifika ve finally temizliğini kullanır; browser ayrı süreçteki
+playwright-core ile kurulu Edge'i çalıştırır. Credentials yalnız stdin pipe ile
+aktarılır; hata raporu güvenli adım etiketi taşır. Test sertifikasının SPKI'si izin
+listesine alınır; genel ignoreHTTPSErrors yok. Profil owned temp dizinindedir.
+Anonim görsel kontrol çıktısı `obj/day34-browser.png` Git dışındadır.
+
+`-Mode cors-lab` yalnız origin laboratuvarını çalıştırır; ürün UI adımlarını atlar.
+Geçici üç HTTPS hostu farklı portlar kullanır. Exact-origin izinli public GET,
+izinsiz basit GET ve OPTIONS/asıl GET ayrı sayaçlarla doğrulanır. App hostuna CORS
+izni eklenmez. Bu farklı port deneyi cross-site testi değildir.
+
+Web mode gerçek login10/60s kotasıyla429 üretir; forgot3/60s bu fixture ayarıdır.
+Diğer regresyonların açık yüksek kotası korunur. Sentetik UI400/403/429/500 ve ağ
+arızası yanıtları ayrıca görüntüleme için kullanılır; gerçek backend DB/429 güvenlik
+kanıtı full/auth-abuse kontrollerindedir. Gerçek browser rol403 ve CSRF400 de sınanır.
+Full browser bağımlılığını zorunlu kılmaz; `web-client` ayrı çalıştırılmalıdır.
+`web-client -ProbeFailure` beklenen assertion ve exit1'i üst çalıştırıcıya iletir.
+
+Test XSS fixture'ı yalnız `window.web34Xss` işaretini hedefler, dış ağ/alıcı içermez.
+DOM'da img/script oluşmaması CSP'den bağımsız güvenli yazma kanıtıdır. Production
+uygulama executable'ı da izole DB/anahtar/content root ve exact-cert HTTP istemcisiyle
+başlatılır; statik sayfa200, lab/dev-token/özel canary404 ölçülür. Bu HTTP kontrolü
+browser CORS kanıtı yerine kullanılmaz. Publish'te scripts/browser dışlanır.

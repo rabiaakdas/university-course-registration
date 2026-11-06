@@ -2254,3 +2254,85 @@ ayrı hostta 10/5s ve 3/5s ile gerçek 429/pencere yenilenmesini sınar. IP ayr�
 hostunun Connection özelliğinde kontrollü yapılır; public bypass header yoktur.
 Lockout sonrası kabul için yalnız test hesabının bitişi UserManager ile geçmişe
 alınır; beş dakika beklenmiş gibi sunulmaz. Şema değişikliği/migration yoktur.
+
+
+## Gün 34 — Aynı origin web sayfası
+
+Güvenilen geliştirme HTTPS sertifikasıyla uygulamayı çalıştırıp
+**https://localhost:7080/** adresini açın. Dosyayı file:// ile açmayın.
+
+```powershell
+dotnet dev-certs https --trust
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet run --no-launch-profile --urls https://localhost:7080
+```
+
+Sayfa public ders kataloğunu ve hesabın oturum durumunu gösterir. Doğrulanmış e-posta
+ve parolayla giriş, oturumu yeniden kontrol etme ve POST ile güvenli çıkış vardır.
+401 anonim durum/giriş reddi, 403 yetki reddi, 429 bekleme bilgisi olarak gösterilir.
+Retry-After sonraki isteğin kesin başarısını vaat etmez. Ağ/500 hatası çıkış yapıldı
+sayılmaz; durum belirsiz gösterilir. İstek sırasında butonlar kilitlenir, otomatik
+retry/refresh döngüsü yoktur. Parola her giriş denemesinden sonra temizlenir.
+
+**Yerel hesap hazırlama:** Önceki Gün25 register → yerel mesaj → confirm-email POST
+akışını kullanın; sayfa hesap oluşturmaz ve sabit demo hesabı yoktur. Development'ta
+`Accounts__LocalMailboxEnabled=true` ve güvenilen HTTPS `Accounts__ConfirmationPageUrl`
+ayarıyla uygulamayı açıkça başlatın. Geçerli parola politikasına uygun yeni parolayı
+PowerShell `Get-Credential` ile isteyin; komut geçmişine literal parola koymayın:
+
+```powershell
+$base = 'https://localhost:7080'
+$credential = Get-Credential -Message 'Yerel test hesabı: e-posta ve yeni parola'
+try {
+  $body = @{email=$credential.UserName; password=$credential.GetNetworkCredential().Password} | ConvertTo-Json
+  $created = Invoke-RestMethod "$base/accounts/register" -Method Post -ContentType 'application/json' -Body $body
+} finally { Remove-Variable body,credential -ErrorAction SilentlyContinue }
+```
+
+Yalnız kendi oluşturduğunuz hesaba ait `.local/accounts/messages` dosyasındaki
+bağlantı değerlerini önceki confirm-email POST örneğine aktarın. Dosya/link/token'ı
+terminale veya rapora dökmeyin. GET bağlantısı otomatik doğrulama sayfası değildir.
+Gerçek e-posta gönderilmez; Production'da yerel kutu açılamaz. Otomatik browser testi
+ise kendi izole DB/hesaplarını oluşturup temizler; app/lab verisine yazmaz.
+
+`wwwroot/index.html`, `site.css`, `site.js` dışında workspace yayınlanmaz. Static
+middleware yalnız web kökünü kullanır; directory browsing yoktur. Yerel outbox,
+anahtarlar, docs/sql/scripts public değildir. HTML'e self kaynaklı CSP, frame/object
+ve base kısıtları; statik yanıtlara no-store/nosniff/no-referrer uygulanır. API CSP'si
+global değiştirilmez. Mevcut me/antiforgery no-store davranışı korunur.
+
+Auth ve antiforgery cookie'leri `__Host-`, Secure, HttpOnly, SameSite=Strict,
+Path=/ ve Domain belirtilmemiş kapsamda kalır. Cookie JS tarafından okunmaz;
+fetch `credentials:"same-origin"` ile taşır. CSRF request token yalnız bellekte,
+X-CSRF-TOKEN header'ında tutulur ve login/logout sonrası yenilenir. Parola alanının
+silinmesi bellekten güvenli silme garantisi değildir. Tarayıcı parola yöneticisi
+engellenmez. JWT/refresh/dev-token sayfaya bağlanmadı; localStorage/sessionStorage/
+IndexedDB'ye parola/token yazılmaz. Ayrı BFF veya frontend framework eklenmedi.
+
+**Tarayıcı ve HTTP doğrulaması ayrı çalıştırılır:** Node20+ ve kurulu Microsoft Edge
+kullanılır. Tek test bağımlılığı kilitlenmiş playwright-core'dur; production paketi
+veya browser indirmesi eklenmez. Gerekirse Edge yolu `WEB_TEST_EDGE` ile verilebilir.
+
+```powershell
+npm ci --prefix scripts/browser --ignore-scripts --no-audit --no-fund
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode web-client
+# Yalnız ayrı, geçici CORS laboratuvarı:
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode cors-lab
+# Backend kontrolleri (browser güvenlik kanıtının yerine geçmez):
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes --no-build
+```
+
+Test yalnız kendi sertifikasının SPKI değerini browser izin listesine ekler; genel
+sertifika doğrulaması kapatılmaz. Browser profili ve sunucular finally ile temizlenir.
+CORS izinleri yalnız test hostundadır; ana uygulamaya hiçbir origin izni eklenmedi.
+Laboratuvar ayrı portlarla cross-origin okuma/preflight'ı ölçer. Bu cross-site deneyi
+değildir; ayrı site adlarıyla SameSite davranışı doğrulanmadı. SameSite=Strict'in
+aynı-origin login/me/logout akışı gerçek browser'da doğrulanır. UI500/ağ hata
+sunumu kontrollü browser yanıtlarıyla, gerçek backend rate-limit/DB hatası ayrı
+HTTP regresyonuyla sınanır. Buton gizleme rol/sahiplik kontrolünün yerine geçmez.
+
+Browser UI429 ayrıca gerçek login kotası (10/60s) doldurularak doğrulanır; test hostu
+forgot kotası3/60s, diğer backend regresyonları10000/60s kullanır.

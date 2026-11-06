@@ -193,7 +193,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab")
 {
     try
     {
@@ -203,6 +203,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
         if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") { /* HTTPS checks ran while the migrated fixture existed. */ }
+        else if (mode is "web-client" or "cors-lab") await CookieSessionChecks.Run(root, Db, probe, web: true, corsLab: mode == "cors-lab");
         else if (mode == "auth-abuse") await CookieSessionChecks.Run(root, Db, jwt: true, abuse: true);
         else if (mode == "jwt") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
         else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);

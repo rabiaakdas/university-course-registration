@@ -2121,3 +2121,82 @@ JWT iptal sınırları değişmez. Crash/ağ kaybı/timing saldırısı kanıtı
 **Sıradaki gün:** Gün34 XSS/CSRF/cookie flags/token storage/CORS/BFF ve küçük web istemcisi.
 **Commit/push:** `feat: limit authentication abuse and reduce account enumeration`;
 gerçek hash/push son raporda, kendi hash'i için ek commit yok.
+
+
+## Gün 34 — Aynı origin web istemcisi ve tarayıcı güvenliği
+
+Başlangıç: main `c13c6c294c1146fa5ed03b6d53faa1c95c717ec9`, temiz çalışma ağacı.
+Cookie/antiforgery, roller/sahiplik, refresh/reset ve abuse kodları mevcut repo ve
+ilerleme kaydında incelendi; eski günler yeniden uygulanmadı.
+
+**Değişiklik:** wwwroot altında HTML/CSS/JS: e-posta/parola giriş, me durumu,
+CSRF yenilemeli logout, public ders listesi; label/klavye/live region ve dar ekran.
+Göreli, same-origin/no-store fetch; tek eşzamanlı giriş; hata/bekleme/Retry-After.
+401 anonim durum, ağ/500 belirsiz durum olarak ayrılır. Güvenilmeyen metin yalnız
+textContent/createElement ile gösterilir. Auth cookie okunmaz; CSRF request token
+bellekte. JWT/refresh/storage/BFF/frontend framework eklenmedi.
+
+`WebClientSetup` yalnız web-root static provider/default index kullanır. HTML'e
+self CSP, object/frame/base kısıtları; statik no-store/nosniff/no-referrer. API'ye
+CORS/global CSP eklenmedi; cookie/authorization/CSRF/backend sözleşmeleri korunur.
+Test-only playwright-core1.65.0 kilitlendi; kurulu Edge kullanılır, browser indirme
+ve production paket büyümesi yok. scripts/browser publish content'inden dışlandı.
+
+**Gerçek browser doğrulamaları (6 Kasım 2026):**
+- İlk koşu WebRoot'un builder sonrası değiştirilmesi nedeniyle NotSupportedException
+  ile durdu; başlangıç WebApplicationOptions'a taşındı. Son web-client exit0.
+- Gerçek izole LocalDB + HTTPS + Edge: anonim401, doğru giriş ve hesap e-postası,
+  yenilemede cookie kalıcılığı, yanlış parola ortak ret/no-cookie, logout204 sonrası
+  kişisel ekran temizliği/me401. Parola alanı her denemede temizlendi.
+- Login sırasında iki submit tek POST üretti. Kimlik değişimi sonrası farklı CSRF
+  request token alındı; eksik/bozuk logout token400 ve me200 ile oturum korundu.
+- Auth ve CSRF cookie'leri gerçek browser context'inde mevcut; Secure/HttpOnly/
+  Strict/Path=/ ve host kapsamı doğrulandı. document.cookie ikisini de okuyamadı,
+  fetch me200 ile taşıdı. Aynı-origin Strict davranışı geçti.
+- DB'deki HTML/event-handler benzeri ders adı literal göründü; img/script oluşmadı,
+  işaret çalışmadı. Hata metni payload'ı da literal; CSP execution engeli tek kanıt
+  sayılmadı. CSP header'ı, masaüstü ekran görüntüsü ve390px taşmasız düzen incelendi.
+- localStorage/sessionStorage/IndexedDB boş; uygulama dev-token/refresh çağırmadı;
+  console/URL'de parola/cookie/token yok. Host loglarında fixture parola/hash yok.
+- Doğrudan browser HTTP çağrıları katalog yazma ve öğrenci kaydı için403 döndürdü;
+  butonlara güvenilmedi. Yetki matrisi ayrıntıları full backend regresyonunda geçti.
+- Gerçek login kotası10/60s dolduruldu; sonraki UI login429 ve bekleme mesajı,
+  auth-cookie yokluğu doğrulandı. Kontrollü UI403/500/ağ ve literal400 hata sunumu
+  ayrıca browser intercept ile test edildi; bunlar DB arızası simülasyonu sayılmadı.
+- Gerçek Production executable ayrı izole config/DB ile HTTPS'te açıldı: root200,
+  lab/dev-token/outbox/key/docs canary yolları404. Browser sertifika istisnası yalnız
+  test anahtarının SPKI'sine; HTTP kontrolü exact cert'e bağlı, global bypass yok.
+
+**CORS ayrı kanıt:** web-client içinde ve bağımsız cors-lab exit0. Ana app yanıtı
+farklı origin'den okunamadı. Test API'sinde izin olmayan basit GET sunucuya1 kez
+ulaştı ama JS okuyamadı. Reddedilen preflight OPTIONS1 ve ek GET0. Tek izinli origin
+X-Lab preflight ardından GET okuyabildi; diğer origin'in basit GET'i ulaştı ama
+okunamadı (open GET toplam2, OPTIONS1). Yalnız geçici test hostlarında izin var.
+Portlar cross-origin fakat cross-site değildir. Ayrı site adlarıyla SameSite deneyi,
+Firefox/Safari ve kapsamlı erişilebilirlik denetimi yapılmadı.
+
+**HTTP/regresyon:** restore/build0 uyarı0 hata; unit/core/full exit0. Full içinde
+accounts/cookie/JWT/refresh-family/reset/roles/resource-access/auth-abuse çalıştı.
+Gerçek batch INSERT sonrası rollback, refresh yarışları/reset atomikliği, commit
+sonrası observer ve akademik kurallar korundu. Full'den sonra yalnız browser
+fixture/profil/kota/Production sınırı testleri genişletildi, üretim davranışı değişmedi;
+son web-client bunlarla geçti. Kontrollü web-client ProbeFailure exit1, üst script
+koruyor. Publish başarılı; wwwroot3 dosya ve sıkıştırılmış karşılıkları var,
+scripts/browser publish'e girmedi. EF has-pending-model-changes fark yok; migration
+ve app/lab update yapılmadı; Down gerekmedi/denenmedi.
+
+**Temizlik:** Son browser DB `university_registration_tests_day6_c225f53051a6451e98cc1c580677312e`
+yeni SQL bağlantısında Users/Students/Enrollments/Courses0. Full DB
+`university_registration_tests_day6_32d3f8deb95347aba5d7d021cf527678` hesap/rol/oturum/
+token/öğrenci/enrollment0; yalnız2ders/2dönem/3açılış seed. Cookie/catalog fixture
+dizinleri, owned browser süreçleri, UniversityRegistration süreçleri ve geçici JWT
+anahtar dizinleri0. İzole DB şemaları mevcut güvenli yaklaşım gereği bırakıldı.
+Obj test çıktıları/anonim görsel Git dışıdır; sırlar, profiller ve local mesajlar
+commit kapsamına alınmadı. App/lab browser test hedefi olmadı.
+
+**Sınırlar:** CSP/HttpOnly tam XSS/CSRF çözümü değildir; parola alanı temizliği güvenli
+bellek silme değildir. Cookie bileti/security stamp, kopyalanmış cookie ve JWT iptal,
+TOCTOU, ortak IP ve dağıtık limiter sınırları önceki gibi. Ayrı BFF/OAuth sunucusu yok.
+**Sıradaki gün:** Gün35 OAuth2/OIDC Authorization Code + PKCE.
+**Commit/push:** `feat: add a secure same-origin web client`; gerçek hash ve push
+son raporda; kendi hash'i için ek commit yok.

@@ -59,6 +59,7 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
 });
 app.UseStatusCodePages(async context => await Results.Problem(statusCode: context.HttpContext.Response.StatusCode)
     .ExecuteAsync(context.HttpContext));
+app.UseUniversityWebClient();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthenticationAbuse();
