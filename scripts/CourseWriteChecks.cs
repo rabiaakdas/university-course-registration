@@ -19,6 +19,11 @@ var root = args[0];
 var mode = args.Length > 1 ? args[1] : "full";
 var reverse = args.Length > 2 && bool.Parse(args[2]);
 var probe = args.Length > 3 && bool.Parse(args[3]);
+if (mode is "auth-abuse" or "unit" or "full")
+{
+    try { AuthAbuseChecks.Unit(mode == "auth-abuse" && probe); }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; return; }
+}
 if (mode is "resource-access" or "unit" or "full")
 {
     try { await ResourceAccessChecks.Unit(mode == "resource-access" && probe); }
@@ -188,7 +193,7 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse")
 {
     try
     {
@@ -198,6 +203,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
         if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") { /* HTTPS checks ran while the migrated fixture existed. */ }
+        else if (mode == "auth-abuse") await CookieSessionChecks.Run(root, Db, jwt: true, abuse: true);
         else if (mode == "jwt") await CookieSessionChecks.Run(root, Db, probe, jwt: true);
         else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
         else if (mode == "accounts") await AccountsChecks.Run(root, Db);
@@ -353,6 +359,7 @@ try
     await IdentityModelChecks.Run(Db);
     await AccountsChecks.Run(root, Db);
     await CookieSessionChecks.Run(root, Db, jwt: true);
+    await CookieSessionChecks.Run(root, Db, jwt: true, abuse: true);
     await SqlFile("sql/app/academic-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");
     await SqlFile("sql/app/time-slot-example.sql");

@@ -1,4 +1,4 @@
-param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository','cqrs','identity-model','accounts','cookie','jwt','refresh','refresh-family','password-reset','roles','resource-access')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
+param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository','cqrs','identity-model','accounts','cookie','jwt','refresh','refresh-family','password-reset','roles','resource-access','auth-abuse')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
 # Real LocalDB + HTTP checks, no test framework or permanent test project.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -35,13 +35,15 @@ $jwt = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'JwtCh
 $refresh = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'RefreshChecks.cs'))
 $passwordReset = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'PasswordResetChecks.cs'))
 $catalogIdentity = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CatalogTestIdentity.cs'))
+$abuseChecks = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'AuthAbuseChecks.cs'))
+$abuseSettings = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'AuthAbuseTestSettings.cs'))
 $resourceAccess = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'ResourceAccessChecks.cs'))
 $roles = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'RolesChecks.cs'))
 $source = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CourseWriteChecks.cs'))
 @"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
-  <ItemGroup><Compile Include="$catalogIdentity" /><Compile Include="$roles" /><Compile Include="$resourceAccess" /><Compile Include="$accounts" /><Compile Include="$cookie" /><Compile Include="$jwt" /><Compile Include="$refresh" /><Compile Include="$passwordReset" /></ItemGroup>
+  <ItemGroup><Compile Include="$catalogIdentity" /><Compile Include="$roles" /><Compile Include="$resourceAccess" /><Compile Include="$abuseSettings" /><Compile Include="$abuseChecks" /><Compile Include="$accounts" /><Compile Include="$cookie" /><Compile Include="$jwt" /><Compile Include="$refresh" /><Compile Include="$passwordReset" /></ItemGroup>
   <ItemGroup><ProjectReference Include="$project" /><Compile Include="$source" /><Compile Include="$identityModel" /><Compile Include="$mediator" /><Compile Include="$cqrs" /><Compile Include="$repository" /><Compile Include="$repositoryChecks" /><Compile Include="$approvalObserver" /><Compile Include="$builder" /><Compile Include="$builderChecks" /><Compile Include="$summary" /><Compile Include="$adapter" /><Compile Include="$notificationDemo" /><Compile Include="$decorator" /><Compile Include="$observer" /><Compile Include="$core" /><Compile Include="$priority" /><Compile Include="$factories" /><Compile Include="$specifications" /><Compile Include="$eligibility" /><Compile Include="$state" /><Compile Include="$stateExperiment" /><Compile Include="$related" /><Compile Include="$catalog" /><Compile Include="$enrollment" /><Compile Include="$batch" /><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
 </Project>
 "@ | Set-Content (Join-Path $work 'Checks.csproj') -Encoding utf8

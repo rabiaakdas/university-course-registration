@@ -17,6 +17,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:UniversityDatabase bağlantısı yapılandırılmalıdır.");
 builder.Services.AddDbContext<UniversityDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddAccountIdentity(builder.Configuration, builder.Environment);
+builder.Services.AddAuthenticationAbuse(builder.Configuration);
 builder.Services.AddUniversityJwt(builder.Configuration, builder.Environment);
 // Token failures and request URLs must never become credential logs.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLevel.None);
@@ -58,7 +59,9 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
 });
 app.UseStatusCodePages(async context => await Results.Problem(statusCode: context.HttpContext.Response.StatusCode)
     .ExecuteAsync(context.HttpContext));
+app.UseRouting();
 app.UseAuthentication();
+app.UseAuthenticationAbuse();
 app.UseAuthorization();
 
 app.MapCourseEndpoints();

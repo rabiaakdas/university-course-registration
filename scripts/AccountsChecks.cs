@@ -123,6 +123,7 @@ internal static class AccountsChecks
             start.Environment["EnrollmentPolicy__MaxCreditsPerTerm"] = "30";
             start.Environment["Accounts__LocalMailboxEnabled"] = "true";
             start.Environment["Accounts__ConfirmationPageUrl"] = "https://confirmation.example.test/local";
+            AuthAbuseTestSettings.Configure(start);
             process = Process.Start(start)!;
             process.OutputDataReceived += (_, e) => { if (e.Data is not null) processLog.Enqueue(e.Data); };
             process.ErrorDataReceived += (_, e) => { if (e.Data is not null) processLog.Enqueue(e.Data); };
@@ -146,11 +147,12 @@ internal static class AccountsChecks
             b.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Accounts:LocalMailboxEnabled"] = "true", ["Accounts:ConfirmationPageUrl"] = "https://confirmation.example.test/local" });
             b.Services.AddDbContext<UniversityDbContext>(o => o.UseSqlServer(connection).AddInterceptors(gate));
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            AuthAbuseTestSettings.Configure(b);
             b.Services.AddDataProtection().SetApplicationName(tag); // separate test protector purpose and keys
             b.Services.AddSingleton<IAccountConfirmationSender>(sender);
             b.Services.AddProblemDetails(); b.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
             app = b.Build(); app.UseExceptionHandler(h => h.Run(c => Results.Problem(statusCode: 500).ExecuteAsync(c)));
-            app.MapAccountEndpoints(); await app.StartAsync();
+            app.UseRouting(); app.UseAuthenticationAbuse(); app.MapAccountEndpoints(); await app.StartAsync();
             using var http = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
             await using (var db = factory())
             {

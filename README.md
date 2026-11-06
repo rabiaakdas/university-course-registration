@@ -2185,3 +2185,72 @@ akademik yazmayı kapsamaz; kesin eşzamanlı atama garantisi eklenmedi. HTTP d�
 EnrollmentOperations çağrısı güvenilen iç kullanımdır; işlem sınıfı tek başına erişim
 sınırı değildir. Öğretim görevlisi–açılış ilişkisi ve geniş provisioning/atama paneli
 bu kapsamda yoktur. Hesap ve rol sahibi olmak bütün öğrenci verilerine erişim vermez.
+
+
+## Gün 33 — Login ve parola sıfırlama talebi sınırları
+
+`Accounts/AuthenticationAbuse.cs` yerleşik fixed-window limiter ve bir kez hazırlanmış
+Identity dummy hash kullanır. Login gerçek hesapta yine `SignInManager` üzerinden
+çalışır; olmayan hesapta yapılandırılmış `IPasswordHasher<ApplicationUser>` ile bir
+kontrol yapılır ve sonuç ne olursa olsun ortak 401 döner. Parola değiştirilmez.
+Kilitli/doğrulanmamış hesap yollarında hash kontrolü atlanabilir: constant-time veya
+tam enumeration koruması yoktur. Başarılı giriş, DB ve cookie üretimi de farklı maliyettedir.
+
+| Ayar | Varsayılan | Geçerli aralık |
+|---|---:|---:|
+| `AuthenticationLimits:Login:PermitLimit` | 10 | 1–10000 |
+| `AuthenticationLimits:Login:WindowSeconds` | 60 | 1–86400 |
+| `AuthenticationLimits:ForgotPassword:PermitLimit` | 3 | 1–10000 |
+| `AuthenticationLimits:ForgotPassword:WindowSeconds` | 900 | 1–86400 |
+
+Dört ayar zorunludur; eksik/boş/uygunsuz değer başlangıcı durdurur. `appsettings.json`
+varsayılanları sağlar; environment override için `:` yerine `__` kullanılır.
+Her politika ayrı IP kotasıdır; e-posta değiştirmek kotayı yenilemez. Kuyruk yoktur.
+Routing → authentication → rate limiter → authorization → endpoint/CSRF sırası
+korunur. Login/forgot istekleri yapısal veya CSRF açısından hatalı olsa da kotayı
+kullanabilir. Kota dolmuşsa endpoint, parola kontrolü ve bildirim çalışmadan 429 döner.
+Authentication middleware'in mevcut cookie doğrulaması gerektiğinde ayrıca DB işi yapabilir.
+
+- Yapısal hata veya login CSRF reddi: mevcut 400.
+- Olmayan/yanlış parolalı/kilitli/doğrulanmamış/girişe uygun olmayan hesap: aynı 401.
+- Kota aşımı: `authentication_rate_limited` kodlu küçük 429 Problem Details,
+  `Cache-Control: no-store`. `Retry-After` yalnız limiter metadata sağlarsa yukarı
+  yuvarlanmış saniyedir; sonraki isteğin kesin kabul sözü değildir.
+- Beklenmeyen DB hatası: mevcut güvenli 500; 401'e çevrilmez.
+- Forgot-password: uygun/bilinmeyen/doğrulanmamış hesap için önceki ortak 202;
+  limit aşımında 429. Gönderim arızasında teslim edilmiş gibi raporlanmaz.
+
+Identity lockout ayarları değiştirilmedi: 5 başarısız deneme, 5 dakika,
+`AllowedForNewUsers=true`, `lockoutOnFailure=true`. Mevcut hesapların ayrı
+`LockoutEnabled` alanı topluca değiştirilmez. Sayaç ve bitişi Identity yönetir;
+başarılı giriş sayacı sıfırlar. Lockout cookie/JWT/refresh kayıtlarını kendiliğinden
+iptal etmez. Başkasının hesabını kilitleme ve dağıtık password spraying sınırları sürer.
+
+Partition yalnız `Connection.RemoteIpAddress` kullanır; IPv4-mapped IPv6 aynı IPv4
+anahtarına çevrilir, IP yoksa ortak sabit fallback vardır. Forwarded Headers kurulmadı;
+`X-Forwarded-For` doğrudan güven kaynağı değildir. Reverse proxy kurulursa güvenilen
+proxy/ağlar ve middleware sırası ayrıca tasarlanmalıdır. Ortak NAT/IP kullanıcıları
+kotayı paylaşır. Sayaçlar süreç belleğindedir; restart sıfırlayabilir, çoklu instance
+ortak kota sağlamaz. Bu DDoS veya bütün timing saldırıları için çözüm değildir.
+
+3301/3302 event kimlikleriyle yalnız Debug düzeyinde olay türü ve TraceId kaydedilir;
+her reddi ayrıntılı yüksek maliyetli loga dönüştürmeyiz. Auth gövdeleri, başlıkları,
+e-posta/IP, parola/hash, dummy hash ve token loglanmaz. Mevcut güvenli hata filtresi korunur.
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+dotnet run --no-launch-profile --urls https://localhost:7080
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode auth-abuse
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode unit
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode core
+powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode full
+dotnet ef migrations has-pending-model-changes --no-build
+```
+
+Önceki HTTPS antiforgery → login ve forgot-password örnekleri aynen kullanılabilir.
+İzole regresyon hostları 10000/60s kota kullanır; koruma kapatılmaz. `auth-abuse`
+ayrı hostta 10/5s ve 3/5s ile gerçek 429/pencere yenilenmesini sınar. IP ayrımı test
+hostunun Connection özelliğinde kontrollü yapılır; public bypass header yoktur.
+Lockout sonrası kabul için yalnız test hesabının bitişi UserManager ile geçmişe
+alınır; beş dakika beklenmiş gibi sunulmaz. Şema değişikliği/migration yoktur.

@@ -44,7 +44,7 @@ internal static class CookieSessionChecks
             public void Log<T>(LogLevel level, EventId id, T state, Exception? error, Func<T, Exception?, string> format) => owner.Lines.Enqueue(format(state, error));
         }
     }
-    public static async Task Run(string root, Func<UniversityDbContext> factory, bool probe = false, bool jwt = false)
+    public static async Task Run(string root, Func<UniversityDbContext> factory, bool probe = false, bool jwt = false, bool abuse = false)
     {
         if (probe) throw new BehaviorFailure("Cookie session: controlled runner failure");
         var tag = "c26" + Guid.NewGuid().ToString("N");
@@ -52,6 +52,7 @@ internal static class CookieSessionChecks
         Directory.CreateDirectory(directory);
         var keyDirectory = Path.Combine(Path.GetTempPath(), "university-jwt-" + tag);
         var clock = new Clock(); var logs = new Logs(); var secrets = new List<string>();
+        var abuseObservation = new AuthAbuseChecks.Observation();
         var password = " " + Guid.NewGuid().ToString("N") + "Az9! "; secrets.Add(password);
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -96,6 +97,8 @@ internal static class CookieSessionChecks
                 b.Configuration["Accounts:PasswordResetPageUrl"] = "https://callback.example.test/reset";
             }
             b.Services.AddAccountIdentity(b.Configuration, b.Environment);
+            AuthAbuseTestSettings.Configure(b, abuse);
+            if (abuse) AuthAbuseChecks.Configure(b, abuseObservation);
             b.Services.AddScoped<UniversityRegistration.Application.CourseCatalogReader>();
             if (jwt) b.Services.AddSingleton<IAccountConfirmationSender>(sp => { resetSender.Inner = new LocalAccountConfirmationSender(sp.GetRequiredService<LocalConfirmationSettings>()); return resetSender; });
             b.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = false);
@@ -111,7 +114,8 @@ internal static class CookieSessionChecks
                 SuppressDiagnosticsCallback = _ => true,
                 ExceptionHandler = async c => await Results.Problem(statusCode: 500, title: "İstek işlenemedi.").ExecuteAsync(c)
             });
-            app.UseAuthentication(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapAccountEndpoints(); app.MapCourseEndpoints(); app.MapAcademicTermEndpoints(); app.MapCourseOfferingEndpoints();
+            if (abuse) app.Use(async (context, next) => { context.Connection.RemoteIpAddress = abuseObservation.Address; await next(context); });
+            app.UseRouting(); app.UseAuthentication(); app.UseAuthenticationAbuse(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapAccountEndpoints(); app.MapCourseEndpoints(); app.MapAcademicTermEndpoints(); app.MapCourseOfferingEndpoints();
             if (jwt) RolesChecks.Map(app);
             app.MapStudentEndpoints(); app.MapEnrollmentEndpoints(); app.MapTermRegistrationSummaryEndpoint();
             await app.StartAsync();
@@ -149,6 +153,12 @@ internal static class CookieSessionChecks
                     (await db.Courses.CountAsync()).ToString(), (await db.CourseOfferings.CountAsync()).ToString()];
             }
             var before = await Academic();
+            if (abuse)
+            {
+                await AuthAbuseChecks.Run(app, () => Client(), factory, Create, user, unconfirmed, password, secrets, abuseObservation, queries, resetSender, logs.Lines);
+                var afterAbuse = await Academic(); Check(before.SequenceEqual(afterAbuse), "abuse checks preserve academic data");
+                return;
+            }
             if (!jwt)
             {
                 using var disabledClient = Client();

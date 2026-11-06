@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
@@ -139,7 +140,7 @@ internal static class ObserverChecks
             builder.Services.AddProblemDetails();
             app = builder.Build();
             app.UseExceptionHandler(handler => handler.Run(context => Results.Problem(statusCode: 500).ExecuteAsync(context)));
-            app.UseAuthentication();app.UseAuthorization();app.MapAccountSessionEndpoints();app.MapEnrollmentEndpoints(); await app.StartAsync();
+            app.UseRouting();app.UseAuthentication();app.UseAuthenticationAbuse();app.UseAuthorization();app.MapAccountSessionEndpoints();app.MapEnrollmentEndpoints(); await app.StartAsync();
             await identity.LoginAsync();
             using var http = new HttpClient { BaseAddress = new Uri(app.Urls.Single()), Timeout = TimeSpan.FromSeconds(15) };
             async Task<JsonNode> Post(string suffix, int id, int expected)

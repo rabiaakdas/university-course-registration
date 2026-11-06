@@ -2049,3 +2049,75 @@ son resource-access bunlarla geçti, üretim davranışı değiştirilmedi.
 **Sıradaki gün:** Enumeration, lockout ve rate limiting (Gün33).
 **Commit/push:** `feat: authorize student ownership and assigned advisor access`;
 gerçek commit ve push sonucu son raporda; kendi hash’i için ikinci commit yok.
+
+
+## Gün 33 — Hesap keşfini azaltma, lockout ve rate limiting
+
+Başlangıç: main `6f0524497862d91fb24a00648247de62984f1608` ve temiz çalışma ağacı;
+32. gün kaynak erişimi kod/ilerleme kaydında mevcuttu. Önceki günler yeniden uygulanmadı.
+
+**Değişiklik:** `AuthenticationAbuse` ile login10/60s, forgot3/900s ayrı IP fixed
+window, QueueLimit0, metadata tabanlı Retry-After ve güvenli429. Dört ayar zorunlu,
+aralıkları kontrollü. IPv4-mapped adres normalizasyonu ve sabit eksik-IP fallback;
+Forwarded Headers güveni eklenmedi. Routing/authentication/limiter/authorization
+sırası açık. Login'de Identity normalizer ile lookup, gerçek hesapta mevcut
+SignInManager, olmayan hesapta tek startup dummy hash ile yapılandırılmış hasher
+kontrolü. Ortak401 ve mevcut400/500/CSRF korunur. Debug event3301/3302 yalnız tür/TraceId;
+secret veya kişisel girdi loglanmaz. Lockout5/5m/AllowedForNewUsers ve failure sayımı
+korundu; mevcut LockoutEnabled değerleri değiştirilmedi. Forgot ortak202 korunur,
+yeni bilinçli ret429'dur. Paket/model/migration değişmedi.
+
+**Gerçek doğrulamalar (6 Kasım 2026):**
+- Restore ve build başarılı, 0 uyarı/0 hata; unit, core, auth-abuse ve full exit0.
+- İlk auth-abuse derlemesindeki span/await test ifadesi düzeltildi; sonraki koşu geçti.
+- HTTPS yalnız testin tam sertifikasına güvenir. Ortak401 gövde/content-type,
+  auth-cookie yokluğu, CSRF400 ve gerçek invalid-table SQL500 kontrol edildi.
+- Gerçek hasher test decorator'ı: dummy hash startup'ta1; olmayan hesapta1 kontrol;
+  gerçek uygun parola yolunda1 kontrol; dummy DB'de yok. Rate-limited istekte
+  hash/lookup/token/yerel bildirim ve failed-count değişimi yok.
+- Beş yanlış girişte gerçek Identity sayaç/bitiş alanları yeni context ile doğrulandı;
+  kilitte doğru parola reddedildi, başka hesap korunuyor. Bitiş yalnız fixture'da
+  UserManager ile geçmişe alındı; sonraki doğru giriş ve sayaç reseti geçti.
+  Beş dakika duvar saati beklenmedi. Eski cookie/JWT anında iptal olmadı.
+- Ayrı login/forgot kotaları, farklı e-postayla kota yenilenmemesi, sahte XFF'nin
+  etkisizliği, mapped IPv4 aynı kota, kontrollü Connection IP'si farklı kota geçti.
+  Gerçek farklı ağ kaynak IP'leri denenmedi; public test bypass header eklenmedi.
+- Aynı sunucuda 5s test pencereleri yenilendi; kuyruktan sonradan iş çalışmadı.
+  Retry-After biçim/değer ve no-store geçti. Eksik/boş/negatif/sıfır/bozuk/taşan
+  ayarlar gerçek registration üzerinden reddedildi. Eski regresyonlar10000/60s,
+  düşük kota testi10/5s ve3/5s; üretim limitleri kapatılmadı.
+- Forgot uygun/bilinmeyen/doğrulanmamış ortak202; yalnız uygun hesapta token/dosya;
+  sender arızası aynı dış cevap ve değişmeyen parola/stamp/aileler. Kontrollü
+  loglarda parola/hash/dummy/cookie/token bulunmadı.
+- Isınma sonrası full koşusunda beşer HTTPS örneği: mevcut doğru giriş
+  min/medyan/max87,6/93,7/107,3ms; olmayan hesap85,6/91,1/110,3ms.
+  Önceki bağımsız abuse koşusunda medyanlar94,3/103,1ms. Bunlar süre garantisi
+  veya timing açığı yok kanıtı değildir; başarılı ve başarısız yolların DB/cookie
+  işleri farklıdır. Hasher çağrı kanıtı bu gözlemden ayrıdır.
+- Full içinde accounts/Identity/cookie/JWT/refresh-family/password-reset/roles/
+  resource-access geçti; gerçek iki bağlantı refresh yarışı, reset atomik rollback,
+  rol/ownership/CSRF, katalog ve akademik kurallar korundu. Gerçek batch ilk INSERT
+  sonrası unique/FK rollback geçti. Observer commit sonrası Approved okuyabildi,
+  SQL hatasında olay yok, observer arızasında başarı korundu; üretim observer'ı
+  öncesi/sonrası7 SELECT. Önceki deneyler de full/unit üzerinden geçti.
+- `auth-abuse -ProbeFailure` beklenen assertion ve exit1 üretti; üst script korudu.
+- `dotnet ef migrations has-pending-model-changes --no-build`: fark yok. Yeni
+  migration veya app/lab update yok; Down gerekmedi/çalıştırılmadı.
+
+**Temizlik:** Full DB `university_registration_tests_day6_93bc4655a70246d4bb6adf4ce937e905`
+yeni SQL bağlantısıyla kontrol edildi: hesap/rol/üyelik/refresh-token/refresh-session/
+öğrenci/enrollment0; yalnız2ders/2dönem/3açılış seed. Core ve abuse kendi izole
+DB'lerinde boş test tablolarını doğruladı. Geçici catalog/cookie/JWT klasörleri ve
+UniversityRegistration süreç sayısı0. DB şemaları mevcut yaklaşım gereği bırakıldı;
+app/lab test hedefi olmadı. Çıktılar obj altında Git dışı.
+
+**Sınırlar:** Constant-time, tam enumeration/DDoS, dağıtık kota veya gerçek çok-IP
+network deneyi yok. Kilitli/doğrulanmamış ön kontroller ve bildirim/DB zamanları
+farklı kalır. Ortak NAT kotası, password spraying, başkasını kilitleme, restart ve
+çoklu instance sınırları sürer. Proxy kurulursa güvenilen adresler/sıra ayrıca
+ayarlanmalı. Lockout mevcut oturumları otomatik iptal etmez; rol/ownership TOCTOU ve
+JWT iptal sınırları değişmez. Crash/ağ kaybı/timing saldırısı kanıtı üretilmedi.
+
+**Sıradaki gün:** Gün34 XSS/CSRF/cookie flags/token storage/CORS/BFF ve küçük web istemcisi.
+**Commit/push:** `feat: limit authentication abuse and reduce account enumeration`;
+gerçek hash/push son raporda, kendi hash'i için ek commit yok.

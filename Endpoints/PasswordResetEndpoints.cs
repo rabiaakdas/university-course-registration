@@ -15,7 +15,7 @@ public static class PasswordResetEndpoints
     public static readonly EventId DispatchFailed = new(3001, "PasswordResetDispatchFailed");
     public static void MapPasswordResetEndpoints(this WebApplication app)
     {
-        app.MapPost("/accounts/forgot-password", ForgotAsync).AllowAnonymous();
+        app.MapPost("/accounts/forgot-password", ForgotAsync).AllowAnonymous().RequireRateLimiting(AuthenticationAbuse.ForgotPolicy);
         app.MapPost("/accounts/reset-password", ResetAsync).AllowAnonymous();
     }
     private static IResult Accepted() => Results.Json(new { message = "Bilgiler uygunsa parola sıfırlama talimatı gönderilecektir." }, statusCode: 202);

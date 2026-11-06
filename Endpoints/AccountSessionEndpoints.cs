@@ -1,3 +1,4 @@
+using UniversityRegistration.Accounts;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
@@ -19,7 +20,7 @@ public static class AccountSessionEndpoints
             return Results.Ok(new AntiforgeryResponse(antiforgery.GetAndStoreTokens(context).RequestToken!));
         });
         app.MapPost("/accounts/login", async (LoginRequest request, HttpContext context,
-            IAntiforgery antiforgery, SignInManager<ApplicationUser> signIn) =>
+            IAntiforgery antiforgery, SignInManager<ApplicationUser> signIn, DummyPasswordVerification dummy, ILoggerFactory logs) =>
         {
             if (!await ValidCsrf(context, antiforgery)) return CsrfFailure();
             var email = request.Email?.Trim();
@@ -29,9 +30,18 @@ public static class AccountSessionEndpoints
             if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length > 128)
                 errors["password"] = ["Parola zorunludur ve en fazla 128 karakter olabilir."];
             if (errors.Count != 0) return Results.ValidationProblem(errors);
-            var result = await signIn.PasswordSignInAsync(email!, request.Password!, isPersistent: false, lockoutOnFailure: true);
-            return result.Succeeded ? Results.Ok() : Results.Problem(statusCode: 401, title: "Giriş yapılamadı.");
-        });
+            context.Response.Headers.CacheControl = "no-store";
+            // Same normalized username lookup as Identity's string overload; user overload avoids a second lookup.
+            var user = await signIn.UserManager.FindByNameAsync(email!);
+            if (user is null) dummy.Verify(signIn.UserManager.PasswordHasher, request.Password!);
+            else
+            {
+                var result = await signIn.PasswordSignInAsync(user, request.Password!, isPersistent: false, lockoutOnFailure: true);
+                if (result.Succeeded) return Results.Ok();
+            }
+            logs.CreateLogger("AuthenticationAbuse").LogDebug(AuthenticationAbuse.LoginRejected, "Authentication denied; trace {TraceId}", context.TraceIdentifier);
+            return Results.Problem(statusCode: 401, title: "Giriş yapılamadı.");
+        }).RequireRateLimiting(AuthenticationAbuse.LoginPolicy);
         app.MapGet("/accounts/me", async (HttpContext context, UserManager<ApplicationUser> users) =>
         {
             context.Response.Headers.CacheControl = "no-store";

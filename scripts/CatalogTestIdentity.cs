@@ -49,10 +49,11 @@ internal sealed class CatalogTestIdentity : IAsyncDisposable
     {
         builder.Environment.ContentRootPath=directory;builder.Configuration["Accounts:LocalMailboxEnabled"]="false";
         builder.WebHost.ConfigureKestrel(s=>s.Listen(IPAddress.Loopback,Client.BaseAddress!.Port,l=>l.UseHttps(certificate)));
-        builder.Services.AddAccountIdentity(builder.Configuration,builder.Environment);
+        builder.Services.AddAccountIdentity(builder.Configuration,builder.Environment); AuthAbuseTestSettings.Configure(builder);
     }
     public void Configure(ProcessStartInfo info)
     {
+        AuthAbuseTestSettings.Configure(info);
         info.ArgumentList.Add("--contentRoot"); info.ArgumentList.Add(directory);
         info.Environment["Kestrel__Certificates__Default__Path"] = Path.Combine(directory,"server.pfx");
         info.Environment["Kestrel__Certificates__Default__Password"] = password;

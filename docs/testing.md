@@ -589,3 +589,30 @@ testleri kendi açık cookie istemcilerini kullanır. Saf uygulama testleri kull
 bağlanmaz. Önceki migration fixture’ı AdvisorUserId sütunu yokken açık tarihsel SQL
 kullanır; yeni modeli eski şemaya yanlışlıkla insert etmez. Test hesabı temizlenmeden
 önce yalnız testin sahip olduğu Student bağlantıları/atamaları temizlenir.
+
+
+## Gün 33: auth-abuse
+
+`powershell -NoProfile -File scripts/verify-course-writes.ps1 -Mode auth-abuse`
+izole LocalDB ve yalnız testin sertifikasını kabul eden HTTPS hostunda çalışır.
+`-ProbeFailure` kontrollü assertion üretir ve üst script exit1 döner.
+Unit config/key kontrollerini; full ayrıca aynı gerçek abuse senaryosunu içerir.
+
+`AuthAbuseChecks` gerçek Identity hasher/provider'ını test decorator'larıyla sayar.
+Dummy hash yalnız startup'ta hazırlanır; olmayan kullanıcıda bir, gerçek parola
+yolunda bir doğrulama vardır. 429'da lookup/hash/reset-token/disk gönderimi ve
+AccessFailedCount değişimi olmadığı ölçülür. Sahte X-Forwarded-For ignored;
+IP ayrımı yalnız test hostunun Connection.RemoteIpAddress özelliğinden verilir.
+Bu gerçek iki ağ kaynağı deneyi değildir ve üretime header bypass eklemez.
+
+Düşük kota hostu login10/5s, forgot3/5s kullanır. Aynı hostta Retry-After kadar kısa
+beklemeyle pencere yenilenir; restart pencere kanıtı sayılmaz. Eski regresyon
+hostlarında açık 10000/60s ayarı vardır; limiter/CSRF/authorization kapatılmaz.
+Lockout5/5m değişmez; DB eşik/bitiş kanıtından sonra yalnız owned fixture'ın bitişi
+UserManager ile geçmişe alınarak sonraki doğru giriş sınanır.
+
+Isınma ve beşer tekrar sonrası min/medyan/max yalnız gözlemdir. Mevcut doğru giriş
+cookie/DB işi, olmayan hesap ise ret işi yapar; sonuçlar hasher sayımının yerine
+geçmez. Tam zaman eşitliği, gerçek farklı ağ IP'leri veya dağıtık kota kanıtı yoktur.
+Geçici test çıktıları obj altında Git dışındadır; parola/hash/token yalnız bellekte
+sızıntı assertion'ı için tutulur ve rapora basılmaz. Mevcut finally cleanup kullanılır.
