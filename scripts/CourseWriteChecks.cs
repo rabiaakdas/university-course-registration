@@ -103,6 +103,55 @@ void Pass(string label) => Console.WriteLine("PASS: " + label);
 async Task Sql(string sql) { await using var db = Db(); await db.Database.ExecuteSqlRawAsync(sql); }
 async Task<int> Count() { await using var db = Db(); return await db.Courses.CountAsync(); }
 async Task<Course> Read(int id) { await using var db = Db(); return await db.Courses.SingleAsync(c => c.Id == id); }
+// Refuse to reuse any existing database. The generated name is not user input.
+var master = new SqlConnectionStringBuilder(connection) { InitialCatalog = "master" };
+try
+{
+    Check(master.DataSource == @"(localdb)\MSSQLLocalDB" &&
+        System.Text.RegularExpressions.Regex.IsMatch(database, @"^university_registration_tests_day(6|10)_[a-f0-9]{32}$"), "Unsafe test target");
+    await using var checkConnection = new SqlConnection(master.ConnectionString);
+    await checkConnection.OpenAsync();
+    using var check = checkConnection.CreateCommand(); check.CommandText = "SELECT DB_ID(@name)";
+    check.Parameters.AddWithValue("@name", database);
+    Check(await check.ExecuteScalarAsync() is DBNull, "Test DB name already exists");
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine("ENVIRONMENT: LocalDB prerequisite/unused test target; type=" + ex.GetType().Name);
+    Environment.ExitCode = 2;
+    return;
+}
+Console.WriteLine("Test DB: " + database);
+if (mode == "concurrency-lab")
+{
+    try
+    {
+        // Reuse the fresh LocalDB target and migrations, but do not create an HTTP/Identity fixture.
+        await using (var db = Db()) await db.Database.MigrateAsync();
+        await ConcurrencyLabChecks.Run(Db, probe);
+    }
+    catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; }
+    catch (CleanupFailure) { Environment.ExitCode = 3; }
+    catch (Exception ex)
+    {
+        // Lab diagnostics only. Do not dump exception Data, SQL parameters or connection options.
+        string SafeDiagnostic(string text)
+        {
+            text = text.Replace(connection, "[REDACTED CONNECTION]", StringComparison.Ordinal);
+            return System.Text.RegularExpressions.Regex.Replace(text,
+                @"(?i)\b(ConnectionString|Data Source|Server|Initial Catalog|Database|User ID|UID|Password|Pwd|AccessToken|ClientSecret)\s*[:=]\s*(?:""[^""]*""|'[^']*'|[^;\r\n]*)",
+                "$1=[REDACTED]");
+        }
+        for (Exception? error = ex; error is not null; error = error.InnerException)
+        {
+            Console.Error.WriteLine("ENVIRONMENT/EXECUTION concurrency: " + error.GetType().FullName);
+            Console.Error.WriteLine("Message: " + SafeDiagnostic(error.Message));
+            Console.Error.WriteLine("Stack trace: " + SafeDiagnostic(error.StackTrace ?? "(unavailable)"));
+        }
+        Environment.ExitCode = 2;
+    }
+    return;
+}
 Process? api = null;
 var evaluationLogs = new EvaluationLogObserver();
 var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -174,25 +223,6 @@ async Task<(int Status, JsonNode Body, string? Location)> Send(string method, st
 }
 void DetailFields(JsonNode node) => Check(string.Join(',', node.AsObject().Select(p => p.Key).Order()) == "code,credits,id,name", "Detail field contract");
 
-// Refuse to reuse any existing database. The generated name is not user input.
-var master = new SqlConnectionStringBuilder(connection) { InitialCatalog = "master" };
-try
-{
-    Check(master.DataSource == @"(localdb)\MSSQLLocalDB" &&
-        System.Text.RegularExpressions.Regex.IsMatch(database, @"^university_registration_tests_day(6|10)_[a-f0-9]{32}$"), "Unsafe test target");
-    await using var checkConnection = new SqlConnection(master.ConnectionString);
-    await checkConnection.OpenAsync();
-    using var check = checkConnection.CreateCommand(); check.CommandText = "SELECT DB_ID(@name)";
-    check.Parameters.AddWithValue("@name", database);
-    Check(await check.ExecuteScalarAsync() is DBNull, "Test DB name already exists");
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine("ENVIRONMENT: LocalDB prerequisite/unused test target; type=" + ex.GetType().Name);
-    Environment.ExitCode = 2;
-    return;
-}
-Console.WriteLine("Test DB: " + database);
 if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc")
 {
     try

@@ -2272,3 +2272,12 @@ oturumu yapılmadı. CSP/None protokol cookie ayarları cross-site test kanıtı
 **Sıradaki gün:** Gün36 check-update yarışı, lost update ve son kontenjan deneyi.
 **Commit/push:** Tek çalışma commit mesajı `feat: add OIDC code flow with PKCE and explicit account mapping`.
 Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
+
+### Gün 36 — Check-update yarışı ve lost update
+- Öğrenilenler: Yarış durumu, eski veriye dayalı karar, kayıp güncelleme.
+- Değişiklik: İzole DB için concurrency-lab modu eklendi; üretim davranışı değişmedi.
+- Doğrulama: Build ve concurrency-lab geçti, exit 0.
+- Sonuç: Sıralı kontrolde 1 kayıt; yarışta kapasite 1 için 2 kayıt; iki artışta sayaç 1.
+- Temizlik: Deney verileri/tablosu ve bağlantılar temizlendi.
+- Git: Commit/push bekliyor.
+- Sıradaki gün: 37 — Atomik koşullu güncelleme ve kontenjan koruması.
