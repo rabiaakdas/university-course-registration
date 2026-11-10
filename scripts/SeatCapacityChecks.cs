@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -63,10 +63,11 @@ internal static class SeatCapacityChecks
             {
                 Check(!(await db.Database.GetAppliedMigrationsAsync()).Any(), "upgrade requires an unused isolated database");
                 var migrations=db.GetService<IMigrationsAssembly>().Migrations.Keys.Order().ToArray();
-                Check(migrations.Length>1 && migrations[^1].EndsWith("_AddOccupiedSeats",StringComparison.Ordinal),
+                var seatIndex=Array.FindIndex(migrations,m=>m.EndsWith("_AddOccupiedSeats",StringComparison.Ordinal));
+                Check(seatIndex>0,
                     "generate AddOccupiedSeats and insert guarded backfill before running this mode");
-                await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
-                db.AddRange(course,term); db.AddRange(students); await db.SaveChangesAsync();
+                await db.GetService<IMigrator>().MigrateAsync(migrations[seatIndex-1]);
+                db.Add(term); db.AddRange(students); await db.SaveChangesAsync(); await CourseVersionChecks.HistoricalCourseAsync(db,course);
                 offering=await HistoricalOfferingAsync(db,course.Id,term.Id,1);
                 var rows=students.Select(s=>new Enrollment { StudentId=s.Id,CourseOfferingId=offering.Id,CreatedAtUtc=DateTimeOffset.UtcNow }).ToArray();
                 Check(rows[1].TrySubmit() && rows[2].TrySubmit() && rows[2].TryApprove()

@@ -50,7 +50,7 @@ internal static class IdentityModelChecks
             {
                 Check(!(await db.Database.GetAppliedMigrationsAsync()).Any(x => x.EndsWith("AddIdentityAccounts")), "upgrade fixture never downgrades");
                 await db.GetService<IMigrator>().MigrateAsync(previous);
-                db.AddRange(c, t); await db.SaveChangesAsync();
+                db.Add(t); await db.SaveChangesAsync(); await CourseVersionChecks.HistoricalCourseAsync(db,c);
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.Students(StudentNumber, FullName) VALUES({tag}, {"Synthetic migration student"})");
                 studentId = await db.Students.Where(x => x.StudentNumber == tag).Select(x => x.Id).SingleAsync();
                 o = await SeatCapacityChecks.HistoricalOfferingAsync(db,c.Id,t.Id,30);

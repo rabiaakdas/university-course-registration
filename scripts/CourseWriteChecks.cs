@@ -203,6 +203,8 @@ async Task StartApi()
 }
 async Task<(int Status, JsonNode Body, string? Location)> Send(string method, string path, object? body = null, string? raw = null)
 {
+    if (method == "PUT" && path.StartsWith("/courses/") && body is not null && raw is null)
+        body = await CourseVersionChecks.WithCurrentVersion(client, path, body);
     var logBefore = evaluationLogs.Before(path);
     using var request = new HttpRequestMessage(new HttpMethod(method), path);
     if (raw is not null) request.Content = new StringContent(raw, Encoding.UTF8, "application/json");
@@ -223,15 +225,16 @@ async Task<(int Status, JsonNode Body, string? Location)> Send(string method, st
     if (mode == "decorator") await evaluationLogs.Verify(method, path, status, json, logBefore);
     return (status, json, response.Headers.Location?.ToString());
 }
-void DetailFields(JsonNode node) => Check(string.Join(',', node.AsObject().Select(p => p.Key).Order()) == "code,credits,id,name", "Detail field contract");
+void DetailFields(JsonNode node, bool version = true) => Check(string.Join(',', node.AsObject().Select(p => p.Key).Order()) == (version ? "code,credits,id,name,rowVersion" : "code,credits,id,name"), "Detail field contract");
 
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc" or "course-version")
 {
     try
     {
         if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") await RefreshChecks.Upgrade(Db, () => CookieSessionChecks.Run(root, Db, probe, jwt: true));
         else if (mode == "identity-model") await IdentityModelChecks.Upgrade(Db);
         else if (mode == "state") await StateChecks.Upgrade(Db);
+        else if (mode == "course-version") await CourseVersionChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
         if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") { /* HTTPS checks ran while the migrated fixture existed. */ }
@@ -242,6 +245,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "cookie") await CookieSessionChecks.Run(root, Db, probe);
         else if (mode == "accounts") await AccountsChecks.Run(root, Db);
         else if (mode == "identity-model") await IdentityModelChecks.Run(Db);
+        else if (mode == "course-version") await CourseVersionChecks.Run(Db, catalogIdentity);
         else if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
@@ -291,7 +295,7 @@ try
 
     await StartApi();
     var created = await Send("POST", "/courses", new { id = 1, code = "  d5_first  ", name = "  Türkçe Ders  ", credits = 3 });
-    Check(created.Status == 201, "POST 201"); DetailFields(created.Body);
+    Check(created.Status == 201, "POST 201"); DetailFields(created.Body, false);
     var id = created.Body["id"]!.GetValue<int>();
     Check(id > 500 && created.Location == $"/courses/{id}", "Sequence from real max / Location / client Id ignored");
     Check(created.Body["code"]!.GetValue<string>() == "D5_FIRST" && created.Body["name"]!.GetValue<string>() == "Türkçe Ders", "Normalization");
@@ -387,6 +391,7 @@ try
     await SpecificationChecks.Run(Db, Send);
     await EligibilityChecks.Run(Db, Send);
     await StateChecks.Run(Db, Send, StopApi, StartApi);
+    await CourseVersionChecks.Run(Db, catalogIdentity);
     await SummaryChecks.Run(Db, Send, prepareIdentity: async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); });
     await ObserverChecks.Run(root, Db);
     await RepositoryChecks.Run(Db);

@@ -1,4 +1,6 @@
 namespace UniversityRegistration.Contracts;
 
 public record CreateCourseRequest(string? Code, string? Name, int Credits);
-public record UpdateCourseRequest(string? Code, string? Name, int Credits);
+public record UpdateCourseRequest(string? Code, string? Name, int Credits, string? RowVersion);
+
+public record CourseDetailDto(int Id, string Code, string Name, int Credits, byte[] RowVersion);

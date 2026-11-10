@@ -66,7 +66,7 @@ internal static class RefreshChecks
             {
                 Check(!(await db.Database.GetAppliedMigrationsAsync()).Any(), "upgrade only on new owned DB");
                 await db.GetService<IMigrator>().MigrateAsync("20261105101325_AddRefreshSessions");
-                db.AddRange(user, course, term); await db.SaveChangesAsync();
+                db.AddRange(user, term); await db.SaveChangesAsync(); await CourseVersionChecks.HistoricalCourseAsync(db,course);
                 var studentKeys = await db.Database.SqlQuery<int>($"INSERT INTO Students(StudentNumber,FullName,UserId) OUTPUT INSERTED.Id AS [Value] VALUES ({course.Code},{"Synthetic profile"},{user.Id})").ToListAsync();
                 student = new() { Id=studentKeys.Single(),StudentNumber=course.Code,FullName="Synthetic profile" }; Check(student.TryLinkAccount(user.Id),"link");
                 offering = await SeatCapacityChecks.HistoricalOfferingAsync(db,course.Id,term.Id,10);

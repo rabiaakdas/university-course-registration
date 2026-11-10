@@ -6,4 +6,5 @@ public class Course
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public int Credits { get; set; }
+    public byte[] RowVersion { get; private set; } = [];
 }

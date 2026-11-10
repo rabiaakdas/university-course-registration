@@ -137,6 +137,11 @@ internal sealed class CatalogTestIdentity : IAsyncDisposable
         using var login=await c.SendAsync(request);if((int)login.StatusCode!=200)throw new BehaviorFailure("Resource fixture login");
         c.DefaultRequestHeaders.Add("X-CSRF-TOKEN",await Csrf());return(user.Id,mail,c);
     }
+    // Independent authenticated clients, sharing only the pinned test certificate and fixture ownership.
+    public async Task<HttpClient> NewRoleClientAsync(string role) => (await NewAccount(role)).Client;
+    public HttpClient AnonymousClient() => new(new HttpClientHandler { AllowAutoRedirect=false,
+        ServerCertificateCustomValidationCallback=(_,cert,_,_)=>cert is not null && cert.RawData.AsSpan().SequenceEqual(certificate.RawData) })
+        { BaseAddress=Client.BaseAddress, Timeout=TimeSpan.FromSeconds(20) };
     public async Task CleanupAsync()
     {
         if(userId is null) return;

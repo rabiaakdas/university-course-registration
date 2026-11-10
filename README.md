@@ -2453,3 +2453,36 @@ dotnet ef migrations has-pending-model-changes
 çalıştırır. Test DB şeması mevcut çalıştırıcı düzenine göre kalır; owned test kayıtları
 ve bağlantılar temizlenir. [Öğrenme notu](docs/day37-seat-capacity.md),
 [karar](docs/adr/0037-atomic-seat-capacity.md).
+
+
+## Gün 38 — Ders düzenlemede rowversion
+
+`GET /courses/{id}` artık `rowVersion` alanında DB üretimli 8 baytlık sürümü
+Base64 olarak döndürür. `PUT /courses/{id}` aynı alanı zorunlu alır; standart,
+kanonik 12 karakterlik Base64 gerekir. Eksik/bozuk veya 8 bayt olmayan sürüm alan
+bazlı400 döner. Başlangıçta bulunmayan ders404 önceliği korunur.
+
+StudentAffairs cookie ve güncel CSRF ile önce detay okuyun; code/name/credits ile
+birlikte o detayın rowVersion değerini PUT'a gönderin. Başarı200 yeni sürümü döndürür.
+Eski sürüm409 `course_version_conflict` demektir: detay yeniden okunup değişiklikler
+kullanıcı tarafından değerlendirilmelidir. Otomatik retry/merge yoktur. Aynı içerikle
+PUT da sürüm kontrolü yapar ve başarılıysa yeni sürüm üretir.
+
+`/courses` ve `/courses/catalog` öğeleri yalnız id/code/name olarak kalır; POST
+oluşturma cevabı değişmez, sürüm detaydan alınır. rowversion tarih/saat veya yetki
+kanıtı değildir. Cookie/CSRF, normalizasyon, kredi ve kod UNIQUE koşulları korunur.
+
+```powershell
+dotnet restore
+dotnet build
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+.\scripts\verify-course-writes.ps1 -Mode course-version
+.\scripts\verify-course-writes.ps1 -Mode full
+```
+
+`20261110112155_AddCourseRowVersion` yalnız Courses'a rowversion ekler; mevcut alan
+ve ilişkileri yeniden oluşturmaz. Update öncesinde app DB hedefini doğrulayın,
+yazarları durdurun; lab DB'sini hedeflemeyin. Hedefli test kendi izole DB/HTTPS
+fixture'ını kullanır. [Öğrenme notu](docs/day38-optimistic-concurrency.md),
+[ADR0038](docs/adr/0038-course-rowversion.md).

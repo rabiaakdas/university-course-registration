@@ -4,6 +4,7 @@ DECLARE @Columns TABLE (TableName sysname, ColumnName sysname, TypeName sysname,
 INSERT @Columns VALUES
     (N'Courses',N'Id',N'int',4),(N'Courses',N'Code',N'nvarchar',40),
     (N'Courses',N'Name',N'nvarchar',400),(N'Courses',N'Credits',N'int',4),
+    (N'Courses',N'RowVersion',N'timestamp',8),
     (N'AcademicTerms',N'Id',N'int',4),(N'AcademicTerms',N'Name',N'nvarchar',200),
     (N'AcademicTerms',N'StartsOn',N'date',3),(N'AcademicTerms',N'EndsOn',N'date',3),
     (N'CourseOfferings',N'Id',N'int',4),(N'CourseOfferings',N'CourseId',N'int',4),
@@ -20,7 +21,7 @@ IF EXISTS (SELECT 1 FROM @Columns e
        OR (c.default_object_id<>0 AND e.ColumnName NOT IN (N'Id',N'OccupiedSeats')))
     THROW 51000, 'Column type/length/required/identity/default mapping mismatch.', 1;
 IF (SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id=c.object_id
-    WHERE t.name IN (N'Courses',N'AcademicTerms',N'CourseOfferings'))<>14
+    WHERE t.name IN (N'Courses',N'AcademicTerms',N'CourseOfferings'))<>15
     THROW 51000, 'Unexpected model columns.', 1;
 IF (SELECT COUNT(*) FROM sys.key_constraints
     WHERE name IN (N'PK_Courses',N'PK_AcademicTerms',N'PK_CourseOfferings') AND type='PK')<>3

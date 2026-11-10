@@ -40,6 +40,8 @@ internal static class RolesChecks
         async Task<string> Csrf(HttpClient c) {using var r=await c.GetAsync("/accounts/antiforgery");var t=JsonNode.Parse(await r.Content.ReadAsStringAsync())!["requestToken"]!.GetValue<string>();secrets.Add(t);return t;}
         async Task<(int Status,string Body)> Send(HttpClient c,string method,string path,object? body=null,string? csrf=null,string? bearer=null)
         {
+            if(method=="PUT" && path.StartsWith("/courses/") && body is not null)
+                body=await CourseVersionChecks.WithCurrentVersion(c,path,body);
             using var q=new HttpRequestMessage(new HttpMethod(method),path);if(body is not null)q.Content=JsonContent.Create(body);
             if(csrf is not null)q.Headers.Add("X-CSRF-TOKEN",csrf);if(bearer is not null)q.Headers.Authorization=new("Bearer",bearer);
             using var r=await c.SendAsync(q);Check((int)r.StatusCode!=302 && r.Content.Headers.ContentType?.MediaType!="text/html","no redirect/HTML");return ((int)r.StatusCode,await r.Content.ReadAsStringAsync());

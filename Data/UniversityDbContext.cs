@@ -60,6 +60,7 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
         course.Property(x => x.Code).IsRequired().HasMaxLength(20).IsUnicode();
         course.Property(x => x.Name).IsRequired().HasMaxLength(200).IsUnicode();
         course.Property(x => x.Credits).IsRequired();
+        course.Property(x => x.RowVersion).IsRowVersion();
         course.HasIndex(x => x.Code).IsUnique().HasDatabaseName("UX_Courses_Code");
 
         modelBuilder.HasSequence<int>("AcademicTermIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);

@@ -2334,3 +2334,51 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
 - Commit/push: tek çalışma commit'i `feat: enforce seat capacity with atomic enrollment transitions`;
   gerçek hash ve push sonucu son raporda, hash için ek commit yok.
 - Sıradaki çalışma: iyimser eşzamanlılık ve diğer lost-update sınırlarının değerlendirilmesi.
+
+
+### Gün 38 — Course rowversion ve optimistic concurrency
+
+- Kavramlar: stale client, DB üretimli sürüm, EF OriginalValue, koşullu UPDATE,
+  DbUpdateConcurrencyException/409 ve kör retry'nin lost update riski.
+- Değişiklik: Course.RowVersion private setter/IsRowVersion. Detay ve başarılı PUT
+  Base64 sürüm döndürür; PUT kanonik Base64/8 bayt sürüm ister. Eksik/bozuk400,
+  başlangıçta olmayan404, eski sürüm409 `course_version_conflict`. İstemci sürümü
+  OriginalValue yapılır; aynı içerikte de Name IsModified ile koşullu UPDATE vardır.
+  Diğer DB hataları concurrency diye sınıflandırılmaz. Liste/katalog/POST yanıtları,
+  StudentAffairs cookie/CSRF, normalizasyon, kredi ve kod benzersizliği korunur.
+- EF aracı `20261110112155_AddCourseRowVersion` migration/Designer/snapshot üretti.
+  İncelenen gerçek SQL yalnız Courses'a rowversion NOT NULL ekliyor; tablo/ilişki
+  yeniden oluşturma yok. Restore başarılı, build0 uyarı/0 hata; model/snapshot farkı yok.
+- `course-version` hedefli koşu ilk kez fixture'ın küçük harfli rastgele kodunu
+  normalizasyon sonrası aynı beklemesi nedeniyle durdu. Fixture beklenen büyük harf
+  politikasıyla düzeltildi; yeniden koşu exit0. İki bağımsız HTTPS/cookie istemcisi
+  aynı sürümü okudu: ilk200, ikinci409; yeni context ilk değişikliği korudu. Güncel
+  sürümle yeni200 ve yeni sürüm; stale aynı içerik409; eksik/bozuk/7-9 bayt400,
+  yok404, anonymous401/Student403, CSRF400, kredi400, ayrı kod UNIQUE409 geçti.
+  Public liste alanları değişmedi. İzole eski şema yükseltmesinde ders kimliği ve
+  alanları korundu, 8 bayt üretildi; ikinci update/model uyumu doğrulandı.
+- Hedefli başarıdan sonra full yalnız bir kez çalıştırıldı ve exit0 verdi. Mevcut
+  PUT fixture'ları detaydan sürüm alır; dedicated stale testi bu yardımcıyı kullanmaz.
+  Full gerçek SQL şeması/UNIQUE/FK, batch ilk INSERT sonrası rollback, akademik
+  kurallar/state/observer, katalog, hesap/cookie/JWT, refresh-family/reset, roller,
+  ownership ve auth-abuse kontrolleri geçti. Ayrı browser/OIDC modları çalıştırılmadı.
+- Eski migration fixture'ları yeni modelin RowVersion OUTPUT sütununu eski şemada
+  istememesi için açık sütunlu tarihsel Course INSERT ile uyarlandı. Etkilenen
+  seat-capacity modu ayrıca exit0: aşımda migration rollback, geçerli backfill,
+  çift submit/reject/approve-reject, gerçek ara hata rollback ve sayaç eşitliği geçti.
+- App hedefi mevcut appsettings/environment üzerinden doğrulanarak
+  `university_registration_app` seçildi. Yükseltme öncesi uygulama süreci ve başka
+  DB session olmadığı kontrol edildi. Uygulamanın EF/SqlClient sürücüsüyle migration
+  uygulandı; course eski alanları, offering/enrollment/student JSON SHA256 özetleri
+  önce/sonra aynı, mevcut sürümler8 bayt. İkinci update no-op/model uyumlu.
+  Lab DB'sine dokunulmadı; app DB'ye test verisi yazılmadı. Down çalıştırılmadı.
+- Temizlik: hedefli/full/seat fixture'ları ve HTTPS süreçleri kapatıldı. İlk başarısız
+  hedefli DB'de course/account/role kalmadığı ayrıca doğrulandı. Test DB şemaları
+  mevcut yaklaşım gereği kalır (full seed ile); geçici bakım kodu/SQL kaldırıldı.
+  Sertifika/anahtar/parola ve build çıktıları Git'e alınmadı.
+- Belgeler: README, day38-optimistic-concurrency.md, ADR0038; kod konumları ve
+  alternatif/maliyet açıklandı. Otomatik retry/merge, ETag veya yeni katman yok.
+  Silinme ile PUT arasındaki ayrı yarış deneyi yapılmadı; farklı açılış kredi/saat
+  ve danışman atama TOCTOU sınırları çözülmüş değildir.
+- Commit/push: tek commit `feat: prevent stale course updates with rowversion`;
+  gerçek hash/push sonucu son raporda. Kendi hash'i için ek commit üretilmez.
