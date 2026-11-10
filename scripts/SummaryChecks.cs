@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -76,7 +76,7 @@ internal static class SummaryChecks
             Slot(offerings[0].Id,DayOfWeek.Monday,new(6,0),new(7,0));
             Slot(offerings[3].Id,DayOfWeek.Tuesday,new(6,0),new(7,0));
             Slot(offerings[4].Id,DayOfWeek.Wednesday,new(6,0),new(7,0));
-            await using(var db=factory()){db.AddRange(enrollments);db.AddRange(slots);await db.SaveChangesAsync();}
+            await using(var db=factory()){db.AddRange(enrollments);db.AddRange(slots);await SeatCapacityChecks.SaveFixtureAsync(db);}
             if (prepareIdentity is not null) foreach (var student in students) await prepareIdentity(student.Id);
             var before=await Snapshot();var summary=await Get(students[0].Id,terms[0].Id);
             Check(summary["studentId"]!.GetValue<int>()==students[0].Id&&summary["academicTermId"]!.GetValue<int>()==terms[0].Id,"identity");
@@ -119,7 +119,7 @@ internal static class SummaryChecks
             var large=new Course{Code=tag+"L",Name="Wide credit fixture",Credits=int.MaxValue};courses.Add(large);
             await using(var db=factory()){db.Add(large);await db.SaveChangesAsync();}
             var extra=Enumerable.Range(0,20).Select(i=>new CourseOffering{CourseId=i<2?large.Id:courses[1].Id,AcademicTermId=terms[0].Id,SectionCode="X"+i,Capacity=40}).ToArray();offerings.AddRange(extra);
-            await using(var db=factory()){db.AddRange(extra);await db.SaveChangesAsync();db.AddRange(extra.Select(o=>NewEnrollment(students[0].Id,o.Id,EnrollmentStatus.Approved)).ToArray());await db.SaveChangesAsync();}
+            await using(var db=factory()){db.AddRange(extra);await db.SaveChangesAsync();db.AddRange(extra.Select(o=>NewEnrollment(students[0].Id,o.Id,EnrollmentStatus.Approved)).ToArray());await SeatCapacityChecks.SaveFixtureAsync(db);}
             var tieStart=slots.Count;
             Slot(extra[1].Id,DayOfWeek.Monday,new(8,0),new(9,0));
             Slot(extra[0].Id,DayOfWeek.Monday,new(8,0),new(9,0));

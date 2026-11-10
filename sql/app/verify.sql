@@ -1,4 +1,4 @@
-:r sql/app/guard-app.sql
+﻿:r sql/app/guard-app.sql
 SET NOCOUNT ON;
 DECLARE @Columns TABLE (TableName sysname, ColumnName sysname, TypeName sysname, ByteLength int);
 INSERT @Columns VALUES
@@ -8,7 +8,8 @@ INSERT @Columns VALUES
     (N'AcademicTerms',N'StartsOn',N'date',3),(N'AcademicTerms',N'EndsOn',N'date',3),
     (N'CourseOfferings',N'Id',N'int',4),(N'CourseOfferings',N'CourseId',N'int',4),
     (N'CourseOfferings',N'AcademicTermId',N'int',4),
-    (N'CourseOfferings',N'SectionCode',N'nvarchar',20),(N'CourseOfferings',N'Capacity',N'int',4);
+    (N'CourseOfferings',N'SectionCode',N'nvarchar',20),(N'CourseOfferings',N'Capacity',N'int',4),
+    (N'CourseOfferings',N'OccupiedSeats',N'int',4);
 IF (SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped=0)<>18
     THROW 51000, 'Expected eight academic tables, seven Identity tables, RefreshSessions, RefreshTokenRecords and migration history.', 1;
 IF EXISTS (SELECT 1 FROM @Columns e
@@ -16,10 +17,10 @@ IF EXISTS (SELECT 1 FROM @Columns e
     LEFT JOIN sys.columns c ON c.object_id=t.object_id AND c.name=e.ColumnName
     WHERE c.column_id IS NULL OR TYPE_NAME(c.user_type_id)<>e.TypeName
        OR c.max_length<>e.ByteLength OR c.is_nullable<>0 OR c.is_identity<>0
-       OR (c.default_object_id<>0 AND e.ColumnName<>N'Id'))
+       OR (c.default_object_id<>0 AND e.ColumnName NOT IN (N'Id',N'OccupiedSeats')))
     THROW 51000, 'Column type/length/required/identity/default mapping mismatch.', 1;
 IF (SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id=c.object_id
-    WHERE t.name IN (N'Courses',N'AcademicTerms',N'CourseOfferings'))<>13
+    WHERE t.name IN (N'Courses',N'AcademicTerms',N'CourseOfferings'))<>14
     THROW 51000, 'Unexpected model columns.', 1;
 IF (SELECT COUNT(*) FROM sys.key_constraints
     WHERE name IN (N'PK_Courses',N'PK_AcademicTerms',N'PK_CourseOfferings') AND type='PK')<>3
@@ -29,8 +30,8 @@ IF (SELECT COUNT(*) FROM sys.indexes
       AND is_unique=1 AND is_unique_constraint=0 AND has_filter=0 AND is_disabled=0)<>2
     THROW 51000, 'Expected two unfiltered unique indexes.', 1;
 IF (SELECT COUNT(*) FROM sys.check_constraints WHERE is_disabled=0 AND is_not_trusted=0
-    AND name IN (N'CK_Courses_Credits_Positive',N'CK_AcademicTerms_DateRange',N'CK_CourseOfferings_Capacity_Positive'))<>3
-    THROW 51000, 'Expected three enabled trusted CHECK constraints.', 1;
+    AND name IN (N'CK_Courses_Credits_Positive',N'CK_AcademicTerms_DateRange',N'CK_CourseOfferings_Capacity_Positive',N'CK_CourseOfferings_OccupiedSeats'))<>4
+    THROW 51000, 'Expected four enabled trusted CHECK constraints.', 1;
 SELECT MigrationId,ProductVersion FROM dbo.__EFMigrationsHistory;
 IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.Courses')
     AND name=N'DF_Courses_Id' AND definition=N'(NEXT VALUE FOR [dbo].[CourseIds])')
@@ -61,3 +62,10 @@ PRINT 'PASS: schema, three sequence defaults, NO ACTION foreign keys, migration 
 
 :r sql/app/verify-identity-schema.sql
 :r sql/app/verify-refresh-schema.sql
+
+IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE parent_object_id=OBJECT_ID(N'dbo.CourseOfferings')
+    AND parent_column_id=COLUMNPROPERTY(OBJECT_ID(N'dbo.CourseOfferings'),N'OccupiedSeats','ColumnId') AND definition=N'((0))')
+    THROW 51000, 'Expected zero occupied-seat default.', 1;
+IF EXISTS (SELECT 1 FROM dbo.CourseOfferings o WHERE o.OccupiedSeats < 0 OR o.OccupiedSeats > o.Capacity
+    OR o.OccupiedSeats <> (SELECT COUNT(*) FROM dbo.Enrollments e WHERE e.CourseOfferingId=o.Id AND e.Status IN (1,2)))
+    THROW 51000, 'Occupied seats differ from active enrollments.', 1;

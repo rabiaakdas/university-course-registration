@@ -1,4 +1,4 @@
-# Öğrenme ilerlemesi
+﻿# Öğrenme ilerlemesi
 
 ## Gün 1
 
@@ -2281,3 +2281,56 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
 - Temizlik: Deney verileri/tablosu ve bağlantılar temizlendi.
 - Git: Commit/push bekliyor.
 - Sıradaki gün: 37 — Atomik koşullu güncelleme ve kontenjan koruması.
+
+### Gün 37 — Atomik kontenjan yönetimi
+
+- İhtiyaç/kavramlar: check-update yarışı, koşullu UPDATE, etkilenen satır sayısı,
+  açık transaction, açılış→kayıt kilit sırası, denormalize sayaç ve postcommit olay.
+- Önceden hazırlanmış Gün37 diff'i korundu ve tamamlandı; Gün36 laboratuvarı yeniden
+  yazılmadı. CourseOffering.OccupiedSeats private setter/default0 ve aralık CHECK'i;
+  submit +1, reject yalnız kazanan geçiş için -1, approve sayaçsız. AsNoTracking
+  okumalar bulk yazma sonrası eski tracker ile kaydedilmez. Kapasite409 kodu
+  `capacity_unavailable`; sahiplik, CSRF, akademik retler ve UNIQUE/FK korundu.
+- EF aracı tek `20261110110730_AddOccupiedSeats` migration'ını, Designer ve snapshot'ı
+  üretti. Up sütun→guarded backfill→CHECK. SQL51037 aşımı açıkça durdurur.
+- Restore başarılı; build 0 uyarı/0 hata. `seat-capacity` exit0: ayrı bağlantı/SPID,
+  kontrollü buluşma; son yere iki submit, aynı Draft'a iki submit, çift reject,
+  approve–reject tek kazanan, gerçek +1 sonrası CHECK hatasında tam rollback,
+  yeni context sayaç=aktif kayıt sayısı ve postcommit observer okuması geçti.
+  İzole eski şema yükseltmesi aşımda tamamen rollback, geçerli dört durumlu veride
+  backfill2/kimlik-alan koruma, ikinci update ve model uyumu doğrulandı.
+- `state` exit0: gerçek HTTP kapasite409/Draft korunması/yer bırakma ve yeniden
+  kullanım, mevcut ret sırası/state/gerekçe/UNIQUE kontrolleri geçti.
+- `observer` exit0: commit sonrası Approved okuma, SQL500'de olay yok, tekrar409,
+  observer hata/iptal politikası ve dış transaction reddi geçti. Lock/recheck ile
+  toplam9 SELECT; log observer ek sorgu üretmiyor.
+- Full ilk koşu eski 13-sütun şema beklentisinde; ikinci koşu negatif kapasitenin
+  yeni CHECK'i önce ihlal etmesinde durdu. `sql/app/verify.sql` yeni sütun/default/
+  CHECK/sayaç eşitliğini doğrulayacak şekilde uyarlandı. Shared constraint testi
+  yalnız negatif kapasitede iki bilinen CHECK'ten 547 kabul eder; diğer exact hata
+  beklentileri korunur. Kontrollü SQL alt testi geçti. Bu hatalar nedeniyle yeniden
+  çalıştırılan son full exit0: HTTP/katalog/akademik/state/summary, gerçek UNIQUE/FK,
+  ilk INSERT sonrası batch rollback, observer, Identity/accounts/cookie/JWT,
+  refresh-family/reset/roles/resource-access/auth-abuse ve mevcut saf deneyler geçti.
+  Başarılı full sonrasında gereksiz tekrar yapılmadı.
+- Uygulama DB'si appsettings ve override kontrolünden `university_registration_app`
+  olarak doğrulandı. Uygulama süreci/başka DB session bulunmadığı kontrol edildi.
+  İlk PowerShell System.Data sürücüsü şifreleme hatası verdi, yazma yapmadı.
+  Geçici bakım yardımcı kodu uygulamanın Microsoft.Data.SqlClient/EF sürücüsüyle
+  mevcut yapılandırmayı kullandı: migration uygulandı; offering eski alanları,
+  enrollment, student ve tamamlanan derslerin önce/sonra SHA256 JSON özetleri eşleşti;
+  sayaçlar aktif kayıt sayısıyla eşit. İkinci update no-op, EF model/snapshot farkı yok.
+  Lab DB'sine bağlanılmadı; app'e test verisi yazılmadı. Down çalıştırılmadı.
+- Temizlik: tüm hedefli testler owned fixture/constraint temizliğini tamamladı.
+  Full koşuları süreç/owned kayıt temizliği yaptı; mevcut düzen gereği izole DB
+  şemaları (full için seed ile) bırakıldı. Geçici bakım kodu/SQL dosyaları kaldırıldı;
+  build çıktıları Git dışında. Son süreç kontrolünde uygulama/test hostu kalmadı.
+- Sınırlar: farklı açılış kredi/saat ve danışman/sahiplik TOCTOU yarışları çözülmedi.
+  Genel lost-update/otomatik retry, Outbox, crash/yanıt kaybı testi yok. Ayrı browser,
+  CORS ve OIDC modları bu çalışmada tekrar çalıştırılmadı. Kapasite kilidi aynı
+  açılıştaki yazmaları serileştirir; benchmark veya tüm concurrency sorunları için
+  garanti değildir.
+- Belgeler: README, docs/day37-seat-capacity.md ve ADR0037.
+- Commit/push: tek çalışma commit'i `feat: enforce seat capacity with atomic enrollment transitions`;
+  gerçek hash ve push sonucu son raporda, hash için ek commit yok.
+- Sıradaki çalışma: iyimser eşzamanlılık ve diğer lost-update sınırlarının değerlendirilmesi.

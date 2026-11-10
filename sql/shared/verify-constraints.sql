@@ -1,4 +1,4 @@
-SET NOCOUNT ON;
+﻿SET NOCOUNT ON;
 SET XACT_ABORT OFF;
 -- Each experiment uses its own transaction and always rolls it back.
 -- NOT NULL in SQL Server is column metadata, so test error 515 plus column name.
@@ -93,7 +93,12 @@ BEGIN
     IF XACT_STATE()<>0 ROLLBACK;
 
     IF @ActualError<>@ExpectedError
-       OR (@ExpectedError<>0 AND CHARINDEX(@ExpectedDetail,@ActualMessage)=0)
+       OR (@ExpectedError<>0 AND CHARINDEX(@ExpectedDetail,@ActualMessage)=0
+           -- A negative capacity violates both constraints in the app schema; SQL Server
+           -- does not promise which CHECK reports first. The old lab schema stays valid.
+           AND NOT (@Id=9 AND @ActualError=547
+               AND COL_LENGTH(N'dbo.CourseOfferings',N'OccupiedSeats') IS NOT NULL
+               AND CHARINDEX(N'CK_CourseOfferings_OccupiedSeats',@ActualMessage)>0))
     BEGIN
         SET @Failure=CONCAT('FAIL ',@Id,' ',@Label,': expected ',@ExpectedError,
             ' / ',@ExpectedDetail,'; actual ',@ActualError,' / ',@ActualMessage);

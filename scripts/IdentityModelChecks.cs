@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -53,8 +53,7 @@ internal static class IdentityModelChecks
                 db.AddRange(c, t); await db.SaveChangesAsync();
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.Students(StudentNumber, FullName) VALUES({tag}, {"Synthetic migration student"})");
                 studentId = await db.Students.Where(x => x.StudentNumber == tag).Select(x => x.Id).SingleAsync();
-                o = new() { CourseId = c.Id, AcademicTermId = t.Id, SectionCode = "A", Capacity = 30 };
-                db.Add(o); await db.SaveChangesAsync();
+                o = await SeatCapacityChecks.HistoricalOfferingAsync(db,c.Id,t.Id,30);
                 e = StateChecks.Active(studentId, o.Id);
                 db.AddRange(e, new StudentCompletedCourse { StudentId = studentId, CourseId = c.Id });
                 await db.SaveChangesAsync();
@@ -136,7 +135,7 @@ internal static class IdentityModelChecks
                 enrollment = StateChecks.Active(students[0].Id, offering.Id);
                 db.AddRange(enrollment, new StudentCompletedCourse { StudentId = students[0].Id, CourseId = course.Id });
                 Check(students[0].TryLinkAccount(user.Id), "link existing account");
-                await db.SaveChangesAsync();
+                await SeatCapacityChecks.SaveFixtureAsync(db);
                 await Create(manager, "profileless");
             }
             await using (var scope = provider.CreateAsyncScope())

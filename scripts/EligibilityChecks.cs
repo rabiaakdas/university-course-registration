@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Application;
@@ -112,7 +112,7 @@ internal static class EligibilityChecks
             Check((await Request(isolated,[offers[5].Id],"eligibility",200))["isEligible"]!.GetValue<bool>(),"other student's schedule excluded");
             Check((await Request(isolated,[offers[0].Id,offers[4].Id],"eligibility",200))["isEligible"]!.GetValue<bool>(),"identical weekly times in different terms allowed");
             await using(var db=factory())
-            {db.Enrollments.AddRange(StateChecks.Active(isolated,offers[2].Id),StateChecks.Active(isolated,offers[5].Id));await db.SaveChangesAsync();}
+            {db.Enrollments.AddRange(StateChecks.Active(isolated,offers[2].Id),StateChecks.Active(isolated,offers[5].Id));await SeatCapacityChecks.SaveFixtureAsync(db);}
             Check((await Request(isolated,[offers[3].Id],"eligibility",200))["isEligible"]!.GetValue<bool>(),"existing-existing conflict is not a new rejection");
             await Request(int.MaxValue,[offers[2].Id],"eligibility",404);
             await Request(fresh,[int.MaxValue],"eligibility",400);
@@ -153,7 +153,7 @@ internal static class EligibilityChecks
             // Unique only stops exact duplicates; overlapping different intervals are allowed in storage.
             await AddSlots(0,(DayOfWeek.Monday,new(9,15),new(9,45)));
             var queryStudent=await Student();
-            await using(var db=factory()) {db.Enrollments.Add(StateChecks.Active(queryStudent,offers[0].Id));await db.SaveChangesAsync();}
+            await using(var db=factory()) {db.Enrollments.Add(StateChecks.Active(queryStudent,offers[0].Id));await SeatCapacityChecks.SaveFixtureAsync(db);}
             await using(var template=factory())
             {
                 var capture=new CatalogSqlCapture();await using var db=new UniversityDbContext(new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(template.Database.GetConnectionString()).AddInterceptors(capture).Options);

@@ -7,4 +7,6 @@ public class CourseOffering
     public int AcademicTermId { get; init; }
     public string SectionCode { get; init; } = string.Empty;
     public int Capacity { get; init; }
+    // Written only by coordinated enrollment transitions; never a request field.
+    public int OccupiedSeats { get; private set; }
 }

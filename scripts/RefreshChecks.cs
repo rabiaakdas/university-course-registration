@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
@@ -69,7 +69,7 @@ internal static class RefreshChecks
                 db.AddRange(user, course, term); await db.SaveChangesAsync();
                 var studentKeys = await db.Database.SqlQuery<int>($"INSERT INTO Students(StudentNumber,FullName,UserId) OUTPUT INSERTED.Id AS [Value] VALUES ({course.Code},{"Synthetic profile"},{user.Id})").ToListAsync();
                 student = new() { Id=studentKeys.Single(),StudentNumber=course.Code,FullName="Synthetic profile" }; Check(student.TryLinkAccount(user.Id),"link");
-                offering = new() { CourseId = course.Id, AcademicTermId = term.Id, SectionCode = "A", Capacity = 10 }; db.Add(offering); await db.SaveChangesAsync();
+                offering = await SeatCapacityChecks.HistoricalOfferingAsync(db,course.Id,term.Id,10);
                 enrollment = StateChecks.Active(student.Id, offering.Id); db.Add(enrollment); await db.SaveChangesAsync();
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO RefreshSessions (Id,UserId,RefreshTokenHash,CreatedAtUtc,ExpiresAtUtc) VALUES ({sessionId},{user.Id},{hash},{created},{expires})");
                 var secondHash = TokenSessions.Hash(TokenSessions.NewRefreshToken()); var thirdHash = TokenSessions.Hash(TokenSessions.NewRefreshToken());

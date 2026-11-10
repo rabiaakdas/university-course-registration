@@ -1,4 +1,4 @@
-# Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
+﻿# Üniversite Ders Kayıt ve Kontenjan Yönetim Sistemi
 
 106 öğrenme birimlik programın ilk otuz bir gün uygulaması: HTTP istek akışını görmek,
 ders/dönem/açılış ayrımını temsil etmek ve ayrı SQL laboratuvarında ilişkisel
@@ -2417,3 +2417,39 @@ iptal garantisi ve federated logout yoktur.
 Diğer kontroller: `-Mode unit`, `core`, `full`, `web-client`, `cors-lab`.
 `dotnet ef migrations has-pending-model-changes` ile model kontrol edilir;
 AspNetUserLogins zaten mevcut olduğu için yeni migration yoktur.
+
+
+## Gün 37 — Atomik kontenjan
+
+`CourseOffering.OccupiedSeats` yalnız Submitted/Approved kayıtlarını sayar.
+Draft→Submitted boş yer koşuluyla bir yer alır; Submitted→Rejected bir yer bırakır;
+Submitted→Approved sayacı değiştirmez. Dolu açılışta submit `409` ve
+`code: "capacity_unavailable"` döner; kayıt Draft kalır. Mevcut cookie, sahiplik,
+danışman ataması, CSRF ve akademik ret kontrolleri korunur.
+
+`EnrollmentOperations` açılış satırını UPDLOCK/HOLDLOCK ile kilitler, koşullu
+kayıt/sayaç güncellemelerini tek transaction içinde kesinleştirir. Dış transaction
+kabul edilmez; onay olayı kendi transaction'ının commit'inden sonra yayımlanır.
+Farklı açılışlar arasındaki kredi/saat ve danışman atama yarışları çözülmüş değildir.
+
+Migration: `20261110110730_AddOccupiedSeats`. Uygulama yazarlarını durdurun,
+mevcut bağlantının app DB'si olduğunu doğrulayın; lab DB'sini hedeflemeyin.
+Sütun → kapasite aşımı kontrolü/backfill → CHECK sırası korunmalıdır. Eski aktif
+kayıt sayısı kapasiteyi aşarsa SQL 51037 ile tüm migration geri alınır; veri onarılmaz.
+
+```powershell
+dotnet restore
+dotnet build
+dotnet ef database update
+dotnet ef migrations has-pending-model-changes
+.\scripts\verify-course-writes.ps1 -Mode seat-capacity
+.\scripts\verify-course-writes.ps1 -Mode state
+.\scripts\verify-course-writes.ps1 -Mode observer
+.\scripts\verify-course-writes.ps1 -Mode full
+```
+
+`seat-capacity` kendi izole LocalDB'sinde eski şemadan yükseltme, kapasite aşımı,
+çift submit/reject, approve–reject ve gerçek ara yazma hatası rollback kontrollerini
+çalıştırır. Test DB şeması mevcut çalıştırıcı düzenine göre kalır; owned test kayıtları
+ve bağlantılar temizlenir. [Öğrenme notu](docs/day37-seat-capacity.md),
+[karar](docs/adr/0037-atomic-seat-capacity.md).

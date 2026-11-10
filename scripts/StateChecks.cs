@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -64,7 +64,7 @@ internal static class StateChecks
                 // Historical Student schema has no UserId; use its explicit columns.
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.Students(StudentNumber,FullName) VALUES({s.StudentNumber},{s.FullName})");
                 s = new Student { Id = await db.Students.Where(x=>x.StudentNumber==tag).Select(x=>x.Id).SingleAsync(), StudentNumber=s.StudentNumber, FullName=s.FullName };
-                o=new(){CourseId=c.Id,AcademicTermId=t.Id,SectionCode="A",Capacity=40};db.Add(o);await db.SaveChangesAsync();
+                o=await SeatCapacityChecks.HistoricalOfferingAsync(db,c.Id,t.Id,40);
                 await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.Enrollments(StudentId,CourseOfferingId,CreatedAtUtc) VALUES({s.Id},{o.Id},{stamp})");
             }
             int oldId;
@@ -143,7 +143,7 @@ internal static class StateChecks
 
             // Submitted candidate must be rechecked against another active row, not just itself.
             var concurrent=await Student();var candidate=await Create(concurrent,0);await Transition(candidate,"submit",200,state:"Submitted");
-            await using(var db=factory()){db.Enrollments.Add(Active(concurrent,offers[2].Id));db.Enrollments.Add(Active(concurrent,offers[5].Id));await db.SaveChangesAsync();}
+            await using(var db=factory()){db.Enrollments.Add(Active(concurrent,offers[2].Id));db.Enrollments.Add(Active(concurrent,offers[5].Id));await SeatCapacityChecks.SaveFixtureAsync(db);}
             var approval=await Transition(candidate,"approve",400);Has(approval,"credit_limit_exceeded");Has(approval,"schedule_conflict");
 
             // Prerequisites can change after creation or submission; both operations re-evaluate.
@@ -182,6 +182,23 @@ internal static class StateChecks
             var list=await send("GET",$"/students/{rejected}/enrollments",null,null);
             Check(list.Status==200 && list.Body.AsArray().Single(n=>n!["id"]!.GetValue<int>()==r)!["rejectionReason"]!.GetValue<string>()=="Başka seçim" && list.Body.AsArray().All(n=>n!.AsObject().ContainsKey("status")),"student list lifecycle contract");
 
+            // Real authorized HTTP path for the new capacity conflict; existing CSRF/ownership fixture is retained.
+            var seatIndex=offers.Count;
+            var seatOffering=new CourseOffering{CourseId=courses[3].Id,AcademicTermId=terms[0].Id,SectionCode="SEAT",Capacity=1};
+            offers.Add(seatOffering);
+            await using(var db=factory()){db.Add(seatOffering);await db.SaveChangesAsync();}
+            var firstSeat=await Create(await Student(),seatIndex);
+            var secondSeat=await Create(await Student(),seatIndex);
+            await Transition(firstSeat,"submit",200,state:"Submitted");
+            var full=await Transition(secondSeat,"submit",409);
+            Check(full["code"]?.GetValue<string>()=="capacity_unavailable","explanatory capacity 409");
+            await using(var db=factory())Check((await db.CourseOfferings.SingleAsync(o=>o.Id==seatOffering.Id)).OccupiedSeats==1
+                && (await db.Enrollments.SingleAsync(e=>e.Id==secondSeat)).Status==EnrollmentStatus.Draft,"full HTTP submit preserves Draft/counter");
+            await Transition(firstSeat,"reject",200,new{reason="Released"},"Rejected","Released");
+            await Transition(secondSeat,"submit",200,state:"Submitted");
+            await Transition(secondSeat,"approve",200,state:"Approved");
+            await using(var db=factory())Check((await db.CourseOfferings.SingleAsync(o=>o.Id==seatOffering.Id)).OccupiedSeats==1,"reject frees and approve retains exactly one seat");
+
             // SQL checks protect valid row states, not transition history. Use only this fixture row.
             async Task BadSql(int? status,string? reason,int error,string objectName)
             {
@@ -196,7 +213,14 @@ internal static class StateChecks
             foreach(var status in new[]{0,1,2})await BadSql(status,"Reason",547,"CK_Enrollments_RejectionReason");
             await using(var db=factory())
             {try{await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.Enrollments SET Status=3, RejectionReason={new string('x',501)} WHERE Id={b}");throw new BehaviorFailure("Expected nvarchar length");}catch(SqlException ex){Check(ex.Number is 2628 or 8152,"SQL length class");}}
-            await using(var db=factory())await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.Enrollments SET Status=2 WHERE Id={b}");
+            await using(var db=factory())
+            {
+                await using var transaction=await db.Database.BeginTransactionAsync();
+                await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.Enrollments SET Status=2 WHERE Id={b}");
+                var offeringId=await db.Enrollments.Where(e=>e.Id==b).Select(e=>e.CourseOfferingId).SingleAsync();
+                await SeatCapacityChecks.SyncFixtureSeatsAsync(db,offeringId);
+                await transaction.CommitAsync();
+            }
             await using(var db=factory())Check((await db.Enrollments.SingleAsync(e=>e.Id==b)).Status==EnrollmentStatus.Approved,"CHECK permits direct Draft-to-Approved SQL; history not enforced");
 
             await using(var template=factory())

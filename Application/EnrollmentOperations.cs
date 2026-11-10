@@ -80,30 +80,64 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
     public Task<EnrollmentTransitionResult> SubmitAsync(int id, CancellationToken ct) => AdvanceAsync(id, false, ct);
     public Task<EnrollmentTransitionResult> ApproveAsync(int id, CancellationToken ct) => AdvanceAsync(id, true, ct);
 
+    // All three transitions own their transaction; no publication inside an outer transaction.
+    private void RequireOwnTransaction()
+    {
+        if (db.Database.CurrentTransaction is not null || db.Database.GetEnlistedTransaction() is not null
+            || Transaction.Current is not null)
+            throw new InvalidOperationException("Enrollment transitions require an independently committed transaction.");
+    }
+
+    // Consistent write order: offering first, then enrollment. This serializes writers for one
+    // offering, not academic eligibility across different offerings/students or ownership changes.
+    private Task<int> LockOfferingAsync(int offeringId, CancellationToken ct) => db.Database.SqlQuery<int>($"""
+        SELECT [Id] AS [Value] FROM [dbo].[CourseOfferings] WITH (UPDLOCK, HOLDLOCK)
+        WHERE [Id] = {offeringId}
+        """).SingleAsync(ct);
+
     private async Task<EnrollmentTransitionResult> AdvanceAsync(int id, bool approve, CancellationToken ct)
     {
-        // This operation owns the save boundary. An outer transaction would make publication premature.
-        if (approve && (db.Database.CurrentTransaction is not null
-            || db.Database.GetEnlistedTransaction() is not null || System.Transactions.Transaction.Current is not null))
-            throw new InvalidOperationException("Approval publication requires an independently committed save.");
-        var enrollment = await db.Enrollments.SingleOrDefaultAsync(e => e.Id == id, ct);
+        RequireOwnTransaction();
+        // Never save a stale tracked offering/enrollment over ExecuteUpdate results.
+        var enrollment = await db.Enrollments.AsNoTracking().SingleOrDefaultAsync(e => e.Id == id, ct);
         if (enrollment is null) return new EnrollmentTransitionResult.NotFound();
         var expected = approve ? EnrollmentStatus.Submitted : EnrollmentStatus.Draft;
         if (enrollment.Status != expected) return new EnrollmentTransitionResult.InvalidTransition();
-        // FK guarantees the offering. Infrastructure/data failures must not become academic rejections.
         var offering = await Offerings([enrollment.CourseOfferingId]).SingleAsync(ct);
         var academic = await EvaluateAsync(enrollment.StudentId, [offering], ct, enrollment.Id);
         if (!academic.IsEligible) return new EnrollmentTransitionResult.AcademicRejected(academic);
-        var changed = approve ? enrollment.TryApprove() : enrollment.TrySubmit();
-        if (!changed) return new EnrollmentTransitionResult.InvalidTransition();
-        await db.SaveChangesAsync(ct);
+        // Preserve the entity's transition rules even though persistence is a conditional SQL update.
+        if (!(approve ? enrollment.TryApprove() : enrollment.TrySubmit()))
+            return new EnrollmentTransitionResult.InvalidTransition();
+
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        {
+            await LockOfferingAsync(enrollment.CourseOfferingId, ct);
+            var target = db.Enrollments.Where(e => e.Id == id && e.CourseOfferingId == enrollment.CourseOfferingId && e.Status == expected);
+            // Recheck after acquiring the lock: a repeated submit is a state conflict, even if full.
+            if (!await target.AnyAsync(ct)) return new EnrollmentTransitionResult.InvalidTransition();
+            if (!approve)
+            {
+                var reserved = await db.CourseOfferings.Where(o => o.Id == enrollment.CourseOfferingId && o.OccupiedSeats < o.Capacity)
+                    .ExecuteUpdateAsync(s => s.SetProperty(o => o.OccupiedSeats, o => o.OccupiedSeats + 1), ct);
+                if (reserved != 1) return new EnrollmentTransitionResult.CapacityUnavailable();
+            }
+            var changed = await target.ExecuteUpdateAsync(s => s
+                .SetProperty(e => e.Status, enrollment.Status).SetProperty(e => e.RejectionReason, (string?)null), ct);
+            if (changed != 1)
+            {
+                await transaction.RollbackAsync(ct);
+                return new EnrollmentTransitionResult.InvalidTransition();
+            }
+            await transaction.CommitAsync(ct);
+            // Any earlier return/exception disposes the uncommitted transaction and rolls it back.
+        }
         if (approve)
         {
             var notification = new EnrollmentApproved(Guid.NewGuid(), enrollment.Id, enrollment.StudentId,
                 enrollment.CourseOfferingId, DateTimeOffset.UtcNow);
-            if (await approvalPublisher.PublishAsync(notification, ct) == ApprovalPublication.Cancelled)
-                // The approval is already committed. Delivery cancellation is not a business rejection.
-                return new EnrollmentTransitionResult.Updated(Response(enrollment));
+            // Postcommit observer cancellation/failure cannot undo approval or its existing seat.
+            await approvalPublisher.PublishAsync(notification, ct);
         }
         return new EnrollmentTransitionResult.Updated(Response(enrollment));
     }
@@ -112,10 +146,24 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
     {
         var cleaned = Enrollment.CleanRejectionReason(reason);
         if (cleaned is null) return new EnrollmentTransitionResult.InvalidReason();
-        var enrollment = await db.Enrollments.SingleOrDefaultAsync(e => e.Id == id, ct);
+        RequireOwnTransaction();
+        var enrollment = await db.Enrollments.AsNoTracking().SingleOrDefaultAsync(e => e.Id == id, ct);
         if (enrollment is null) return new EnrollmentTransitionResult.NotFound();
         if (!enrollment.TryReject(cleaned)) return new EnrollmentTransitionResult.InvalidTransition();
-        await db.SaveChangesAsync(ct);
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        {
+            await LockOfferingAsync(enrollment.CourseOfferingId, ct);
+            var changed = await db.Enrollments.Where(e => e.Id == id && e.CourseOfferingId == enrollment.CourseOfferingId
+                    && e.Status == EnrollmentStatus.Submitted)
+                .ExecuteUpdateAsync(s => s.SetProperty(e => e.Status, enrollment.Status)
+                    .SetProperty(e => e.RejectionReason, enrollment.RejectionReason), ct);
+            if (changed != 1) return new EnrollmentTransitionResult.InvalidTransition();
+            var released = await db.CourseOfferings.Where(o => o.Id == enrollment.CourseOfferingId && o.OccupiedSeats > 0)
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.OccupiedSeats, o => o.OccupiedSeats - 1), ct);
+            if (released != 1)
+                throw new InvalidOperationException("Enrollment seat invariant violated; rejection rolled back.");
+            await transaction.CommitAsync(ct);
+        }
         return new EnrollmentTransitionResult.Updated(Response(enrollment));
     }
 
@@ -138,7 +186,7 @@ public sealed class EnrollmentOperations(UniversityDbContext db, EnrollmentPolic
             .Select(c => c.CourseId).ToArrayAsync(ct);
         var byCourse = required.ToLookup(p => p.CourseId, p => p.PrerequisiteCourseId);
         var termIds = ordered.Select(o => o.AcademicTermId).Distinct().ToArray();
-        // Exclusion is private and derives only from the tracked transition target, never HTTP input.
+        // Exclusion is private and derives only from the persisted transition target, never HTTP input.
         var active = db.Enrollments.Where(e => e.StudentId == studentId
             && (e.Status == EnrollmentStatus.Submitted || e.Status == EnrollmentStatus.Approved));
         if (excludedEnrollmentId is int excluded) active = active.Where(e => e.Id != excluded);

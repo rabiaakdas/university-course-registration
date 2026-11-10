@@ -73,13 +73,18 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
 
         modelBuilder.HasSequence<int>("CourseOfferingIds", "dbo").StartsAt(1).IncrementsBy(1).HasMin(1);
         var offering = modelBuilder.Entity<CourseOffering>();
-        offering.ToTable("CourseOfferings", table => table.HasCheckConstraint("CK_CourseOfferings_Capacity_Positive", "[Capacity] > 0"));
+        offering.ToTable("CourseOfferings", table =>
+        {
+            table.HasCheckConstraint("CK_CourseOfferings_Capacity_Positive", "[Capacity] > 0");
+            table.HasCheckConstraint("CK_CourseOfferings_OccupiedSeats", "[OccupiedSeats] >= 0 AND [OccupiedSeats] <= [Capacity]");
+        });
         offering.HasKey(x => x.Id).HasName("PK_CourseOfferings");
         offering.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[CourseOfferingIds]", "DF_CourseOfferings_Id");
         offering.Property(x => x.CourseId).IsRequired();
         offering.Property(x => x.AcademicTermId).IsRequired();
         offering.Property(x => x.SectionCode).IsRequired().HasMaxLength(10).IsUnicode();
         offering.Property(x => x.Capacity).IsRequired();
+        offering.Property(x => x.OccupiedSeats).IsRequired().HasDefaultValue(0);
         offering.HasIndex(x => new { x.CourseId, x.AcademicTermId, x.SectionCode })
             .IsUnique().HasDatabaseName("UX_CourseOfferings_Course_Term_Section");
         offering.HasOne<Course>().WithMany().HasForeignKey(x => x.CourseId)

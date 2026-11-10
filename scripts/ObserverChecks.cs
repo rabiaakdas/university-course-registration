@@ -1,4 +1,4 @@
-using UniversityRegistration.Accounts;
+﻿using UniversityRegistration.Accounts;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
@@ -152,11 +152,12 @@ internal static class ObserverChecks
             async Task<Enrollment> New(bool submitted = true)
             {
                 await using var db = factory();
+                await using var transaction = await db.Database.BeginTransactionAsync();
                 // Each scenario removes only its own previous enrollment; student/offering stay fixed.
                 await db.Enrollments.Where(e => e.StudentId == student.Id).ExecuteDeleteAsync();
                 var e = new Enrollment { StudentId = student.Id, CourseOfferingId = offering.Id, CreatedAtUtc = DateTimeOffset.UtcNow };
                 if (submitted) Check(e.TrySubmit(), "fixture submit");
-                db.Add(e); await db.SaveChangesAsync(); return e;
+                db.Add(e); await SeatCapacityChecks.SaveFixtureAsync(db); await transaction.CommitAsync(); return e;
             }
             async Task State(int id, EnrollmentStatus expected)
             { await using var db = factory(); Check((await db.Enrollments.SingleAsync(e => e.Id == id)).Status == expected, $"DB state enrollment={id} expected={expected}"); }
@@ -246,8 +247,8 @@ internal static class ObserverChecks
                     is EnrollmentTransitionResult.Updated, "query comparison approval");
                 selectCounts.Add(capture.Commands.Count(c => c.Text.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)));
             }
-            Check(selectCounts[0] == 7 && selectCounts[1] == selectCounts[0], "production observer adds no SELECT to existing seven-query approval");
-            Console.WriteLine("PASS: production log observer query comparison: 7 SELECT before/after; create/submit/reject emit no approval event");
+            Check(selectCounts[0] == 9 && selectCounts[1] == selectCounts[0], "production observer adds no SELECT to nine-query approval (including offering lock and state recheck)");
+            Console.WriteLine("PASS: production log observer query comparison: 9 SELECT before/after; create/submit/reject emit no approval event");
             Console.WriteLine("PASS: real HTTP approval/409/404/academic400/SQL500; committed-state observer; observer fault preserves200; postcommit cancellation; outer transaction rejected");
         }
         catch (Exception error) { failure = error; throw; }

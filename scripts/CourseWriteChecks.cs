@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
@@ -122,13 +122,15 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode == "concurrency-lab")
+if (mode is "concurrency-lab" or "seat-capacity")
 {
     try
     {
         // Reuse the fresh LocalDB target and migrations, but do not create an HTTP/Identity fixture.
-        await using (var db = Db()) await db.Database.MigrateAsync();
-        await ConcurrencyLabChecks.Run(Db, probe);
+        if (mode == "seat-capacity")
+        { await SeatCapacityChecks.Upgrade(Db); await SeatCapacityChecks.Run(Db, probe); }
+        else
+        { await using (var db = Db()) await db.Database.MigrateAsync(); await ConcurrencyLabChecks.Run(Db, probe); }
     }
     catch (BehaviorFailure ex) { Console.Error.WriteLine("ASSERTION: " + ex.Message); Environment.ExitCode = 1; }
     catch (CleanupFailure) { Environment.ExitCode = 3; }

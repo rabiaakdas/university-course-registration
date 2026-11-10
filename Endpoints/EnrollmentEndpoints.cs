@@ -30,6 +30,8 @@ public static class EnrollmentEndpoints
         EnrollmentTransitionResult.Updated updated => Results.Ok(updated.Enrollment),
         EnrollmentTransitionResult.NotFound => Results.Problem(statusCode: 404, title: "Kayıt bulunamadı."),
         EnrollmentTransitionResult.InvalidTransition => Results.Problem(statusCode: 409, title: "Bu durumda istenen kayıt geçişi yapılamaz."),
+        EnrollmentTransitionResult.CapacityUnavailable => Results.Problem(statusCode: 409, title: "Ders açılışında boş kontenjan yok.",
+            extensions: new Dictionary<string, object?> { ["code"] = "capacity_unavailable" }),
         EnrollmentTransitionResult.InvalidReason => Results.ValidationProblem(new Dictionary<string, string[]>
         { ["reason"] = ["Ret gerekçesi boş olamaz ve temizlendikten sonra en fazla 500 karakter olmalıdır."] }),
         EnrollmentTransitionResult.AcademicRejected rejected => AcademicRejectionHttp.Problem(rejected.Evaluation),

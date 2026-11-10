@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -154,7 +154,7 @@ internal static class SpecificationChecks
             await using(var db=factory())
             {
                 var bigB=new CourseOffering{CourseId=courses[7].Id,AcademicTermId=terms[0].Id,SectionCode="B",Capacity=1};offers.Add(bigB);db.Add(bigB);await db.SaveChangesAsync();
-                db.Enrollments.AddRange(StateChecks.Active(wide,O(7)), StateChecks.Active(wide,bigB.Id));await db.SaveChangesAsync();
+                db.Enrollments.AddRange(StateChecks.Active(wide,O(7)), StateChecks.Active(wide,bigB.Id));await SeatCapacityChecks.SaveFixtureAsync(db);
             }
             await Request(wide,[O(6)],false,400,"credit_limit_exceeded",terms[0].Id);
 
