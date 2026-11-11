@@ -2486,3 +2486,29 @@ ve ilişkileri yeniden oluşturmaz. Update öncesinde app DB hedefini doğrulay�
 yazarları durdurun; lab DB'sini hedeflemeyin. Hedefli test kendi izole DB/HTTPS
 fixture'ını kullanır. [Öğrenme notu](docs/day38-optimistic-concurrency.md),
 [ADR0038](docs/adr/0038-course-rowversion.md).
+
+
+## Gün 39 — SQL Server isolation laboratuvarı
+
+Üretime isolation ayarı uygulamayan, yeni ve yalnız bu koşuya ait LocalDB üzerinde
+çalışan deney: [day39-isolation.md](docs/day39-isolation.md).
+
+```powershell
+dotnet build --nologo
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode isolation-lab
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode concurrency-lab
+```
+
+READ UNCOMMITTED dirty read; READ COMMITTED non-repeatable read; REPEATABLE READ
+satır koruması ve phantom; SERIALIZABLE koşula uyan INSERT beklemesi gösterilir.
+RCSI statement görünümü ile SNAPSHOT transaction görünümü ayrı seçenekler altında
+karşılaştırılır. Kilit kanıtı süre tahmini değil, SQL DMV'deki bekleyen/engelleyen
+session ve kilit bekleme türüdür. DMV izni yoksa deney başarılı sayılmaz.
+
+RCSI/SNAPSHOT sürümlü okuma, Course.rowversion optimistic yazma kontrolünden
+farklıdır. Kilitli okuma bekleme/deadlock, sürümlü okuma sürüm saklama maliyeti
+getirebilir; hiçbir düzey burada üretim için genel çözüm seçilmedi.
+Yeni isolation DB/tablosu finally ile kaldırılır; app/lab DB ve migration'lar
+kullanılmaz. `-ProbeFailure` beklenen exit1 ile hata yayılımını ve temizliği sınar.
+11 Kasım 2026: build 0 uyarı/hata; isolation ve concurrency smoke exit0;
+hata probu exit1, temizlik başarılı. Üretim değişmediğinden full/HTTP tekrarlanmadı.

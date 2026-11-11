@@ -2382,3 +2382,37 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   ve danışman atama TOCTOU sınırları çözülmüş değildir.
 - Commit/push: tek commit `feat: prevent stale course updates with rowversion`;
   gerçek hash/push sonucu son raporda. Kendi hash'i için ek commit üretilmez.
+
+
+## Gün 39 — SQL Server transaction isolation (11 Kasım 2026)
+
+- Yalnız test kodu: `scripts/IsolationLabChecks.cs`; mevcut çalıştırıcıya tek
+  `isolation-lab` modu. Üretim modeli/endpoint/paket/migration değişmedi.
+- Her koşu yeni `university_registration_tests_day39_<guid>` DB ve küçük indeksli
+  tablo oluşturur. Ayrı unpooled SqlClient bağlantıları, parametreli scalar
+  sorgular, süre sınırlı iptal/rollback/await ve finally DROP kullanılır.
+- RCSI/ALLOW_SNAPSHOT_ISOLATION OFF/OFF, ON/OFF ve OFF/ON ayrı doğrulandı;
+  ayarlar yalnız deney bağlantıları kapalıyken yönetildi. App/lab DB'ye dokunulmadı.
+- Gerçek sonuçlar: RU 99 dirty read → rollback kalıcı10; RC dirty read LCK_M_S
+  bekledi ve rollback sonrası10; RC iki okuma10/20; RR UPDATE LCK_M_X bekledi,
+  kalıcı20; ayrı RR phantom sayısı1/2; SERIALIZABLE INSERT LCK_M_RIn_NL bekledi,
+  okuyucu commit sonrası kalıcı sayı2. Bekleme bilgisi DMV'den gerçek session
+  çiftiyle gözlendi; kısa süre tamamlanmamayı kilit kanıtı saymadık.
+- RCSI açık yazara rağmen commit edilmiş10 okudu; ayrı deneyde10/20.
+  SNAPSHOT aynı transaction'da10/10, yeni transaction'da20. Her deney sonunda
+  yeni bağlantıyla kalıcı satır değeri ve koşula uyan satır sayısı doğrulandı.
+- `dotnet build --nologo`: restore güncel, 0 uyarı/0 hata. Hedefli isolation-lab
+  exit0. `-ProbeFailure` bütün deneylerden sonra beklenen assertion/exit1;
+  finally temizliği başarılı. Mevcut concurrency-lab smoke exit0: sıralı tek
+  kayıt, kontrollü kapasite aşımı ve kayıp artış beklenen kusurları gösterdi.
+- İki isolation koşusunun DB'leri finally içinde; smoke'un bu koşuda oluşturduğu
+  DB ise mevcut satır/tablo temizliği sonrasında ayrıca kaldırıldı ve DB_ID ile
+  yokluğu doğrulandı. Başka bağlantı zorla sonlandırılmadı; uygulama açılmadı.
+- Full/HTTP, migration/model-snapshot komutları çalıştırılmadı: üretim/schema
+  değişmedi. Deadlock, performans, SNAPSHOT yazma çatışması ve crash recovery
+  deneyleri yapılmadı. Önceki günlerin sonuçları yeniden doğrulandı sayılmadı.
+- README ve `docs/day39-isolation.md`: dirty/non-repeatable/phantom ayrımı,
+  RCSI–SNAPSHOT ile rowversion farkı, kilit/sürüm saklama maliyeti, izin ve
+  koordinasyon sınırları. Üretim mimarisi seçilmedi; yeni ADR yok.
+- Commit: `test: demonstrate SQL Server isolation behavior`; gerçek hash/push
+  sonucu son raporda (kendi hash'i için ek commit yok).

@@ -1,4 +1,4 @@
-﻿param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository','cqrs','identity-model','accounts','cookie','jwt','refresh','refresh-family','password-reset','roles','resource-access','auth-abuse','web-client','cors-lab','oidc','concurrency-lab','seat-capacity','course-version')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
+﻿param([ValidateSet('full','unit','core','preview','factories','specifications','eligibility','state','decorator','adapter','summary','builder','observer','repository','cqrs','identity-model','accounts','cookie','jwt','refresh','refresh-family','password-reset','roles','resource-access','auth-abuse','web-client','cors-lab','oidc','concurrency-lab','isolation-lab','seat-capacity','course-version')][string]$Mode = 'full', [switch]$Reverse, [switch]$ProbeFailure)
 # Real LocalDB + HTTP checks, no test framework or permanent test project.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -37,6 +37,7 @@ $passwordReset = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptR
 $catalogIdentity = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CatalogTestIdentity.cs'))
 $courseVersion = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'CourseVersionChecks.cs'))
 $seatCapacity = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'SeatCapacityChecks.cs'))
+$isolationLab = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'IsolationLabChecks.cs'))
 $concurrencyLab = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'ConcurrencyLabChecks.cs'))
 $oidcChecks = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'OidcChecks.cs'))
 $webChecks = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'WebClientChecks.cs'))
@@ -48,7 +49,7 @@ $source = [System.Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'Co
 @"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
-  <ItemGroup><Compile Include="$catalogIdentity" /><Compile Include="$roles" /><Compile Include="$resourceAccess" /><Compile Include="$abuseSettings" /><Compile Include="$abuseChecks" /><Compile Include="$webChecks" /><Compile Include="$oidcChecks" /><Compile Include="$concurrencyLab" /><Compile Include="$seatCapacity" /><Compile Include="$courseVersion" /><Compile Include="$accounts" /><Compile Include="$cookie" /><Compile Include="$jwt" /><Compile Include="$refresh" /><Compile Include="$passwordReset" /></ItemGroup>
+  <ItemGroup><Compile Include="$catalogIdentity" /><Compile Include="$roles" /><Compile Include="$resourceAccess" /><Compile Include="$abuseSettings" /><Compile Include="$abuseChecks" /><Compile Include="$webChecks" /><Compile Include="$oidcChecks" /><Compile Include="$concurrencyLab" /><Compile Include="$isolationLab" /><Compile Include="$seatCapacity" /><Compile Include="$courseVersion" /><Compile Include="$accounts" /><Compile Include="$cookie" /><Compile Include="$jwt" /><Compile Include="$refresh" /><Compile Include="$passwordReset" /></ItemGroup>
   <ItemGroup><ProjectReference Include="$project" /><Compile Include="$source" /><Compile Include="$identityModel" /><Compile Include="$mediator" /><Compile Include="$cqrs" /><Compile Include="$repository" /><Compile Include="$repositoryChecks" /><Compile Include="$approvalObserver" /><Compile Include="$builder" /><Compile Include="$builderChecks" /><Compile Include="$summary" /><Compile Include="$adapter" /><Compile Include="$notificationDemo" /><Compile Include="$decorator" /><Compile Include="$observer" /><Compile Include="$core" /><Compile Include="$priority" /><Compile Include="$factories" /><Compile Include="$specifications" /><Compile Include="$eligibility" /><Compile Include="$state" /><Compile Include="$stateExperiment" /><Compile Include="$related" /><Compile Include="$catalog" /><Compile Include="$enrollment" /><Compile Include="$batch" /><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
 </Project>
 "@ | Set-Content (Join-Path $work 'Checks.csproj') -Encoding utf8
