@@ -12,7 +12,7 @@ internal static class IsolationLabChecks
     static void Check(bool ok, string label)
     { if (!ok) throw new BehaviorFailure("Isolation lab: " + label); }
 
-    static SqlCommand Command(SqlConnection c, SqlTransaction? tx, string sql,
+    internal static SqlCommand Command(SqlConnection c, SqlTransaction? tx, string sql,
         params (string Name, int Value)[] values)
     {
         var command = new SqlCommand(sql, c, tx) { CommandTimeout = 15 };
@@ -20,7 +20,7 @@ internal static class IsolationLabChecks
         return command;
     }
 
-    static async Task<int> Scalar(SqlConnection c, SqlTransaction? tx, string sql, CancellationToken ct,
+    internal static async Task<int> Scalar(SqlConnection c, SqlTransaction? tx, string sql, CancellationToken ct,
         params (string Name, int Value)[] values)
     {
         using var command = Command(c, tx, sql, values);
@@ -28,14 +28,14 @@ internal static class IsolationLabChecks
         return (int)(await command.ExecuteScalarAsync(ct) ?? throw new InvalidOperationException("Missing scalar"));
     }
 
-    static async Task<int> Execute(SqlConnection c, SqlTransaction? tx, string sql, CancellationToken ct,
+    internal static async Task<int> Execute(SqlConnection c, SqlTransaction? tx, string sql, CancellationToken ct,
         params (string Name, int Value)[] values)
     {
         using var command = Command(c, tx, sql, values);
         return await command.ExecuteNonQueryAsync(ct);
     }
 
-    static async Task<SqlConnection> Open(string connection, CancellationToken ct)
+    internal static async Task<SqlConnection> Open(string connection, CancellationToken ct)
     {
         var c = new SqlConnection(connection);
         try { await c.OpenAsync(ct); return c; }
@@ -58,7 +58,7 @@ internal static class IsolationLabChecks
 
     // Completion is coordinated by observed DB lock state, not by elapsed time.
     // The timer only throttles DMV sampling; its tick is never accepted as lock evidence.
-    static async Task ObserveLock(SqlConnection observer, int waiter, int blocker, Task pending, CancellationToken ct)
+    internal static async Task ObserveLock(SqlConnection observer, int waiter, int blocker, Task pending, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(8));

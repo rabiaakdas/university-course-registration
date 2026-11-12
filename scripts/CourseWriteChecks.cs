@@ -90,7 +90,7 @@ if (mode is "preview" or "full")
     catch (Exception ex) { Console.Error.WriteLine("ENVIRONMENT/EXECUTION preview: " + ex.GetType().Name); Environment.ExitCode = 2; return; }
     if (mode == "preview") return;
 }
-var database = (mode == "isolation-lab" ? "university_registration_tests_day39_" : mode == "core" ? "university_registration_tests_day10_" : "university_registration_tests_day6_") + Guid.NewGuid().ToString("N");
+var database = (mode == "locking-lab" ? "university_registration_tests_day40_" : mode == "isolation-lab" ? "university_registration_tests_day39_" : mode == "core" ? "university_registration_tests_day10_" : "university_registration_tests_day6_") + Guid.NewGuid().ToString("N");
 var connection = new SqlConnectionStringBuilder
 {
     DataSource = @"(localdb)\MSSQLLocalDB", InitialCatalog = database,
@@ -108,7 +108,7 @@ var master = new SqlConnectionStringBuilder(connection) { InitialCatalog = "mast
 try
 {
     Check(master.DataSource == @"(localdb)\MSSQLLocalDB" &&
-        System.Text.RegularExpressions.Regex.IsMatch(database, @"^university_registration_tests_day(6|10|39)_[a-f0-9]{32}$"), "Unsafe test target");
+        System.Text.RegularExpressions.Regex.IsMatch(database, @"^university_registration_tests_day(6|10|39|40)_[a-f0-9]{32}$"), "Unsafe test target");
     await using var checkConnection = new SqlConnection(master.ConnectionString);
     await checkConnection.OpenAsync();
     using var check = checkConnection.CreateCommand(); check.CommandText = "SELECT DB_ID(@name)";
@@ -122,12 +122,14 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "concurrency-lab" or "seat-capacity" or "isolation-lab")
+if (mode is "concurrency-lab" or "seat-capacity" or "isolation-lab" or "locking-lab")
 {
     try
     {
         // Isolation owns a schema-free fresh DB; other labs retain their existing migration setup.
-        if (mode == "isolation-lab")
+        if (mode == "locking-lab")
+        { await LockingLabChecks.Run(connection, probe); }
+        else if (mode == "isolation-lab")
         { await IsolationLabChecks.Run(connection, probe); }
         else if (mode == "seat-capacity")
         { await SeatCapacityChecks.Upgrade(Db); await SeatCapacityChecks.Run(Db, probe); }

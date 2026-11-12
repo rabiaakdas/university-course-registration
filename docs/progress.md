@@ -2416,3 +2416,38 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   koordinasyon sınırları. Üretim mimarisi seçilmedi; yeni ADR yok.
 - Commit: `test: demonstrate SQL Server isolation behavior`; gerçek hash/push
   sonucu son raporda (kendi hash'i için ek commit yok).
+
+
+## Gün 40 — Blocking, deadlock ve write skew (12 Kasım 2026)
+
+- `scripts/LockingLabChecks.cs` ve tek `locking-lab` modu eklendi. Gün39 SQL/DMV
+  yardımcıları yalnız test assembly'sinde internal erişimle yeniden kullanıldı.
+  Üretim kodu/model, paket, migration ve app/lab ayarı değişmedi; yeni ADR yok.
+- Yeni day40 GUID DB'si ve Resources/Marks/Departments/Advisors tabloları. Ayrı
+  unpooled bağlantılar, parametreli SQL, sınırlı TCS koordinasyonu; hata halinde
+  eşini iptal etme, bütün task'ları bekleme ve finally cleanup.
+- Blocking gerçek LCK_M_X ile görüldü, A commit sonrası B tamamlandı: X=2,Y=0.
+  LOCK_TIMEOUT 1000 ile gerçek1222; transaction açık kaldı, açık rollback önceden
+  yazılan işareti kaldırdı; @@TRANCOUNT=0, yalnız A'nın X=1 yazması kalıcı.
+- A X→Y / B Y→X: ilk kaynaklar alınmadan ikinciye geçilmiyor. Gerçek1205 alan
+  tek kurban, tek commit; yeni bağlantı iki kaynakta yalnız kazananın katkısını ve
+  yalnız kazananın işaretini gördü. Kurban normal koşuda B, probda A; kimliği sabit
+  varsayılmadı. Timeout/cancellation deadlock başarısı sayılmadı.
+- Tutarlı X→Y: B ilk kilitte beklediği sırada A tamamlandı; iki commit, X=2,Y=2.
+- SNAPSHOT write skew: iki okuma2/2; farklı satırlarda gerçek rowversion koşullu
+  UPDATE'ler ikisi de1 satır etkiledi ve commit oldu; aktif=0 (beklenen kusur).
+  Ayrı düzeltilmiş deney RC + ortak bölüm UPDLOCK,HOLDLOCK: LCK_M_U gözlemi,
+  kilit sonrası sayılar2/1, yalnız bir pasifleştirme, kalıcı aktif=1.
+- Build restore dahil0 uyarı/0 hata. İlk hedefli koşuda XACT_STATE smallint/CLR int
+  uyuşmazlığı ile hata alındı; sorgu açık CAST AS int yapıldı. Son locking-lab
+  exit0; ProbeFailure bütün deneylerden sonra beklenen assertion/exit1. Paylaşılan
+  yardımcılar için isolation-lab smoke exit0. Full/browser/HTTP tekrarlanmadı.
+- Başarısız ilk koşu dahil üç day40 DB'si ve smoke day39 DB'si finally içinde
+  kaldırıldı; DB_ID yokluğu doğrulandı. Başka bağlantı zorla sonlandırılmadı.
+  Yeni sunucu/browser süreci açılmadı; test çıktısı/sır Git'e alınmadı.
+- README ve day40-locking.md: blocking/1205/1222, lock sırası, çok-satırlı kural,
+  rowversion sınırı ve retry maliyetleri. Deadlock graph, performans, crash/ağ
+  kaybı ve üretim danışman atama yarışı test edilmedi. Önceki günler topluca
+  yeniden doğrulanmış sayılmaz; bu karşılaştırma üretim çözümü değildir.
+- Commit: `test: demonstrate deadlocks and write skew`; gerçek hash/push sonucu
+  son raporda. Kendi hash'ini yazmak için ek commit üretilmez.

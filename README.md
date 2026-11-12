@@ -2512,3 +2512,29 @@ Yeni isolation DB/tablosu finally ile kaldırılır; app/lab DB ve migration'lar
 kullanılmaz. `-ProbeFailure` beklenen exit1 ile hata yayılımını ve temizliği sınar.
 11 Kasım 2026: build 0 uyarı/hata; isolation ve concurrency smoke exit0;
 hata probu exit1, temizlik başarılı. Üretim değişmediğinden full/HTTP tekrarlanmadı.
+
+
+## Gün 40 — Blocking, deadlock ve write skew
+
+[Deneyler, gerçek sonuçlar ve sınırlar](docs/day40-locking.md).
+Üretim yerine yeni, yalnız bu koşuya ait LocalDB ve dört küçük tablo kullanılır.
+
+```powershell
+dotnet build --nologo
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode locking-lab
+# Beklenen exit1 ve finally temizliği:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode locking-lab -ProbeFailure
+```
+
+Blocking kilit sahibi tamamlanınca ilerler; lock timeout gerçek1222, deadlock
+kurbanı gerçek1205 ile ayrı doğrulanır. X→Y / Y→X döngüsünde kurbanın bütün
+transaction yazmaları geri alınır; iki işlem de X→Y izlediğinde ikisi tamamlanır.
+SNAPSHOT altında farklı satırlardaki rowversion kontrollerine rağmen iki aktif
+kayıt sıfıra düşebilir (write skew). READ COMMITTED altında ortak bölüm satırını
+UPDLOCK,HOLDLOCK ile alıp güncel sayıyı okuyan karşılaştırmada bir aktif kalır.
+
+12 Kasım 2026: build 0 uyarı/hata; son locking-lab ve isolation-lab smoke exit0;
+hata probu beklenen exit1. İlk koşudaki XACT_STATE scalar tür hatası düzeltildi.
+Bütün koşuların kendi DB'leri kaldırıldı; app/lab değişmedi. Full/browser/HTTP
+tekrarlanmadı. Üretim kilidi/retry, paket/migration eklenmedi. Bu deneyler genel
+deadlock yokluğu, güvenli retry veya crash recovery garantisi vermez.
