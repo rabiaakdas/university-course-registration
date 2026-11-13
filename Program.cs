@@ -73,6 +73,7 @@ app.MapCourseOfferingEndpoints();
 app.MapStudentEndpoints();
 app.MapTermRegistrationSummaryEndpoint();
 app.MapEnrollmentEndpoints();
+app.MapWaitlistEndpoints();
 app.MapPriorityPreviewEndpoint();
 app.MapAccountEndpoints();
 app.MapAccountSessionEndpoints();

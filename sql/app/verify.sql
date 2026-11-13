@@ -11,8 +11,8 @@ INSERT @Columns VALUES
     (N'CourseOfferings',N'AcademicTermId',N'int',4),
     (N'CourseOfferings',N'SectionCode',N'nvarchar',20),(N'CourseOfferings',N'Capacity',N'int',4),
     (N'CourseOfferings',N'OccupiedSeats',N'int',4);
-IF (SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped=0)<>19
-    THROW 51000, 'Expected eight academic tables, seven Identity tables, RefreshSessions, RefreshTokenRecords, EnrollmentCreationReceipts and migration history.', 1;
+IF (SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped=0)<>20
+    THROW 51000, 'Expected eight academic tables, seven Identity tables, RefreshSessions, RefreshTokenRecords, EnrollmentCreationReceipts, WaitlistEntries and migration history.', 1;
 IF EXISTS (SELECT 1 FROM @Columns e
     LEFT JOIN sys.tables t ON t.name=e.TableName AND SCHEMA_NAME(t.schema_id)=N'dbo'
     LEFT JOIN sys.columns c ON c.object_id=t.object_id AND c.name=e.ColumnName

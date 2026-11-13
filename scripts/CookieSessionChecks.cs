@@ -123,7 +123,7 @@ internal static class CookieSessionChecks
             if (oidc) OidcChecks.Map(app);
             app.UseRouting(); app.UseAuthentication(); app.UseAuthenticationAbuse(); app.UseAuthorization(); app.MapAccountSessionEndpoints(); app.MapUniversityJwtEndpoints(); app.MapAccountEndpoints(); app.MapCourseEndpoints(); app.MapAcademicTermEndpoints(); app.MapCourseOfferingEndpoints();
             if (jwt) RolesChecks.Map(app);
-            app.MapStudentEndpoints(); app.MapEnrollmentEndpoints(); app.MapTermRegistrationSummaryEndpoint();
+            app.MapStudentEndpoints(); app.MapWaitlistEndpoints(); app.MapEnrollmentEndpoints(); app.MapTermRegistrationSummaryEndpoint();
             await app.StartAsync();
             var address = new Uri(app.Urls.Single());
             HttpClient Client(CookieContainer? jar = null) => new(new HttpClientHandler

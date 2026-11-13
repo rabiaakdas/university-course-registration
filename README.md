@@ -2567,3 +2567,25 @@ Ayrıntılar ve test kapsamı: [gün41](docs/day41-idempotency.md),
 Expired anahtarlar otomatik silinmez; silme yeniden kullanım riskini değiştirir.
 Token/cookie/header saklanmaz. DB commit ile HTTP teslimi aynı şey değildir;
 genel exactly-once veya gerçek ağ kaybı testi iddiası yoktur.
+
+
+## Gün 42 — Öğrenci bekleme listesi
+Cookie-only Student sahipliği ve POST CSRF ile:
+- POST /students/{studentId}/waitlist — JSON courseOfferingId; dolu açılışa 201.
+- GET /students/{studentId}/waitlist/{entryId} — yalnız kendi başvuru/pozisyonu.
+- POST /students/{studentId}/waitlist/{entryId}/cancel —204; tekrar iptal zamanı değiştirmez.
+
+Draft izinlidir; diğer enrollment durumları, boş kontenjan veya ikinci Waiting
+başvurusu 409. Kimlik/rol/kaynak retleri 401/403/404. Bekleme başvurusu kayıt veya
+aktif yük oluşturmaz. FIFO, açılış içindeki Waiting satırlarının DB QueueNumber
+sırasıdır; commit/tıklama sırası değildir. İptal sonrası yeniden katılım yeni
+numara alır; sıra numarası sabit, pozisyon değişkendir.
+
+Migration: dotnet tool run dotnet-ef database update (doğrulanmış app DB).
+Hedefli kontrol:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode waitlist
+
+[Akış, kısıtlar ve komutlar](docs/day42-waitlist.md).
+Kontenjan/enrollment kontrolüyle katılım yarışı 43. güne kalır.
+Yerleştirme/drop/job/bildirim/frontend eklenmedi.

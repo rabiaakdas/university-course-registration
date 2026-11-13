@@ -40,6 +40,8 @@ namespace UniversityRegistration.Data.Migrations
             modelBuilder.HasSequence<int>("StudentIds", "dbo")
                 .HasMin(1L);
 
+            modelBuilder.HasSequence("WaitlistQueueNumbers");
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -641,6 +643,58 @@ namespace UniversityRegistration.Data.Migrations
                     b.ToTable("StudentCompletedCourses", (string)null);
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.WaitlistEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ClosureReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("CourseOfferingId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("JoinedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("QueueNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("NEXT VALUE FOR [WaitlistQueueNumbers]");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StudentId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QueueNumber")
+                        .IsUnique();
+
+                    b.HasIndex("StudentId", "CourseOfferingId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WaitlistEntries_Waiting_Student_Offering")
+                        .HasFilter("[Status] = 0");
+
+                    b.HasIndex("CourseOfferingId", "Status", "QueueNumber");
+
+                    b.ToTable("WaitlistEntries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WaitlistEntries_Closure", "([Status] = 0 AND [ClosedAtUtc] IS NULL AND [ClosureReason] IS NULL) OR ([Status] IN (1,2,3) AND [ClosedAtUtc] IS NOT NULL AND [ClosedAtUtc] >= [JoinedAtUtc] AND [ClosureReason] IS NOT NULL AND LEN(LTRIM(RTRIM([ClosureReason]))) > 0)");
+
+                            t.HasCheckConstraint("CK_WaitlistEntries_QueueNumber", "[QueueNumber] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -822,6 +876,21 @@ namespace UniversityRegistration.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_StudentCompletedCourses_Students");
+                });
+
+            modelBuilder.Entity("UniversityRegistration.Models.WaitlistEntry", b =>
+                {
+                    b.HasOne("UniversityRegistration.Models.CourseOffering", null)
+                        .WithMany()
+                        .HasForeignKey("CourseOfferingId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("UniversityRegistration.Models.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

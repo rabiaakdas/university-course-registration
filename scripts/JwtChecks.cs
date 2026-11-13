@@ -129,6 +129,16 @@ internal static class JwtChecks
         { r.Headers.Authorization = new AuthenticationHeaderValue("Bearer", valid); using var response = await bearer.SendAsync(r); Check((int)response.StatusCode == 401, "bearer cannot use cookie me"); }
         using (var r = new HttpRequestMessage(HttpMethod.Post, "/accounts/dev-token"))
         { r.Headers.Authorization = new AuthenticationHeaderValue("Bearer", valid); using var response = await bearer.SendAsync(r); Check((int)response.StatusCode == 401, "bearer cannot mint"); }
+        foreach (var (method, path) in new[] {
+            (HttpMethod.Post, "/students/1/waitlist"), (HttpMethod.Get, "/students/1/waitlist/1"),
+            (HttpMethod.Post, "/students/1/waitlist/1/cancel") })
+        {
+            using var request = new HttpRequestMessage(method, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", valid);
+            if (path.EndsWith("/waitlist")) request.Content = JsonContent.Create(new { courseOfferingId = 1 });
+            using var response = await bearer.SendAsync(request);
+            Check((int)response.StatusCode == 401, "valid bearer cannot open cookie-only waitlist");
+        }
         await Bearer(null, 401, path: "/accounts/bearer-me?access_token=" + Uri.EscapeDataString(valid));
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         JsonObject Payload() => new() { ["sub"] = user.Id, ["jti"] = Guid.NewGuid().ToString("N"), ["iss"] = Issuer, ["aud"] = Audience, ["iat"] = now, ["nbf"] = now - 60, ["exp"] = now + 600 };

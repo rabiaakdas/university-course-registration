@@ -6,6 +6,7 @@ namespace UniversityRegistration.Data;
 
 public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
+    public DbSet<WaitlistEntry> WaitlistEntries => Set<WaitlistEntry>();
     public DbSet<EnrollmentCreationReceipt> EnrollmentCreationReceipts => Set<EnrollmentCreationReceipt>();
     public DbSet<RefreshTokenRecord> RefreshTokenRecords => Set<RefreshTokenRecord>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
@@ -22,6 +23,24 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.HasSequence<long>("WaitlistQueueNumbers").StartsAt(1).IncrementsBy(1);
+        var waitlist = modelBuilder.Entity<WaitlistEntry>();
+        waitlist.ToTable("WaitlistEntries", t =>
+        {
+            t.HasCheckConstraint("CK_WaitlistEntries_QueueNumber", "[QueueNumber] > 0");
+            t.HasCheckConstraint("CK_WaitlistEntries_Closure",
+                "([Status] = 0 AND [ClosedAtUtc] IS NULL AND [ClosureReason] IS NULL) OR ([Status] IN (1,2,3) AND [ClosedAtUtc] IS NOT NULL AND [ClosedAtUtc] >= [JoinedAtUtc] AND [ClosureReason] IS NOT NULL AND LEN(LTRIM(RTRIM([ClosureReason]))) > 0)");
+        });
+        waitlist.HasKey(x => x.Id);
+        waitlist.Property(x => x.QueueNumber).HasDefaultValueSql("NEXT VALUE FOR [WaitlistQueueNumbers]");
+        waitlist.Property(x => x.Status).HasConversion<int>();
+        waitlist.Property(x => x.ClosureReason).HasMaxLength(200);
+        waitlist.HasIndex(x => x.QueueNumber).IsUnique();
+        waitlist.HasIndex(x => new { x.StudentId, x.CourseOfferingId }).IsUnique()
+            .HasFilter("[Status] = 0").HasDatabaseName("UX_WaitlistEntries_Waiting_Student_Offering");
+        waitlist.HasIndex(x => new { x.CourseOfferingId, x.Status, x.QueueNumber });
+        waitlist.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.NoAction);
+        waitlist.HasOne<CourseOffering>().WithMany().HasForeignKey(x => x.CourseOfferingId).OnDelete(DeleteBehavior.NoAction);
         var receipt = modelBuilder.Entity<EnrollmentCreationReceipt>();
         receipt.ToTable("EnrollmentCreationReceipts", t =>
         {

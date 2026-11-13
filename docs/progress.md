@@ -2491,3 +2491,40 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   Ayrı browser/OIDC paketleri bu gün yeniden çalıştırılmadı.
 - Commit: feat: make enrollment creation idempotent. Gerçek hash/push sonucu
   son raporda; kendi hash'ini yazmak için ek commit oluşturulmaz.
+
+
+## Gün 42 — Bekleme listesi ve deterministik sıra
+- WaitlistEntry ayrı model: DB sequence QueueNumber, Waiting/Cancelled/Placed/
+  Ineligible, kapanış zamanı/nedeni. NO ACTION FK, sıra UNIQUE, Waiting için
+  öğrenci+açılış filtered UNIQUE ve kapanış/pozitif sıra CHECK'leri.
+- Cookie-only Student sahipliğiyle katılım, kendi başvuru/pozisyonunu okuma ve
+  iptal. POST CSRF;401/403/ortak 404. Draft izinli; Submitted/Approved/Rejected,
+  boş kontenjan ve ikinci Waiting 409. İptal koşullu UPDATE; tekrar Cancelled 204
+  ilk kapanışı değiştirmez. Yeniden katılım yeni satır/numara; yerleştirme yok.
+- Pozisyon aynı açılıştaki Waiting QueueNumber sırasından tek SQL projection
+  içindeki COUNT ile hesaplanır; başka öğrenci bilgisi açılmaz. Numara boşlukları
+  geçerli; tıklama/commit zamanı sırası garantisi değildir.
+- Restore/build başarılı, 0 uyarı/0 hata. Hedefli waitlist bir koşuda exit0:
+  izole eski migration yükseltmesi/profil koruma, ikinci update/model uyumu;
+  gerçek HTTPS paralel aynı başvuruda tek Waiting, farklı öğrencilerin sıra/
+  pozisyonları, iptal/tekrar/yeni katılım, rol/sahiplik/CSRF, boş açılış ve bütün
+  enrollment durumlarının ret/izinleri; gerçek SQL FK/filtered UNIQUE/CHECK.
+  Yeni context'te enrollment durumları ve OccupiedSeats değişmedi.
+- Full bir koşuda exit0. Yeni yollar geçerli JWT bearer ile 401; cookie-only
+  şema ayrımı korundu. Akademik/state/idempotency/rowversion/batch rollback,
+  Observer, hesap/cookie/JWT/refresh/reset/roles/resource-access/auth-abuse
+  regresyonları geçti. Browser/OIDC ve concurrency laboratuvarları ayrıca
+  yeniden çalıştırılmadı; bu günün kapsamında tam eski test tekrarı iddiası yok.
+- EF aracıyla 20261113123141_AddWaitlistEntries üretildi; Up/Down ve SQL incelendi.
+  Yalnız yeni tablo/sequence/index/kısıtlar. Doğrulanmış app DB'ye uygulama süreci
+  ve aktif bağlantı yokken uygulandı. Eski tabloların sıralı içerik özetleri
+  öncesi/sonrası eşit. İkinci update no-op, model/snapshot uyumlu.
+  Down uygulanmadı; lab DB'ye dokunulmadı.
+- Fixture'lar finally ile temizlendi; HTTPS süreçleri/sertifika alanları kapandı.
+  Bu günün iki izole test DB'si zorla bağlantı kesmeden kaldırıldı; yokluk
+  doğrulandı. Geçici migration SQL'i silindi. Secret/test çıktısı commit edilmedi.
+- README, day42-waitlist.md ve ADR0042 güncellendi. Kontenjan/enrollment kontrolü
+  ile INSERT arasındaki yarış ve sahiplik TOCTOU çözülmedi. FIFO yer garantisi
+  değildir; Placed/Ineligible yalnız modelde gelecekteki kapanış durumlarıdır.
+  Sıradaki 43. gün: bekleme listesi/kontenjan işlemlerinin koordinasyonu.
+- Commit: feat: add ordered student waitlist entries; hash/push son raporda.
