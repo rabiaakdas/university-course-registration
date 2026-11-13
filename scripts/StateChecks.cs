@@ -10,21 +10,22 @@ using UniversityRegistration.Models;
 internal static class StateChecks
 {
     static void Check(bool ok,string message){if(!ok)throw new BehaviorFailure("State: "+message);}
-    private sealed record Subject(Func<EnrollmentStatus> Status,Func<string?> Reason,Func<bool> Submit,Func<bool> Approve,Func<string?,bool> Reject);
+    private sealed record Subject(Func<EnrollmentStatus> Status,Func<string?> Reason,Func<bool> Submit,Func<bool> Approve,Func<string?,bool> Reject,Func<bool> Drop);
     public static void Unit()
     {
         foreach(var experiment in new[]{false,true})
         {
             Subject New()
             {
-                if(experiment){var e=new EnrollmentStateExperiment();return new(()=>e.Status,()=>e.RejectionReason,e.TrySubmit,e.TryApprove,e.TryReject);}
-                var entity=new Enrollment();return new(()=>entity.Status,()=>entity.RejectionReason,entity.TrySubmit,entity.TryApprove,entity.TryReject);
+                if(experiment){var e=new EnrollmentStateExperiment();return new(()=>e.Status,()=>e.RejectionReason,e.TrySubmit,e.TryApprove,e.TryReject,e.TryDrop);}
+                var entity=new Enrollment();return new(()=>entity.Status,()=>entity.RejectionReason,entity.TrySubmit,entity.TryApprove,entity.TryReject,entity.TryDrop);
             }
             foreach(var status in Enum.GetValues<EnrollmentStatus>())foreach(var action in new[]{"submit","approve","reject"})
             {
                 var e=New();Check(e.Status()==EnrollmentStatus.Draft && e.Reason() is null,"new Draft");
                 if(status!=EnrollmentStatus.Draft)Check(e.Submit(),"arrange Submitted");
                 if(status==EnrollmentStatus.Approved)Check(e.Approve(),"arrange Approved");
+                if(status==EnrollmentStatus.Dropped)Check(e.Drop(),"arrange Dropped");
                 if(status==EnrollmentStatus.Rejected)Check(e.Reject(" Original "),"arrange Rejected");
                 var oldReason=e.Reason();
                 var expected=status==EnrollmentStatus.Draft && action=="submit" || status==EnrollmentStatus.Submitted && action!="submit";
@@ -207,7 +208,7 @@ internal static class StateChecks
                 catch(SqlException ex){Check(ex.Number==error && ex.Message.Contains(objectName,StringComparison.Ordinal),"exact SQL constraint "+objectName);}
                 Check((await Rows()).SequenceEqual(before),"failed SQL leaves rows intact");
             }
-            foreach(var bad in new[]{-1,4})await BadSql(bad,null,547,"CK_Enrollments_Status");
+            foreach(var bad in new[]{-1,5})await BadSql(bad,null,547,"CK_Enrollments_Status");
             await BadSql(null,null,515,"Status");
             foreach(var reason in new string?[]{null,"","   ","\t\r\n","\u00a0\u3000"})await BadSql(3,reason,547,"CK_Enrollments_RejectionReason");
             foreach(var status in new[]{0,1,2})await BadSql(status,"Reason",547,"CK_Enrollments_RejectionReason");

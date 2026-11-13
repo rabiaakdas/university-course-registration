@@ -81,7 +81,7 @@ internal static class SummaryChecks
             var before=await Snapshot();var summary=await Get(students[0].Id,terms[0].Id);
             Check(summary["studentId"]!.GetValue<int>()==students[0].Id&&summary["academicTermId"]!.GetValue<int>()==terms[0].Id,"identity");
             Check(summary["activeCredits"]!.GetValue<long>()==9,"multi-slot course counted once, active policy");
-            Check(summary["counts"]!.AsObject().Count==4&&summary["counts"]!.AsObject().All(p=>p.Value!.GetValue<int>()==1),"four exact status counts");
+            Check(summary["counts"]!.AsObject().Count==5&&summary["counts"]!["dropped"]!.GetValue<int>()==0&&summary["counts"]!.AsObject().Where(p=>p.Key!="dropped").All(p=>p.Value!.GetValue<int>()==1),"four exact status counts");
             var rows=summary["enrollments"]!.AsArray();Check(rows.Count==4,"other student/term excluded");
             Check(rows.Select(n=>n!["id"]!.GetValue<int>()).SequenceEqual(enrollments.Take(4).Select(e=>e.Id).Order()),"enrollment ID order");
             foreach(var row in rows)

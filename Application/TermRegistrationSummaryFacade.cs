@@ -46,7 +46,7 @@ public sealed class TermRegistrationSummaryFacade(UniversityDbContext db)
         var scheduledIds = schedule.Select(s => s.CourseOfferingId).ToHashSet();
         return new TermRegistrationSummaryResult.Found(new(studentId, termId, credits,
             new(rows.Count(e => e.Status == EnrollmentStatus.Draft), rows.Count(e => e.Status == EnrollmentStatus.Submitted),
-                rows.Count(e => e.Status == EnrollmentStatus.Approved), rows.Count(e => e.Status == EnrollmentStatus.Rejected)),
+                rows.Count(e => e.Status == EnrollmentStatus.Approved), rows.Count(e => e.Status == EnrollmentStatus.Rejected), rows.Count(e => e.Status == EnrollmentStatus.Dropped)),
             rows.Select(e => new TermEnrollmentDto(e.Id, e.CourseOfferingId, e.Code, e.Name, e.Credits, e.Status.ToString(), e.RejectionReason)).ToArray(),
             schedule, activeIds.Where(id => !scheduledIds.Contains(id)).ToArray()));
     }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using UniversityRegistration.Accounts;
+using UniversityRegistration.Application;
 using UniversityRegistration.Data;
 using UniversityRegistration.Models;
 
@@ -31,6 +32,8 @@ public static class WaitlistEndpoints
     {
         if (request.CourseOfferingId <= 0)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["courseOfferingId"] = ["Pozitif açılış kimliği gereklidir."] });
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (await OfferingCoordination.LockAsync(db, request.CourseOfferingId, ct) is null) return Missing();
         var offering = await db.CourseOfferings.Where(x => x.Id == request.CourseOfferingId)
             .Select(x => new { x.Capacity, x.OccupiedSeats }).SingleOrDefaultAsync(ct);
         if (offering is null) return Missing();
@@ -42,7 +45,7 @@ public static class WaitlistEndpoints
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException error) when (RegistrationWriteErrors.Classify(error) == "waitlistDuplicate")
         { return Conflict("waitlist_already_waiting"); }
-        // Enrollment/capacity checks and insert are intentionally not coordinated in day 42.
+        await transaction.CommitAsync(ct);
         return Results.Created($"/students/{studentId}/waitlist/{entry.Id}", await ResponseAsync(db, studentId, entry.Id, ct));
     }
 
@@ -62,11 +65,15 @@ public static class WaitlistEndpoints
 
     static async Task<IResult> CancelAsync(int studentId, long entryId, UniversityDbContext db, CancellationToken ct)
     {
+        var offeringId = await db.WaitlistEntries.Where(w => w.Id == entryId && w.StudentId == studentId).Select(w => (int?)w.CourseOfferingId).SingleOrDefaultAsync(ct);
+        if (offeringId is null) return Missing();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await OfferingCoordination.LockAsync(db, offeringId.Value, ct);
         var now = DateTimeOffset.UtcNow;
         var changed = await db.WaitlistEntries.Where(x => x.Id == entryId && x.StudentId == studentId && x.Status == WaitlistStatus.Waiting)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, WaitlistStatus.Cancelled)
                 .SetProperty(x => x.ClosedAtUtc, now).SetProperty(x => x.ClosureReason, "student_cancelled"), ct);
-        if (changed == 1) return Results.NoContent();
+        if (changed == 1) { await transaction.CommitAsync(ct); return Results.NoContent(); }
         var status = await db.WaitlistEntries.Where(x => x.Id == entryId && x.StudentId == studentId)
             .Select(x => (WaitlistStatus?)x.Status).SingleOrDefaultAsync(ct);
         return status is null ? Missing() : status == WaitlistStatus.Cancelled ? Results.NoContent() : Conflict("waitlist_closed");

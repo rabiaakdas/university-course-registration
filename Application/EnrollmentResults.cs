@@ -36,6 +36,7 @@ public abstract record EnrollmentTransitionResult
     public sealed record NotFound : EnrollmentTransitionResult;
     public sealed record InvalidTransition : EnrollmentTransitionResult;
     public sealed record InvalidReason : EnrollmentTransitionResult;
+    public sealed record QueuePriority : EnrollmentTransitionResult;
     public sealed record CapacityUnavailable : EnrollmentTransitionResult;
     public sealed record AcademicRejected(AcademicEvaluation Evaluation) : EnrollmentTransitionResult;
 }

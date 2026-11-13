@@ -11,6 +11,11 @@ public static class EnrollmentEndpoints
     public static void MapEnrollmentEndpoints(this WebApplication app)
     {
         app.MapPost("/enrollments", CreateIdempotentAsync).WithStudentAccess(StudentAccessKind.Manage, body: true).AddEndpointFilter<CatalogAntiforgeryFilter>();
+        app.MapPost("/enrollments/{id:int}/drop", async (int id, EnrollmentOperations operations, CancellationToken ct) =>
+        {
+            var result = await operations.DropAsync(id, ct);
+            return result is EnrollmentTransitionResult.Updated ? Results.NoContent() : Transition(result);
+        }).WithStudentAccess(StudentAccessKind.Manage, enrollment: true).AddEndpointFilter<CatalogAntiforgeryFilter>();
         app.MapPost("/enrollments/{id:int}/submit", async (int id, EnrollmentOperations operations, CancellationToken ct) =>
             Transition(await operations.SubmitAsync(id, ct))).WithStudentAccess(StudentAccessKind.Manage, enrollment: true).AddEndpointFilter<CatalogAntiforgeryFilter>();
         app.MapPost("/enrollments/{id:int}/approve", async (int id, EnrollmentOperations operations, CancellationToken ct) =>
@@ -30,6 +35,7 @@ public static class EnrollmentEndpoints
         EnrollmentTransitionResult.Updated updated => Results.Ok(updated.Enrollment),
         EnrollmentTransitionResult.NotFound => Results.Problem(statusCode: 404, title: "Kayıt bulunamadı."),
         EnrollmentTransitionResult.InvalidTransition => Results.Problem(statusCode: 409, title: "Bu durumda istenen kayıt geçişi yapılamaz."),
+        EnrollmentTransitionResult.QueuePriority => Results.Problem(statusCode: 409, title: "Waiting applicants have priority.", extensions: new Dictionary<string, object?> { ["code"] = "waitlist_priority" }),
         EnrollmentTransitionResult.CapacityUnavailable => Results.Problem(statusCode: 409, title: "Ders açılışında boş kontenjan yok.",
             extensions: new Dictionary<string, object?> { ["code"] = "capacity_unavailable" }),
         EnrollmentTransitionResult.InvalidReason => Results.ValidationProblem(new Dictionary<string, string[]>

@@ -8,6 +8,7 @@ internal sealed class EnrollmentStateExperiment
     public string? RejectionReason => state.Reason;
     public bool TrySubmit() => Move(state.Submit());
     public bool TryApprove() => Move(state.Approve());
+    public bool TryDrop() => Move(state.Drop());
     public bool TryReject(string? reason)
     {
         var cleaned = Enrollment.CleanRejectionReason(reason);
@@ -22,6 +23,7 @@ internal sealed class EnrollmentStateExperiment
         public virtual string? Reason => null;
         public virtual State? Submit() => null;
         public virtual State? Approve() => null;
+        public virtual State? Drop() => null;
         public virtual State? Reject(string reason) => null;
     }
     private sealed class Draft : State
@@ -33,10 +35,12 @@ internal sealed class EnrollmentStateExperiment
     {
         public override EnrollmentStatus Status => EnrollmentStatus.Submitted;
         public override State Approve() => new Approved();
+        public override State Drop() => new Dropped();
         public override State Reject(string reason) => new Rejected(reason);
     }
     private sealed class Approved : State
-    { public override EnrollmentStatus Status => EnrollmentStatus.Approved; }
+    { public override EnrollmentStatus Status => EnrollmentStatus.Approved; public override State Drop() => new Dropped(); }
+    private sealed class Dropped : State { public override EnrollmentStatus Status => EnrollmentStatus.Dropped; }
     private sealed class Rejected(string reason) : State
     {
         public override EnrollmentStatus Status => EnrollmentStatus.Rejected;

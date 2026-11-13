@@ -2589,3 +2589,19 @@ Hedefli kontrol:
 [Akış, kısıtlar ve komutlar](docs/day42-waitlist.md).
 Kontenjan/enrollment kontrolüyle katılım yarışı 43. güne kalır.
 Yerleştirme/drop/job/bildirim/frontend eklenmedi.
+
+
+## Gün 43 — Ders bırakma ve sıradaki uygun aday
+POST /enrollments/{id}/drop: cookie Student sahipliği + CSRF; Submitted/Approved
+kaydını bırakır (204). Dropped tekrar 204; diğer durumlar 409.
+Dropped yer/kredi/program yükü oluşturmaz; dönem özeti counts.dropped içerir.
+Drop/reject ve sıra içinden yerleştirme aynı transaction'dadır. Uygun aday
+Submitted olur; onay olayı üretilmez. Waiting varsa normal submit
+409 waitlist_priority döner.
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode drop-placement
+    dotnet tool run dotnet-ef database update
+
+[Atomik sınır, aday politikası ve testler](docs/day43-drop-and-placement.md).
+Uzun transaction maliyeti, mevcut boş yer/Waiting için otomatik toparlama eksikliği,
+farklı açılış kredi/saat yarışları ve yetki TOCTOU devam eder.

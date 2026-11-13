@@ -149,7 +149,7 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
         var enrollment = modelBuilder.Entity<Enrollment>();
         enrollment.ToTable("Enrollments", table =>
         {
-            table.HasCheckConstraint("CK_Enrollments_Status", "[Status] IN (0, 1, 2, 3)");
+            table.HasCheckConstraint("CK_Enrollments_Status", "[Status] IN (0, 1, 2, 3, 4)");
             // Match String.Trim whitespace, including tabs/newlines and Unicode spaces.
             table.HasCheckConstraint("CK_Enrollments_RejectionReason",
                 "([Status] = 3 AND [RejectionReason] IS NOT NULL AND LEN(TRIM(NCHAR(9)+NCHAR(10)+NCHAR(11)+NCHAR(12)+NCHAR(13)+NCHAR(32)+NCHAR(133)+NCHAR(160)+NCHAR(5760)+NCHAR(8192)+NCHAR(8193)+NCHAR(8194)+NCHAR(8195)+NCHAR(8196)+NCHAR(8197)+NCHAR(8198)+NCHAR(8199)+NCHAR(8200)+NCHAR(8201)+NCHAR(8202)+NCHAR(8232)+NCHAR(8233)+NCHAR(8239)+NCHAR(8287)+NCHAR(12288) FROM [RejectionReason])) > 0) OR ([Status] <> 3 AND [RejectionReason] IS NULL)");

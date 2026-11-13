@@ -2528,3 +2528,48 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   değildir; Placed/Ineligible yalnız modelde gelecekteki kapanış durumlarıdır.
   Sıradaki 43. gün: bekleme listesi/kontenjan işlemlerinin koordinasyonu.
 - Commit: feat: add ordered student waitlist entries; hash/push son raporda.
+
+
+## Gün 43 — Atomik ders bırakma ve bekleme listesi yerleştirmesi
+- Dropped=4, eski enum sayıları korunur. Submitted/Approved→Dropped; tekrar
+  Dropped204, ek yer/yerleştirme yok. Cookie-only Student sahipliği+CSRF drop
+  endpoint'i;401/403/ortak404. Dönem özeti counts.dropped içerir; Dropped pasiftir.
+- Ortak OfferingCoordination SQL UPDLOCK,HOLDLOCK; submit/approve/drop/reject,
+  waitlist katılım/iptal ve private yerleştirmede açılış→çocuk sırası. Durum ve
+  akademik veri kilit sonrası yeniden okunur; katılım sıra numarası kilit sonrası.
+- ReleaseAsync drop/reject, sayaç ve PlaceWaitingAsync tek transaction. Waiting
+  normal submit'i409 waitlist_priority ile durdurur. Adaylar QueueNumber keyset
+  sırasıyla32'lik sayfalar; gerekli akademik veri sayfa başına toplu hazırlanır.
+  Toplam aday sınırı yok. Draft kullanılır veya yeni Submitted eklenir;
+  terminal/aktif/akademik ret açıklanabilir Ineligible, uygun aday Placed.
+  Yerleştirme Approved/event üretmez. Approve olayı gerçek commit sonrasında.
+- Restore içeren build başarılı:0 uyarı/0 hata. Hedefli drop-placement exit0.
+  Gerçek SQL/HTTPS: aday yok/ilk/sonraki/tümü uygunsuz,35 adayla sayfa aşımı,
+  Draft/yeni/Rejected/Dropped/aktif politika, çift drop/iki farklı drop/drop-submit
+  ayrı context'leri kilit öncesi süreli TCS ile buluşturarak doğrulandı.
+  HTTP iptal-yerleştirme yarışında kalıcı doğru aday, approve→drop/drop→approve,
+  yetki/CSRF, sayaç=aktif sayısı ve Drop summary doğrulandı.
+- Full bir koşuda exit0; full'e eklenen yazma sonrası cancellation deneyinde de
+  bırakma/sayaç rollback. Gerçek SQL trigger hatasında release, Ineligible kararları,
+  yeni enrollment ve başvuru kapanışı birlikte rollback; yeni context kanıtı.
+  Mevcut batch/UNIQUE/FK/idempotency/rowversion/akademik/state/summary/Observer,
+  hesap/cookie/JWT/refresh/reset/roles/resource-access/auth-abuse geçti.
+  Geçerli JWT drop'un cookie-only sınırını açamadı. Browser/OIDC ve bağımsız
+  isolation/locking laboratuvarları ayrıca yeniden çalıştırılmadı.
+- EF ile AddDroppedEnrollmentStatus üretildi; Up/Down ve SQL incelendi. Yalnız
+  CK_Enrollments_Status genişler, veri dönüştürülmez. İzole yükseltme/model/ikinci
+  update başarılı; full tarihsel Approved satırın Id/FK/zamanını korudu.
+  Doğrulanmış app DB'ye uygulama ve aktif bağlantı yokken uygulandı. Mevcut
+  tabloların sıralı içerik özetleri öncesi/sonrası eşit; ikinci update no-op,
+  model/snapshot uyumlu. Down uygulanmadı; Dropped varken eski CHECK reddeder.
+  Lab DB'ye dokunulmadı.
+- Fixture/trigger/hesaplar finally ile temizlendi; HTTPS süreçleri kapandı.
+  İki bu güne ait izole test DB'si bağlantı zorlamadan kaldırıldı, yoklukları
+  doğrulandı; geçici migration SQL'i silindi. Secret/test çıktısı commit edilmez.
+- README, day43-drop-and-placement.md ve ADR0043: uzun transaction/lock maliyeti,
+  FIFO/sayfalama, mevcut boş yer+Waiting için periyodik toparlama eksikliği.
+  Sonraki başarılı drop/reject mevcut boş yerleri de doldurur; tekrarlanan drop
+  toparlama değildir. Farklı açılış öğrenci kredi/saat yarışları ve yetki TOCTOU
+  çözülmedi. Crash/ağ kaybı veya yük testi yapılmadı.
+- Commit: feat: atomically drop enrollments and place waitlisted students;
+  gerçek hash/push son raporda, kendi hash'i için ek commit oluşturulmaz.

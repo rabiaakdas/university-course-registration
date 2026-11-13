@@ -130,7 +130,7 @@ internal static class JwtChecks
         using (var r = new HttpRequestMessage(HttpMethod.Post, "/accounts/dev-token"))
         { r.Headers.Authorization = new AuthenticationHeaderValue("Bearer", valid); using var response = await bearer.SendAsync(r); Check((int)response.StatusCode == 401, "bearer cannot mint"); }
         foreach (var (method, path) in new[] {
-            (HttpMethod.Post, "/students/1/waitlist"), (HttpMethod.Get, "/students/1/waitlist/1"),
+            (HttpMethod.Post, "/enrollments/1/drop"), (HttpMethod.Post, "/students/1/waitlist"), (HttpMethod.Get, "/students/1/waitlist/1"),
             (HttpMethod.Post, "/students/1/waitlist/1/cancel") })
         {
             using var request = new HttpRequestMessage(method, path);

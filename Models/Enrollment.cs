@@ -24,6 +24,13 @@ public class Enrollment
         return true;
     }
 
+    public bool TryDrop()
+    {
+        if (Status is not (EnrollmentStatus.Submitted or EnrollmentStatus.Approved)) return false;
+        Status = EnrollmentStatus.Dropped;
+        return true;
+    }
+
     public static string? CleanRejectionReason(string? reason)
     {
         var trimmed = reason?.Trim();

@@ -232,7 +232,7 @@ async Task<(int Status, JsonNode Body, string? Location)> Send(string method, st
 }
 void DetailFields(JsonNode node, bool version = true) => Check(string.Join(',', node.AsObject().Select(p => p.Key).Order()) == (version ? "code,credits,id,name,rowVersion" : "code,credits,id,name"), "Detail field contract");
 
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc" or "course-version" or "idempotency" or "waitlist")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc" or "course-version" or "idempotency" or "waitlist" or "drop-placement")
 {
     try
     {
@@ -242,6 +242,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "course-version") await CourseVersionChecks.Upgrade(Db);
         else if (mode == "idempotency") await IdempotencyChecks.Upgrade(Db);
         else if (mode == "waitlist") await WaitlistChecks.Upgrade(Db);
+        else if (mode == "drop-placement") await DropPlacementChecks.Upgrade(Db);
         else { await using var db = Db(); await db.Database.MigrateAsync(); }
         await StartApi();
         if (mode is "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access") { /* HTTPS checks ran while the migrated fixture existed. */ }
@@ -255,6 +256,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "course-version") await CourseVersionChecks.Run(Db, catalogIdentity);
         else if (mode == "idempotency") await IdempotencyChecks.Run(Db, catalogIdentity, StopApi, StartApi);
         else if (mode == "waitlist") await WaitlistChecks.Run(Db, catalogIdentity);
+        else if (mode == "drop-placement") await DropPlacementChecks.Run(Db, catalogIdentity);
         else if (mode == "core") await CoreBehaviorChecks.Run(Db, Send, reverse);
         else if (mode == "specifications") await SpecificationChecks.Run(Db, Send);
         else if (mode == "eligibility") await EligibilityChecks.Run(Db, Send);
@@ -403,6 +405,7 @@ try
     await CourseVersionChecks.Run(Db, catalogIdentity);
     await IdempotencyChecks.Run(Db, catalogIdentity, StopApi, StartApi);
     await WaitlistChecks.Run(Db, catalogIdentity);
+    await DropPlacementChecks.Run(Db, catalogIdentity);
     await SummaryChecks.Run(Db, Send, prepareIdentity: async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); });
     await ObserverChecks.Run(root, Db);
     await RepositoryChecks.Run(Db);
