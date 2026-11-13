@@ -2451,3 +2451,43 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   yeniden doğrulanmış sayılmaz; bu karşılaştırma üretim çözümü değildir.
 - Commit: `test: demonstrate deadlocks and write skew`; gerçek hash/push sonucu
   son raporda. Kendi hash'ini yazmak için ek commit üretilmez.
+
+
+## Gün 41 — Kalıcı enrollment idempotency
+- POST /enrollments için zorunlu UUID Idempotency-Key; mevcut cookie/Student
+  sahipliği/CSRF ve güncel DB rol kontrolü replay öncesinde korunur.
+- EnrollmentCreationReceipt: hesap+işlem+anahtar UNIQUE, semantik SHA-256,
+  ilk201 JSON/yerel Location ve sabit24 saat. Claim INSERT, mevcut create
+  koordinasyonu ve sonuç UPDATE aynı transaction içinde; yalnız başarı commit.
+  İş reddi/DB hatası claim dahil rollback; çakışma sonrası yeni context okuması.
+- Aynı içerik ilk yanıtı tekrar verir; farklı içerik409 idempotency_key_reused,
+  süresi dolmuş mevcut anahtar409 idempotency_key_expired. Batch/submit değişmedi.
+- Restore/build: başarılı, 0 uyarı/0 hata. Hedefli idempotency iki koşu ve core
+  başarılı. Gerçek HTTPS sıralı/paralel replay; SQL UNIQUE yarışının iki ayrı
+  context ile kontrollü kaybı; sonuç yazma hatasında tam rollback; iş reddinde
+  anahtarın tüketilmemesi; expiry, hesap izolasyonu, CSRF ve erişim kaldırılması
+  doğrulandı. Restart sonrası replay ve kaynak güncellenince ilk yanıt/güncel
+  detay ayrımı doğrulandı. Gerçek ağ kaybı enjekte edilmedi.
+- Full ilk koşuda eski şema tablosu sayısı beklentisi, ikinci koşuda Observer
+  test hostunun eksik DbContextOptions DI kaydı nedeniyle durdu. Dar düzeltmeler
+  sonrası hedefli Observer ve son full tamamen başarılı (exit0). Test kapsamı
+  azaltılmadı. Full: akademik kurallar, state, gerçek UNIQUE/FK ve batch rollback,
+  Observer commit/hata/iptal, catalog/rowversion, Identity/accounts/cookie/JWT,
+  refresh/reset, roles/resource-access/auth-abuse kontrollerini içerdi.
+- EF aracıyla AddEnrollmentCreationReceipts üretildi; Up/Down ve SQL incelendi.
+  Yalnız yeni tablo/index/FK/CHECK eklenir. İzole eski migration yükseltmesinde
+  veri koruma, ikinci update ve model uyumu başarılı. Doğrulanmış app DB'ye,
+  uygulama süreci/aktif DB bağlantısı yokken uygulandı. Eski tabloların sıralı
+  içerik özetleri öncesi/sonrası eşit; ikinci update no-op; model/snapshot uyumlu.
+  Lab DB'ye dokunulmadı. Down uygulanmadı.
+- Koşuların fixture/süreç temizliği tamamlandı; bu çalışmanın oluşturduğu yedi
+  izole test DB'si zorla bağlantı kesmeden kaldırıldı, yoklukları doğrulandı.
+  Geçici migration SQL'i kaldırıldı. Secret/test çıktısı Git'e alınmadı.
+- README, day41-idempotency.md ve ADR0041: transaction, kalıcı yanıt, saklama
+  maliyeti ve yetki sınırı. Expired kayıtlar otomatik silinmez; erken silme
+  anahtar tekrar kullanım korumasını kaldırır. DB pending şekline izin verir,
+  tamamlanmamış sonucu commit etmeme uygulama invariant'ıdır. Exactly-once,
+  ağ teslimi, crash recovery ve ownership TOCTOU çözümü iddiası yok.
+  Ayrı browser/OIDC paketleri bu gün yeniden çalıştırılmadı.
+- Commit: feat: make enrollment creation idempotent. Gerçek hash/push sonucu
+  son raporda; kendi hash'ini yazmak için ek commit oluşturulmaz.

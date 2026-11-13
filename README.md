@@ -2538,3 +2538,32 @@ hata probu beklenen exit1. İlk koşudaki XACT_STATE scalar tür hatası düzelt
 Bütün koşuların kendi DB'leri kaldırıldı; app/lab değişmedi. Full/browser/HTTP
 tekrarlanmadı. Üretim kilidi/retry, paket/migration eklenmedi. Bu deneyler genel
 deadlock yokluğu, güvenli retry veya crash recovery garantisi vermez.
+
+
+## Gün 41 — POST /enrollments idempotency
+
+Tek enrollment create için zorunlu `Idempotency-Key` header'ı: boş olmayan UUID
+(D biçimi). Yeni mantıksal istekte `[Guid]::NewGuid().ToString('D')` üretin; tekrarında
+aynı UUID ve studentId/courseOfferingId gönderin. Cookie + Student rolü + güncel
+sahiplik + antiforgery gereklidir; tekrar istekleri de bunları geçer.
+
+İlk başarı201/JSON/yerel Location kalıcıdır. Aynı hesap/işlem/anahtar/içerik ilk
+sonucu tekrar verir; farklı içerik409 `idempotency_key_reused`,24 saat sabit süre
+sonrası409 `idempotency_key_expired`. Eksik/bozuk key400. Yalnız başarı saklanır;
+reddedilen iş veya DB hatası claim dahil rollback olur. Draft ile sonuç aynı
+transaction'da commit edilir. Batch/submit değişmedi. Replay eski Draft gövdesini,
+GET detay sonradan değişmiş güncel durumu verebilir.
+
+```powershell
+dotnet tool run dotnet-ef database update
+dotnet build --nologo
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode idempotency
+```
+
+Migration: `AddEnrollmentCreationReceipts`. Kod:
+`Application/IdempotentEnrollmentCreation.cs`, `Endpoints/EnrollmentEndpoints.cs`.
+Ayrıntılar ve test kapsamı: [gün41](docs/day41-idempotency.md),
+[ADR0041](docs/adr/0041-enrollment-idempotency.md).
+Expired anahtarlar otomatik silinmez; silme yeniden kullanım riskini değiştirir.
+Token/cookie/header saklanmaz. DB commit ile HTTP teslimi aynı şey değildir;
+genel exactly-once veya gerçek ağ kaybı testi iddiası yoktur.

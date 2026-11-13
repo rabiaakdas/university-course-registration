@@ -49,6 +49,7 @@ internal static class ResourceAccessChecks
     {
         b.Services.AddSingleton(new EnrollmentPolicy(30));
         b.Services.AddScoped<EnrollmentOperations>();
+        b.Services.AddScoped<IdempotentEnrollmentCreation>();
         b.Services.AddScoped<IAcademicEligibilityEvaluator,AcademicEligibility>();
         b.Services.AddScoped<TermRegistrationSummaryFacade>();
         b.Services.AddScoped<EnrollmentApprovedPublisher>();
@@ -72,7 +73,7 @@ internal static class ResourceAccessChecks
         async Task<string> Csrf(HttpClient c) {using var r=await c.GetAsync("/accounts/antiforgery");var t=JsonNode.Parse(await r.Content.ReadAsStringAsync())!["requestToken"]!.GetValue<string>();secrets.Add(t);return t;}
         async Task<(int Status,JsonNode? Json)> Send(HttpClient c,string method,string path,object? body=null,string? csrf=null,string? bearer=null)
         {
-            using var q=new HttpRequestMessage(new HttpMethod(method),path);if(body is not null)q.Content=JsonContent.Create(body);
+            using var q=new HttpRequestMessage(new HttpMethod(method),path);if(method=="POST" && path=="/enrollments")q.Headers.Add("Idempotency-Key",Guid.NewGuid().ToString("D"));if(body is not null)q.Content=JsonContent.Create(body);
             if(csrf is not null)q.Headers.Add("X-CSRF-TOKEN",csrf);if(bearer is not null)q.Headers.Authorization=new("Bearer",bearer);
             using var r=await c.SendAsync(q);Check(r.Headers.Location is null || (int)r.StatusCode==201,"no redirect");
             var text=await r.Content.ReadAsStringAsync();Check(!text.Contains("<html",StringComparison.OrdinalIgnoreCase),"no HTML");
@@ -171,7 +172,7 @@ internal static class ResourceAccessChecks
         {
             foreach(var c in opened)c.Dispose();
             await using var db=factory();var sids=students.Select(s=>s.Id).ToArray();var oids=offerings.Select(o=>o.Id).ToArray();
-            await db.Enrollments.Where(e=>sids.Contains(e.StudentId)).ExecuteDeleteAsync();
+            await EnrollmentReceiptTestCleanup.DeleteAsync(db, db.Enrollments.Where(e=>sids.Contains(e.StudentId)));
             await db.Students.Where(s=>sids.Contains(s.Id)).ExecuteDeleteAsync();
             await db.CourseOfferings.Where(o=>oids.Contains(o.Id)).ExecuteDeleteAsync();
             await db.Courses.Where(c=>c.Id==course.Id).ExecuteDeleteAsync();await db.AcademicTerms.Where(t=>t.Id==term.Id).ExecuteDeleteAsync();

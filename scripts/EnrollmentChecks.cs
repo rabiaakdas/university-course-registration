@@ -160,7 +160,7 @@ static class EnrollmentChecks
         {
             await using var db=factory();
             var students=db.Students.Where(s=>s.StudentNumber=="0008Ab" || s.StudentNumber.StartsWith("D8_"));
-            await db.Enrollments.Where(e=>students.Select(s=>s.Id).Contains(e.StudentId)).ExecuteDeleteAsync();
+            await EnrollmentReceiptTestCleanup.DeleteAsync(db, db.Enrollments.Where(e=>students.Select(s=>s.Id).Contains(e.StudentId)));
             await students.ExecuteDeleteAsync();
             await db.CourseOfferings.Where(o=>ownedOfferings.Contains(o.Id)).ExecuteDeleteAsync();
         }

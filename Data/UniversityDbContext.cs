@@ -6,6 +6,7 @@ namespace UniversityRegistration.Data;
 
 public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
+    public DbSet<EnrollmentCreationReceipt> EnrollmentCreationReceipts => Set<EnrollmentCreationReceipt>();
     public DbSet<RefreshTokenRecord> RefreshTokenRecords => Set<RefreshTokenRecord>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<Course> Courses => Set<Course>();
@@ -21,6 +22,21 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        var receipt = modelBuilder.Entity<EnrollmentCreationReceipt>();
+        receipt.ToTable("EnrollmentCreationReceipts", t =>
+        {
+            t.HasCheckConstraint("CK_EnrollmentReceipts_Expiry", "[ExpiresAtUtc] > [CreatedAtUtc]");
+            t.HasCheckConstraint("CK_EnrollmentReceipts_Result", "([EnrollmentId] IS NULL AND [StatusCode] IS NULL AND [ResponseJson] IS NULL AND [Location] IS NULL) OR ([EnrollmentId] IS NOT NULL AND [StatusCode] IS NOT NULL AND [StatusCode] = 201 AND [ResponseJson] IS NOT NULL AND ISJSON([ResponseJson]) = 1 AND [Location] IS NOT NULL AND [Location] LIKE '/enrollments/%')");
+        });
+        receipt.HasKey(x => x.Id);
+        receipt.Property(x => x.AccountId).HasMaxLength(450).IsRequired();
+        receipt.Property(x => x.Operation).HasMaxLength(40).IsUnicode(false).IsRequired();
+        receipt.Property(x => x.RequestHash).HasColumnType("binary(32)").IsRequired();
+        receipt.Property(x => x.ResponseJson).HasMaxLength(2000);
+        receipt.Property(x => x.Location).HasMaxLength(100).IsUnicode(false);
+        receipt.HasIndex(x => new { x.AccountId, x.Operation, x.Key }).IsUnique().HasDatabaseName("UX_EnrollmentReceipts_Account_Operation_Key");
+        receipt.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.NoAction);
+        receipt.HasOne<Enrollment>().WithMany().HasForeignKey(x => x.EnrollmentId).OnDelete(DeleteBehavior.NoAction);
         var refresh = modelBuilder.Entity<RefreshSession>();
         refresh.ToTable("RefreshSessions", table =>
         {

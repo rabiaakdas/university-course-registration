@@ -129,6 +129,8 @@ internal static class ObserverChecks
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders(); identity.Configure(builder);
             builder.Services.AddScoped(_ => factory());
+            builder.Services.AddScoped<DbContextOptions<UniversityDbContext>>(sp => new DbContextOptionsBuilder<UniversityDbContext>()
+                .UseSqlServer(sp.GetRequiredService<UniversityDbContext>().Database.GetConnectionString()).Options);
             builder.Services.AddSingleton(new EnrollmentPolicy(30));
             builder.Services.AddScoped<AcademicEligibility>();
             builder.Services.AddScoped<IAcademicEligibilityEvaluator>(sp => new TimingAcademicEligibilityEvaluator(
@@ -136,7 +138,7 @@ internal static class ObserverChecks
             builder.Services.AddScoped<IEnrollmentApprovedObserver>(_ => unreliable);
             builder.Services.AddScoped<IEnrollmentApprovedObserver>(_ => reader);
             builder.Services.AddSingleton<ILogger<EnrollmentApprovedPublisher>>(errors);
-            builder.Services.AddScoped<EnrollmentApprovedPublisher>(); builder.Services.AddScoped<EnrollmentOperations>();
+            builder.Services.AddScoped<EnrollmentApprovedPublisher>(); builder.Services.AddScoped<EnrollmentOperations>(); builder.Services.AddScoped<IdempotentEnrollmentCreation>();
             builder.Services.AddProblemDetails();
             app = builder.Build();
             app.UseExceptionHandler(handler => handler.Run(context => Results.Problem(statusCode: 500).ExecuteAsync(context)));
@@ -154,7 +156,7 @@ internal static class ObserverChecks
                 await using var db = factory();
                 await using var transaction = await db.Database.BeginTransactionAsync();
                 // Each scenario removes only its own previous enrollment; student/offering stay fixed.
-                await db.Enrollments.Where(e => e.StudentId == student.Id).ExecuteDeleteAsync();
+                await EnrollmentReceiptTestCleanup.DeleteAsync(db, db.Enrollments.Where(e => e.StudentId == student.Id));
                 var e = new Enrollment { StudentId = student.Id, CourseOfferingId = offering.Id, CreatedAtUtc = DateTimeOffset.UtcNow };
                 if (submitted) Check(e.TrySubmit(), "fixture submit");
                 db.Add(e); await SeatCapacityChecks.SaveFixtureAsync(db); await transaction.CommitAsync(); return e;
@@ -162,9 +164,11 @@ internal static class ObserverChecks
             async Task State(int id, EnrollmentStatus expected)
             { await using var db = factory(); Check((await db.Enrollments.SingleAsync(e => e.Id == id)).Status == expected, $"DB state enrollment={id} expected={expected}"); }
             Enrollment e;
-            using (var created = await (await identity.ForRequestAsync("POST","/enrollments",new { studentId=student.Id },null)).PostAsJsonAsync("/enrollments", new { studentId = student.Id, courseOfferingId = offering.Id }))
+            using var createKey = new HttpRequestMessage(HttpMethod.Post,"/enrollments") { Content=JsonContent.Create(new { studentId=student.Id,courseOfferingId=offering.Id }) };
+            createKey.Headers.Add("Idempotency-Key",Guid.NewGuid().ToString("D"));
+            using (var created = await (await identity.ForRequestAsync("POST","/enrollments",new { studentId=student.Id },null)).SendAsync(createKey))
             {
-                Check((int)created.StatusCode == 201 && events.Count == 0, "create 201 without approval event");
+                Check((int)created.StatusCode == 201 && events.Count == 0, $"create 201 without approval event; actual HTTP={(int)created.StatusCode}, events={events.Count}");
                 var id = (await created.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<int>();
                 await using var db = factory(); e = await db.Enrollments.SingleAsync(x => x.Id == id);
             }
@@ -260,7 +264,7 @@ internal static class ObserverChecks
             try
             {
                 await using var db = factory();
-                await db.Enrollments.Where(e => e.StudentId == student.Id).ExecuteDeleteAsync();
+                await EnrollmentReceiptTestCleanup.DeleteAsync(db, db.Enrollments.Where(e => e.StudentId == student.Id));
                 if (offering is not null) await db.CourseOfferings.Where(o => o.Id == offering.Id).ExecuteDeleteAsync();
                 await db.Students.Where(s => s.Id == student.Id).ExecuteDeleteAsync();
                 await db.AcademicTerms.Where(t => t.Id == term.Id).ExecuteDeleteAsync();

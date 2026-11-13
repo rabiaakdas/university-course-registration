@@ -26,6 +26,7 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Authentication.JwtBearer", LogLe
 if (builder.Configuration.GetValue<bool>("Oidc:Enabled") || builder.Configuration.GetValue<bool>("Accounts:LocalMailboxEnabled") || builder.Configuration.GetValue<bool>("Jwt:Enabled"))
     builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Services.AddScoped<EnrollmentOperations>();
+builder.Services.AddScoped<IdempotentEnrollmentCreation>();
 builder.Services.AddScoped<CourseCatalogReader>();
 builder.Services.AddScoped<IEnrollmentApprovedObserver, ApprovalLogObserver>();
 builder.Services.AddScoped<EnrollmentApprovedPublisher>();

@@ -198,7 +198,7 @@ internal static class SpecificationChecks
                 await using var db=factory();
                 await db.StudentCompletedCourses.Where(c=>studentIds.Contains(c.StudentId)).ExecuteDeleteAsync();
                 await db.CoursePrerequisites.Where(p=>courseIds.Contains(p.CourseId)).ExecuteDeleteAsync();
-                await db.Enrollments.Where(e=>studentIds.Contains(e.StudentId)).ExecuteDeleteAsync();
+                await EnrollmentReceiptTestCleanup.DeleteAsync(db, db.Enrollments.Where(e=>studentIds.Contains(e.StudentId)));
                 await db.CourseOfferings.Where(o=>courseIds.Contains(o.CourseId)).ExecuteDeleteAsync();
                 await db.Students.Where(s=>studentIds.Contains(s.Id)).ExecuteDeleteAsync();
                 await db.AcademicTerms.Where(t=>termIds.Contains(t.Id)).ExecuteDeleteAsync();

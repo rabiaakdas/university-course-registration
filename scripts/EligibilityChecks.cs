@@ -178,7 +178,7 @@ internal static class EligibilityChecks
                 await db.CourseOfferingTimeSlots.Where(x=>oids.Contains(x.CourseOfferingId)).ExecuteDeleteAsync();
                 await db.StudentCompletedCourses.Where(x=>sids.Contains(x.StudentId)).ExecuteDeleteAsync();
                 await db.CoursePrerequisites.Where(x=>cids.Contains(x.CourseId)).ExecuteDeleteAsync();
-                await db.Enrollments.Where(x=>sids.Contains(x.StudentId)).ExecuteDeleteAsync();
+                await EnrollmentReceiptTestCleanup.DeleteAsync(db, db.Enrollments.Where(x=>sids.Contains(x.StudentId)));
                 await db.Students.Where(x=>sids.Contains(x.Id)).ExecuteDeleteAsync();
                 await db.CourseOfferings.Where(x=>oids.Contains(x.Id)).ExecuteDeleteAsync();
                 await db.AcademicTerms.Where(x=>tids.Contains(x.Id)).ExecuteDeleteAsync();

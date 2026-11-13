@@ -17,6 +17,7 @@ public static class RegistrationWriteErrors
             {
                 var names = Regex.Matches(error.Message, "'([^']*)'");
                 if (names.Count < 2) continue;
+                if (names[0].Groups[1].Value == "dbo.EnrollmentCreationReceipts" && names[1].Groups[1].Value == "UX_EnrollmentReceipts_Account_Operation_Key") return "idempotencyKey";
                 if (names[0].Groups[1].Value == "dbo.AspNetUsers" && names[1].Groups[1].Value == "UserNameIndex") return "accountName";
                 if (names[0].Groups[1].Value == "dbo.Students" && names[1].Groups[1].Value == "UX_Students_StudentNumber") return "studentNumber";
                 if (names[0].Groups[1].Value == "dbo.Enrollments" && names[1].Groups[1].Value == "UX_Enrollments_Student_Offering") return "duplicate";

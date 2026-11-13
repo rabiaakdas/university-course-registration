@@ -447,6 +447,69 @@ namespace UniversityRegistration.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.EnrollmentCreationReceipt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("EnrollmentId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("Key")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<byte[]>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("binary(32)");
+
+                    b.Property<string>("ResponseJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId");
+
+                    b.HasIndex("AccountId", "Operation", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EnrollmentReceipts_Account_Operation_Key");
+
+                    b.ToTable("EnrollmentCreationReceipts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_EnrollmentReceipts_Expiry", "[ExpiresAtUtc] > [CreatedAtUtc]");
+
+                            t.HasCheckConstraint("CK_EnrollmentReceipts_Result", "([EnrollmentId] IS NULL AND [StatusCode] IS NULL AND [ResponseJson] IS NULL AND [Location] IS NULL) OR ([EnrollmentId] IS NOT NULL AND [StatusCode] IS NOT NULL AND [StatusCode] = 201 AND [ResponseJson] IS NOT NULL AND ISJSON([ResponseJson]) = 1 AND [Location] IS NOT NULL AND [Location] LIKE '/enrollments/%')");
+                        });
+                });
+
             modelBuilder.Entity("UniversityRegistration.Models.RefreshSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -688,6 +751,20 @@ namespace UniversityRegistration.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_Enrollments_Students");
+                });
+
+            modelBuilder.Entity("UniversityRegistration.Models.EnrollmentCreationReceipt", b =>
+                {
+                    b.HasOne("UniversityRegistration.Models.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("UniversityRegistration.Models.Enrollment", null)
+                        .WithMany()
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("UniversityRegistration.Models.RefreshSession", b =>

@@ -130,7 +130,7 @@ internal static class CoreBehaviorChecks
                 try
                 {
                     await using var clean = factory();
-                    await clean.Enrollments.Where(e => e.StudentId == student.Id).ExecuteDeleteAsync();
+                    await EnrollmentReceiptTestCleanup.DeleteAsync(clean, clean.Enrollments.Where(e => e.StudentId == student.Id));
                     // Also finds offerings if fixture SaveChanges succeeded before IDs were copied.
                     await clean.CourseOfferings.Where(o => o.CourseId == course.Id).ExecuteDeleteAsync();
                     await clean.Students.Where(s => s.Id == student.Id).ExecuteDeleteAsync();
