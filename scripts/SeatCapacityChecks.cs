@@ -200,10 +200,12 @@ internal static class SeatCapacityChecks
             }
             var result=await Task.WhenAll(Worker(first,a),Worker(second,b));
             Check(sessions.Distinct().Count()==2,"two separate open SQL connections");
+            Console.WriteLine($"RESULT seat {a}/{b}: {string.Join(",",result.Select(r=>r.GetType().Name))}; connections={sessions.Distinct().Count()}");
             return result;
         }
         async Task Invariant(int offeringId,int expected)
         {
+            await ConcurrencyInvariantChecks.Verify(factory,[offeringId],"seat transition/rollback");
             await using var db=factory();
             var seats=await db.CourseOfferings.Where(o=>o.Id==offeringId).Select(o=>o.OccupiedSeats).SingleAsync();
             var active=await db.Enrollments.CountAsync(e=>e.CourseOfferingId==offeringId && (e.Status==EnrollmentStatus.Submitted || e.Status==EnrollmentStatus.Approved));

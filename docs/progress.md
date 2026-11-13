@@ -2573,3 +2573,49 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   çözülmedi. Crash/ağ kaybı veya yük testi yapılmadı.
 - Commit: feat: atomically drop enrollments and place waitlisted students;
   gerçek hash/push son raporda, kendi hash'i için ek commit oluşturulmaz.
+
+
+## Gün 44 — Concurrency invariant doğrulaması
+- Yeni concurrency-invariants modu mevcut SeatCapacityChecks, IdempotencyChecks
+  ve DropPlacementChecks akışlarını yeniden kullanır; senaryo kopyası yok.
+  ConcurrencyInvariantChecks.Verify yeni context ile yalnız fixture açılışlarında
+  aralık, sayaç=aktif, enrollment benzersizliği, en fazla bir Waiting ve Placed
+  enrollment ilişkisinin varlığını kontrol eder. Senaryo assertion'ları korunur.
+- Yeni yerleştirmede doğru adayın Submitted olduğu ayrıca doğrulanır. Tarihsel
+  Placed + sonradan Dropped geçerliliği ayrı deneyle geçti. İki farklı drop'un
+  ikisinin de Updated olması açık assertion'a bağlandı; tek başarı/tek ret
+  beklentisi bütün yarışlara genellenmedi.
+- Drop yarışında ayrı açık SQL bağlantıları @@SPID ile doğrulanır. Süreli
+  koordinasyon kilit öncesinde; HTTP drop/cancel token üzerinden iptal edilir,
+  WhenAll bütün işleri toplar. Dış timeout ile arkada iş bırakma riski giderildi.
+  Idempotency HTTP çağrılarına30 saniye sınır eklendi. Secret içermeyen
+  SCENARIO/RESULT/REACHED/PASS invariant izi eklendi.
+- Idempotency/drop cleanup asıl hatayı maskelemez; ek temizlik hatası türü
+  loglanır, asıl hata yoksa CleanupFailure nonzero üretir. Seat'in mevcut
+  hata-koruyan temizliği korundu. Üretim hatası bulunmadı, üretim kodu değişmedi.
+- Restore ve build başarılı:0 uyarı/0 hata. concurrency-invariants tek koşuda
+  exit0. Son yer/çift submit/çift reject/approve-reject, çift ve iki farklı drop,
+  drop-submit, iptal-yerleştirme, aynı key create ve gerçek ara yazma rollback
+  senaryoları geçti. Guard/CSRF/akademik ret doğru sonuç yerine kabul edilmedi.
+- Hedefli koşuda approve-reject'i reject, full'de approve kazandı; iki kalıcı
+  sonuç da sayaç ve event ile uyumlu. Çift drop Updated+Updated; drop-submit
+  Updated+QueuePriority; dört aynı-key HTTP create201 ve aynı gövde. İki koşuda
+  HTTP drop/cancel204/409 gözlendi;204/204 izin verilen alternatif bu yarışlarda
+  gözlenmedi. Bütün interleaving'ler doğrulandı iddiası yok.
+- Gerçek51043 yerleştirme UPDATE trigger noktasına ulaşıldığı ayrıca SQL hatasıyla
+  kanıtlandı; HTTP500 tek başına kanıt sayılmadı. Eski gerçek CHECK547 sonrası
+  koltuk rollback ve UNIQUE claim çakışması testleri korunur. Cancellation
+  tek başına rollback/deadlock kanıtı değildir; yazma noktası ve yeni context'teki
+  değişmez durum birlikte kontrol edildi.
+- Ardından full bir kez çalıştı, exit0. Mevcut full'e seat-capacity senaryoları
+  da eklendi. Son assertion/istek süresi/iz iyileştirmeleri full'de çalıştı.
+  Akademik/state/summary/idempotency/rowversion/batch/Observer ve hesap/cookie/
+  JWT/refresh/reset/roles/resource-access/auth-abuse regresyonları geçti.
+  Browser/OIDC/isolation/locking paketleri ayrıca tekrarlanmadı.
+- Model/snapshot hedefli koşuda uyumlu; yeni migration/paket/ADR yok. App/lab
+  DB'lerine dokunulmadı. Fixture/trigger/hesap/HTTPS süreç temizliği tamamlandı;
+  iki bu güne ait izole DB bağlantıları zorlamadan silindi, yokluk doğrulandı.
+- README ve day44-concurrency-invariants.md: test edilen garantiler/izin verilen
+  sonuçlar ile bilinen sınırlar ayrı. Farklı açılış kredi/saat, danışman/sahiplik
+  TOCTOU, crash/ağ kaybı ve yük/adalet test edilmedi veya çözülmüş gösterilmedi.
+- Commit: test: verify registration concurrency invariants; hash/push son raporda.

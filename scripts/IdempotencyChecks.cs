@@ -69,7 +69,7 @@ internal static class IdempotencyChecks
         var a = new Student { StudentNumber = tag + "A", FullName = "Test A" };
         var b = new Student { StudentNumber = tag + "B", FullName = "Test B" };
         var offers = new List<CourseOffering>();
-        var faultInstalled = false;
+        var faultInstalled = false; Exception? primaryFailure=null;
         try
         {
             await using (var db = factory())
@@ -85,7 +85,8 @@ internal static class IdempotencyChecks
                 using var q = new HttpRequestMessage(HttpMethod.Post, "/enrollments");
                 q.Content = reverse ? JsonContent.Create(new { courseOfferingId = offering, studentId = student }) : JsonContent.Create(new { studentId = student, courseOfferingId = offering });
                 if (key is not null) q.Headers.Add("Idempotency-Key", key);
-                using var response = await client.SendAsync(q);
+                using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                using var response = await client.SendAsync(q, requestTimeout.Token);
                 return new((int)response.StatusCode, await response.Content.ReadAsStringAsync(), response.Headers.Location?.ToString());
             }
             foreach (var invalid in new string?[] { null, "bad", Guid.Empty.ToString("D") })
@@ -117,6 +118,10 @@ internal static class IdempotencyChecks
             var raceKey = Guid.NewGuid().ToString("D");
             var race = await Task.WhenAll(Enumerable.Range(0,4).Select(_ => Send(ca,a.Id,offers[2].Id,raceKey)));
             Check(race.All(r => r.Status == 201 && r == race[0]), "concurrent HTTPS same response");
+            Console.WriteLine("RESULT idempotency HTTP: four201, identical stored responses");
+            await ConcurrencyInvariantChecks.Verify(factory,offers.Select(o=>o.Id).ToArray(),"same-key HTTPS create");
+            await using(var db=factory()) Check(await db.Enrollments.CountAsync(e=>e.StudentId==a.Id&&e.CourseOfferingId==offers[2].Id)==1
+                && await db.Enrollments.AnyAsync(e=>e.StudentId==a.Id&&e.CourseOfferingId==offers[2].Id&&e.Status==EnrollmentStatus.Draft),"same-key one persisted Draft");
             string account;
             await using (var db = factory()) account = (await db.Students.SingleAsync(x => x.Id == a.Id)).UserId!;
             // Force both separate contexts past the absent-key read before attempting UNIQUE claims.
@@ -137,6 +142,8 @@ internal static class IdempotencyChecks
             }
             var pair = await Task.WhenAll(Contender(),Contender());
             Check(gate.Collisions == 1 && pair.All(r => r.Receipt is not null) && pair[0].Receipt!.ResponseJson == pair[1].Receipt!.ResponseJson, "real UNIQUE loser rereads using fresh context");
+            Console.WriteLine("REACHED: idempotency UNIQUE claim collision exactly1; both workers settled");
+            await ConcurrencyInvariantChecks.Verify(factory,offers.Select(o=>o.Id).ToArray(),"same-key SQL claim race");
             var retryKey = Guid.NewGuid().ToString("D");
             Check((await Send(ca,a.Id,int.MaxValue,retryKey)).Status == 400, "business rejection");
             await using (var db = factory()) Check(!await db.EnrollmentCreationReceipts.AnyAsync(x => x.Key == Guid.Parse(retryKey)), "rejection rolls back claim");
@@ -151,6 +158,7 @@ internal static class IdempotencyChecks
                 Check(!await db.EnrollmentCreationReceipts.AnyAsync(x => x.Key == Guid.Parse(retryKey)) && !await db.Enrollments.AnyAsync(x => x.StudentId == a.Id && x.CourseOfferingId == offers[4].Id), "real write error rolls back Draft and claim");
                 await db.Database.ExecuteSqlRawAsync("DROP TRIGGER dbo.IdempotencyTestFault"); faultInstalled = false;
             }
+            await ConcurrencyInvariantChecks.Verify(factory,offers.Select(o=>o.Id).ToArray(),"receipt failure rollback");
             Check((await Send(ca,a.Id,offers[4].Id,retryKey)).Status == 201, "same key usable after rollback");
             await using (var db = factory())
             {
@@ -172,15 +180,24 @@ internal static class IdempotencyChecks
             }
             Console.WriteLine("PASS: idempotency HTTPS replay/race/restart/account scope/current access/expiry; real UNIQUE collision and receipt failure rollback; original response vs current detail");
         }
+        catch(Exception error) { primaryFailure=error; throw; }
         finally
         {
-            await using var db = factory();
-            if (faultInstalled) await db.Database.ExecuteSqlRawAsync("DROP TRIGGER dbo.IdempotencyTestFault");
-            await EnrollmentReceiptTestCleanup.DeleteAsync(db,db.Enrollments.Where(x => x.StudentId == a.Id || x.StudentId == b.Id));
-            await db.Students.Where(x => x.Id == a.Id || x.Id == b.Id).ExecuteDeleteAsync();
-            await db.CourseOfferings.Where(x => x.CourseId == c.Id).ExecuteDeleteAsync();
-            await db.AcademicTerms.Where(x => x.Id == term.Id).ExecuteDeleteAsync();
-            await db.Courses.Where(x => x.Id == c.Id).ExecuteDeleteAsync();
+            try
+            {
+                await using var db = factory();
+                if (faultInstalled) await db.Database.ExecuteSqlRawAsync("DROP TRIGGER dbo.IdempotencyTestFault");
+                await EnrollmentReceiptTestCleanup.DeleteAsync(db,db.Enrollments.Where(x => x.StudentId == a.Id || x.StudentId == b.Id));
+                await db.Students.Where(x => x.Id == a.Id || x.Id == b.Id).ExecuteDeleteAsync();
+                await db.CourseOfferings.Where(x => x.CourseId == c.Id).ExecuteDeleteAsync();
+                await db.AcademicTerms.Where(x => x.Id == term.Id).ExecuteDeleteAsync();
+                await db.Courses.Where(x => x.Id == c.Id).ExecuteDeleteAsync();
+            }
+            catch(Exception cleanup)
+            {
+                Console.Error.WriteLine("CLEANUP idempotency: "+cleanup.GetType().Name);
+                if(primaryFailure is null) throw new CleanupFailure();
+            }
         }
     }
 }

@@ -69,9 +69,10 @@ internal static class DropPlacementChecks
         EnrollmentOperations Ops(UniversityDbContext db) => new(db,new(30),DecoratorChecks.TimedEvaluator(),
             new EnrollmentApprovedPublisher([observer],NullLogger<EnrollmentApprovedPublisher>.Instance));
         var rows = new Dictionary<int,int>(); var entries = new Dictionary<int,long>();
-        bool trigger=false;
+        bool trigger=false; Exception? primaryFailure=null; int scenario=0;
         async Task Setup(int holders, int[] waiting, int[] eligible, params (int Student, EnrollmentStatus Status)[] extra)
         {
+            Console.WriteLine($"SCENARIO placement {++scenario}: holders={holders}, Waiting={waiting.Length}");
             await using var db=factory();
             await db.WaitlistEntries.Where(w=>w.CourseOfferingId==offer!.Id).ExecuteDeleteAsync();
             await EnrollmentReceiptTestCleanup.DeleteAsync(db,db.Enrollments.Where(e=>e.CourseOfferingId==offer!.Id));
@@ -97,10 +98,16 @@ internal static class DropPlacementChecks
         }
         async Task State(int occupied, params (int Student, WaitlistStatus Status)[] expected)
         {
+            await ConcurrencyInvariantChecks.Verify(factory,[offer!.Id],$"placement {scenario}, expected active={occupied}");
             await using var db=factory();
             var count=await db.Enrollments.CountAsync(e=>e.CourseOfferingId==offer!.Id&&(e.Status==EnrollmentStatus.Submitted||e.Status==EnrollmentStatus.Approved));
             Check(count==occupied && await db.CourseOfferings.Where(o=>o.Id==offer!.Id).Select(o=>o.OccupiedSeats).SingleAsync()==count,"counter equals active");
-            foreach(var e in expected) Check(await db.WaitlistEntries.AnyAsync(w=>w.Id==entries[e.Student]&&w.Status==e.Status),"expected candidate status "+e);
+            foreach(var e in expected)
+            {
+                Check(await db.WaitlistEntries.AnyAsync(w=>w.Id==entries[e.Student]&&w.Status==e.Status),"expected candidate status "+e);
+                if(e.Status==WaitlistStatus.Placed)
+                    Check(await db.Enrollments.AnyAsync(x=>x.StudentId==students[e.Student].Id&&x.CourseOfferingId==offer!.Id&&x.Status==EnrollmentStatus.Submitted),"new placement Submitted for expected candidate");
+            }
         }
         async Task<EnrollmentTransitionResult> Apply(int id,string action)
         {
@@ -113,13 +120,19 @@ internal static class DropPlacementChecks
             await using var seed=factory();
             var gate=new Gate();var options=new DbContextOptionsBuilder<UniversityDbContext>().UseSqlServer(seed.Database.GetConnectionString()).AddInterceptors(gate).Options;
             using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var sessions=new System.Collections.Concurrent.ConcurrentBag<int>();
             async Task<EnrollmentTransitionResult> Call(int id,string action)
             {
                 try { await using var db=new UniversityDbContext(options);
+                    await db.Database.OpenConnectionAsync(stop.Token);
+                    sessions.Add(await db.Database.SqlQueryRaw<int>("SELECT CAST(@@SPID AS int) AS [Value]").SingleAsync(stop.Token));
                     return action=="drop"?await Ops(db).DropAsync(id,stop.Token):await Ops(db).SubmitAsync(id,stop.Token);
                 } catch { stop.Cancel();throw; }
             }
-            return await Task.WhenAll(Call(a,first),Call(b,second));
+            var result=await Task.WhenAll(Call(a,first),Call(b,second));
+            Check(sessions.Distinct().Count()==2,"two independent drop race SQL connections");
+            Console.WriteLine($"RESULT drop {first}/{second}: {string.Join(",",result.Select(r=>r.GetType().Name))}; connections=2");
+            return result;
         }
         try
         {
@@ -131,7 +144,7 @@ internal static class DropPlacementChecks
             }
             var owner=await identity.ForRequestAsync("GET",$"/students/{students[0].Id}",null,null);
             var other=await identity.ForRequestAsync("GET",$"/students/{students[2].Id}",null,null);
-            async Task<int> Post(HttpClient client,string path) { using var r=await client.PostAsync(path,null);return (int)r.StatusCode; }
+            async Task<int> Post(HttpClient client,string path,CancellationToken ct=default) { using var r=await client.PostAsync(path,null,ct);return (int)r.StatusCode; }
             await Setup(1,[],[]);
             using(var anon=identity.AnonymousClient()) Check(await Post(anon,$"/enrollments/{rows[0]}/drop")==401,"anonymous401");
             using(var advisor=await identity.NewRoleClientAsync(UniversityRoles.Advisor)) Check(await Post(advisor,$"/enrollments/{rows[0]}/drop")==403,"wrong role403");
@@ -162,7 +175,7 @@ internal static class DropPlacementChecks
             await Setup(1,[2],[2]);var events=observer.Count;
             var duplicate=await Race(rows[0],"drop",rows[0],"drop");Check(duplicate.All(x=>x is EnrollmentTransitionResult.Updated),"double drop idempotent");await State(1,(2,WaitlistStatus.Placed));
             Check(observer.Count==events,"drop/placement no approval event");
-            await Setup(2,[2,3],[2,3]);await Race(rows[0],"drop",rows[1],"drop");await State(2,(2,WaitlistStatus.Placed),(3,WaitlistStatus.Placed));
+            await Setup(2,[2,3],[2,3]);var twoDrops=await Race(rows[0],"drop",rows[1],"drop");Check(twoDrops.All(r=>r is EnrollmentTransitionResult.Updated),"two distinct drops both succeed");await State(2,(2,WaitlistStatus.Placed),(3,WaitlistStatus.Placed));
             await Setup(1,[2],[2,3],(3,EnrollmentStatus.Draft));
             var cross=await Race(rows[0],"drop",rows[3],"submit");Check(cross[0] is EnrollmentTransitionResult.Updated && cross[1] is EnrollmentTransitionResult.QueuePriority or EnrollmentTransitionResult.CapacityUnavailable,"drop-submit cannot jump queue");await State(1,(2,WaitlistStatus.Placed));
             await Setup(1,[],[]);await Apply(rows[0],"approve");await Apply(rows[0],"drop");await State(0);
@@ -170,11 +183,13 @@ internal static class DropPlacementChecks
             await Setup(1,[],[]);await Apply(rows[0],"drop");Check(await Apply(rows[0],"approve") is EnrollmentTransitionResult.InvalidTransition,"drop then approve conflict");await State(0);
             // Real HTTP cancel/placement race. Both outcomes checked in fresh context.
             await Setup(1,[2,3],[2,3]);
+            using var httpStop=new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var start=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            async Task<int> HttpRace(HttpClient client,string path){await start.Task.WaitAsync(TimeSpan.FromSeconds(10));return await Post(client,path);}
+            async Task<int> HttpRace(HttpClient client,string path){try {await start.Task.WaitAsync(TimeSpan.FromSeconds(10),httpStop.Token);return await Post(client,path,httpStop.Token);}catch{httpStop.Cancel();throw;}}
             var drop=HttpRace(owner,$"/enrollments/{rows[0]}/drop");
             var cancel=HttpRace(other,$"/students/{students[2].Id}/waitlist/{entries[2]}/cancel");
-            start.SetResult();var responses=await Task.WhenAll(drop,cancel).WaitAsync(TimeSpan.FromSeconds(30));
+            start.SetResult();var responses=await Task.WhenAll(drop,cancel);
+            Console.WriteLine($"RESULT HTTP drop/cancel: {responses[0]}/{responses[1]}; all requests settled");
             Check(responses[0]==204&&responses[1] is 204 or 409,"cancel-placement responses");
             await State(1);
             await using(var db=factory())
@@ -184,10 +199,20 @@ internal static class DropPlacementChecks
                 var winner=responses[1]==204?students[3].Id:students[2].Id;
                 Check(await db.Enrollments.AnyAsync(e=>e.StudentId==winner&&e.CourseOfferingId==offer.Id&&e.Status==EnrollmentStatus.Submitted),"race correct winner");
             }
+            await Setup(1,[2],[2]);
+            await Apply(rows[0],"drop");
+            int placedEnrollment;
+            await using(var db=factory()) placedEnrollment=await db.Enrollments.Where(e=>e.StudentId==students[2].Id&&e.CourseOfferingId==offer!.Id).Select(e=>e.Id).SingleAsync();
+            Check(await Apply(placedEnrollment,"drop") is EnrollmentTransitionResult.Updated,"placed enrollment may later drop");
+            await ConcurrencyInvariantChecks.Verify(factory,[offer!.Id],"historical Placed with Dropped enrollment");
+            await using(var db=factory())Check(await db.WaitlistEntries.AnyAsync(w=>w.Id==entries[2]&&w.Status==WaitlistStatus.Placed)
+                && await db.Enrollments.AnyAsync(e=>e.Id==placedEnrollment&&e.Status==EnrollmentStatus.Dropped),"historical placement retained");
             await Setup(1,[2,3],[3]);
             await using(var db=factory())
             { await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER dbo.DropPlacementTestFault ON dbo.WaitlistEntries AFTER UPDATE AS BEGIN IF EXISTS(SELECT 1 FROM inserted WHERE Status=2) THROW 51043, 'Controlled placement write failure.', 1; END");trigger=true; }
             Check(await Post(owner,$"/enrollments/{rows[0]}/drop")==500,"real intermediate SQL failure HTTP500");
+            try { await Apply(rows[0],"drop");throw new BehaviorFailure("Expected placement SQL fault"); }
+            catch(SqlException error) when(error.Number==51043) { Console.WriteLine("REACHED: placement UPDATE trigger error51043 (not auth/CSRF/timeout)"); }
             await State(1,(2,WaitlistStatus.Waiting),(3,WaitlistStatus.Waiting));
             await using(var db=factory())
             {
@@ -209,19 +234,28 @@ internal static class DropPlacementChecks
             await using(var db=factory())Check(await db.Enrollments.AnyAsync(e=>e.Id==rows[0]&&e.Status==EnrollmentStatus.Submitted),"cancellation release rollback");
             Console.WriteLine("PASS: drop/reject placement no/first/later/all/page>32 candidates; Draft/new/terminal/active; controlled SQL races; HTTPS ownership/CSRF/cancel race; approval order/event; real intermediate fault full rollback; counters=active");
         }
+        catch(Exception error) { primaryFailure=error; throw; }
         finally
         {
-            await using var db=factory();
-            if(trigger)await db.Database.ExecuteSqlRawAsync("DROP TRIGGER dbo.DropPlacementTestFault");
-            var ids=students.Select(s=>s.Id).ToArray();
-            await db.WaitlistEntries.Where(w=>ids.Contains(w.StudentId)).ExecuteDeleteAsync();
-            await EnrollmentReceiptTestCleanup.DeleteAsync(db,db.Enrollments.Where(e=>ids.Contains(e.StudentId)));
-            await db.StudentCompletedCourses.Where(x=>ids.Contains(x.StudentId)).ExecuteDeleteAsync();
-            await db.CoursePrerequisites.Where(x=>x.CourseId==c.Id).ExecuteDeleteAsync();
-            await db.CourseOfferings.Where(o=>o.CourseId==c.Id).ExecuteDeleteAsync();
-            await db.Students.Where(s=>ids.Contains(s.Id)).ExecuteDeleteAsync();
-            await db.AcademicTerms.Where(t=>t.Id==term.Id).ExecuteDeleteAsync();
-            await db.Courses.Where(x=>x.Id==c.Id||x.Id==prerequisite.Id).ExecuteDeleteAsync();
+            try
+            {
+                await using var db=factory();
+                if(trigger)await db.Database.ExecuteSqlRawAsync("DROP TRIGGER dbo.DropPlacementTestFault");
+                var ids=students.Select(s=>s.Id).ToArray();
+                await db.WaitlistEntries.Where(w=>ids.Contains(w.StudentId)).ExecuteDeleteAsync();
+                await EnrollmentReceiptTestCleanup.DeleteAsync(db,db.Enrollments.Where(e=>ids.Contains(e.StudentId)));
+                await db.StudentCompletedCourses.Where(x=>ids.Contains(x.StudentId)).ExecuteDeleteAsync();
+                await db.CoursePrerequisites.Where(x=>x.CourseId==c.Id).ExecuteDeleteAsync();
+                await db.CourseOfferings.Where(o=>o.CourseId==c.Id).ExecuteDeleteAsync();
+                await db.Students.Where(s=>ids.Contains(s.Id)).ExecuteDeleteAsync();
+                await db.AcademicTerms.Where(t=>t.Id==term.Id).ExecuteDeleteAsync();
+                await db.Courses.Where(x=>x.Id==c.Id||x.Id==prerequisite.Id).ExecuteDeleteAsync();
+            }
+            catch(Exception cleanup)
+            {
+                Console.Error.WriteLine("CLEANUP drop-placement: "+cleanup.GetType().Name);
+                if(primaryFailure is null) throw new CleanupFailure();
+            }
         }
     }
 }

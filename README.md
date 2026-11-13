@@ -2605,3 +2605,16 @@ Submitted olur; onay olayı üretilmez. Waiting varsa normal submit
 [Atomik sınır, aday politikası ve testler](docs/day43-drop-and-placement.md).
 Uzun transaction maliyeti, mevcut boş yer/Waiting için otomatik toparlama eksikliği,
 farklı açılış kredi/saat yarışları ve yetki TOCTOU devam eder.
+
+
+## Gün 44 — Concurrency invariant kontrolleri
+Mevcut seat-capacity, idempotency ve drop-placement senaryolarını birlikte çalıştırır:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode concurrency-invariants
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode full
+
+Yeni context ile sayaç aralığı/aktif sayısı, enrollment ve Waiting benzersizliği,
+doğru aday ve tarihsel placement ilişkisi doğrulanır. Çift drop'ta iki başarı,
+idempotent create'te aynı201 yanıtları geçerlidir; her yarış bir başarı/bir ret değildir.
+[Kanıtlar, izin verilen sonuçlar ve sınırlar](docs/day44-concurrency-invariants.md).
+Üretim davranışı/model/paket değişikliği ve yeni migration yoktur.
