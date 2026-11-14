@@ -31,6 +31,7 @@ builder.Services.AddScoped<CourseCatalogReader>();
 builder.Services.AddScoped<IEnrollmentApprovedObserver, ApprovalLogObserver>();
 builder.Services.AddScoped<EnrollmentApprovedPublisher>();
 builder.Services.AddScoped<TermRegistrationSummaryFacade>();
+builder.Services.AddScoped<RegistrationReports>();
 builder.Services.AddScoped<AcademicEligibility>();
 builder.Services.AddScoped<IAcademicEligibilityEvaluator>(services =>
     new TimingAcademicEligibilityEvaluator(services.GetRequiredService<AcademicEligibility>(),
@@ -72,6 +73,7 @@ app.MapAcademicTermEndpoints();
 app.MapCourseOfferingEndpoints();
 app.MapStudentEndpoints();
 app.MapTermRegistrationSummaryEndpoint();
+app.MapRegistrationReportEndpoints();
 app.MapEnrollmentEndpoints();
 app.MapWaitlistEndpoints();
 app.MapPriorityPreviewEndpoint();

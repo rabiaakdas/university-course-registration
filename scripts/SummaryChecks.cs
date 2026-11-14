@@ -48,9 +48,9 @@ internal static class SummaryChecks
             Check(result is TermRegistrationSummaryResult.Found,"facade summary");
             Check(!db.ChangeTracker.Entries().Any(),"scalar projection tracks no entity");
             Check(capture.Commands.Count==expectedReads && capture.Commands.All(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase)),"bounded read-only SQL");
-            var query=capture.Commands.Single(c=>c.Text.Contains("JOIN")&&c.Text.Contains("Courses"));
+            var query=capture.Commands.Single(c=>c.Text.Contains("JOIN")&&c.Text.Contains("Courses")&&!c.Text.Contains("SUM("));
             Check(query.Text.Contains("WHERE")&&query.Text.Contains("StudentId")&&query.Text.Contains("AcademicTermId")&&query.Text.Contains("ORDER BY")&&!query.Text.Contains("CreatedAtUtc"),"filtered ordered enrollment projection");
-            if(expectedReads==4)
+            if(expectedReads==5)
             {
                 var schedule=capture.Commands.Single(c=>c.Text.Contains("CourseOfferingTimeSlots"));
                 Check(schedule.Text.Contains("WHERE")&&schedule.Text.Contains("ORDER BY")&&schedule.Text.Contains("%"),"filtered SQL Monday-first slot order");
@@ -96,7 +96,7 @@ internal static class SummaryChecks
             Check(summary["unscheduledActiveOfferingIds"]!.AsArray().Select(n=>n!.GetValue<int>()).SequenceEqual(new[]{offerings[2].Id}),"active missing schedule");
             Check(JsonNode.DeepEquals(summary,await Get(students[0].Id,terms[0].Id)),"repeat deterministic");
             var empty=await Get(students[2].Id,terms[0].Id);Check(empty["activeCredits"]!.GetValue<long>()==0&&empty["counts"]!.AsObject().All(p=>p.Value!.GetValue<int>()==0)&&new[]{"enrollments","activeSchedule","unscheduledActiveOfferingIds"}.All(k=>empty[k]!.AsArray().Count==0),"existing resources empty summary");
-            await InspectSql(students[0].Id,terms[0].Id,4);await InspectSql(students[2].Id,terms[0].Id,3);
+            await InspectSql(students[0].Id,terms[0].Id,5);await InspectSql(students[2].Id,terms[0].Id,4);
             Check(before==await Snapshot(),"HTTP and fresh-context facade did not change any fixture row/state");
             await using(var db=factory())Check(!await db.Students.AnyAsync(s=>s.Id==int.MaxValue)&&!await db.AcademicTerms.AnyAsync(t=>t.Id==int.MaxValue),"missing IDs verified");
             await Get(int.MaxValue,terms[0].Id,404);await Get(students[0].Id,int.MaxValue,404);
@@ -111,7 +111,7 @@ internal static class SummaryChecks
             }
             // Inactive-only path still returns enrollment data but does not query slots.
             await using(var db=factory()){db.Add(NewEnrollment(students[2].Id,offerings[0].Id,EnrollmentStatus.Draft));await db.SaveChangesAsync();}
-            var inactiveBefore=await Snapshot();await InspectSql(students[2].Id,terms[0].Id,3);
+            var inactiveBefore=await Snapshot();await InspectSql(students[2].Id,terms[0].Id,4);
             var inactive=await Get(students[2].Id,terms[0].Id);
             Check(inactive["counts"]!["draft"]!.GetValue<int>()==1&&inactive["activeCredits"]!.GetValue<long>()==0&&inactive["activeSchedule"]!.AsArray().Count==0&&inactive["unscheduledActiveOfferingIds"]!.AsArray().Count==0,"inactive-only with known slots excludes schedule");
             Check(inactiveBefore==await Snapshot(),"inactive read unchanged");
@@ -124,13 +124,13 @@ internal static class SummaryChecks
             Slot(extra[1].Id,DayOfWeek.Monday,new(8,0),new(9,0));
             Slot(extra[0].Id,DayOfWeek.Monday,new(8,0),new(9,0));
             await using(var db=factory()){db.AddRange(slots.Skip(tieStart));await db.SaveChangesAsync();}
-            var expandedBefore=await Snapshot();await InspectSql(students[0].Id,terms[0].Id,4);
+            var expandedBefore=await Snapshot();await InspectSql(students[0].Id,terms[0].Id,5);
             var expanded=await Get(students[0].Id,terms[0].Id);Check(expanded["enrollments"]!.AsArray().Count==24&&expanded["activeCredits"]!.GetValue<long>()==9+2L*int.MaxValue+18L*4,"same course sections each count, checked long total");
             var unscheduled=expanded["unscheduledActiveOfferingIds"]!.AsArray().Select(n=>n!.GetValue<int>()).ToArray();Check(unscheduled.Length==19&&unscheduled.SequenceEqual(unscheduled.Order()),"sorted unscheduled IDs");
             Check(expanded["activeSchedule"]!.AsArray().Take(3).Select(n=>n!["courseOfferingId"]!.GetValue<int>()).SequenceEqual(new[]{offerings[1].Id,extra[0].Id,extra[1].Id}.Order()),"equal weekday/start/end ordered by offering ID");
             Check(expandedBefore==await Snapshot(),"expanded read unchanged in fresh context");
             if(probe)Check(false,"controlled failure propagation");
-            Console.WriteLine("PASS: summary real HTTP/SQL identities/statuses/9 credits/no multiplication; active-only schedule and unscheduled IDs; Monday/tick precision; 404/400/empty/repeat; four reads at 4 and 24 rows, three when empty; projection untracked; fresh-context no-write and Int64 total");
+            Console.WriteLine("PASS: summary real HTTP/SQL identities/statuses/9 credits/no multiplication; active-only schedule and unscheduled IDs; Monday/tick precision; 404/400/empty/repeat; five reads at 4 and 24 rows, four when empty; projection untracked; fresh-context no-write and Int64 total");
         }
         catch(Exception ex){failure=ex;throw;}
         finally

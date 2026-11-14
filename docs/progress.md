@@ -2619,3 +2619,53 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   sonuçlar ile bilinen sınırlar ayrı. Farklı açılış kredi/saat, danışman/sahiplik
   TOCTOU, crash/ağ kaybı ve yük/adalet test edilmedi veya çözülmüş gösterilmedi.
 - Commit: test: verify registration concurrency invariants; hash/push son raporda.
+
+## Gün 45 — SQL kayıt raporları
+- İnceleme başında main temizdi; mevcut öğrenci/dönem özeti ve kaynak erişimi
+  koddan doğrulandı. Önceki günlere yeni, kanıtsız tamamlanma kaydı eklenmedi.
+- RegistrationReports: dönem açılış doluluğu ve danışman Submitted özeti,
+  iki küçük DTO/projection. Boş açılış LEFT JOIN ile korunur; danışmansız
+  öğrenciler NULL grupta. Ondalıklı yüzde, deterministik sıralama ve 1..100
+  sayfa sınırı; her yeni rapor tek SQL SELECT.
+- Mevcut registration-summary activeCredits alanı korunarak SQL'de SUM öncesi
+  bigint dönüşümü ve COALESCE 0 kullanıldı. Aynı kredili dersler/aynı dersin
+  ayrı şubeleri ayrı toplanır; saat ilişkisi toplamları çoğaltmaz.
+  Öğrenci kredi raporu için ikinci endpoint açılmadı.
+- Cookie StudentAffairs yönetim raporları; öğrenci kendi, Advisor güncel
+  atanmış öğrencisinin özetini okur. no-store. Public katalog ve cookie/bearer
+  ayrımı değişmedi. Genel rapor framework/repository/paket eklenmedi.
+- sql/app/report-*.sql: JOIN/GROUP BY, anlamlı HAVING, EXISTS ve aynı doluluk
+  hesabının alt sorgu/CTE biçimi. SqlParameter ile gerçek testte yürütüldü.
+  Üretim LINQ kaldı; CTE için performans/materialization garantisi yok.
+- Restore ve build başarılı (0 uyarı/0 hata).
+  reports, summary ve resource-access hedefli koşuları exit0.
+  Full paket ardından yalnız bir kez çalıştırıldı, exit0.
+  İlk reports koşusundan sonra eklenen bir/altı sonuçta sabit sorgu sayısı
+  assertion'ı full'de; yeni yönetim raporu rol/bearer retleri resource-access
+  ve full'de çalıştı. Test başarısızlığı veya assertion kaldırma olmadı.
+- Elle hesaplanan fixture: doluluk [2,1,1,0,0,0], kredi 6/6/0, atanmış ve
+  danışmansız bekleyen grupları 1/1. Bütün enrollment durumları, iki dönem,
+  eşit kredili farklı dersler, aynı dersin şubeleri, çoklu saat ve boş açılış.
+  SQL JOIN/subquery/CTE sonuçları uygulama ile aynı; HAVING minimum2 boş,
+  EXISTS çok Submitted olan açılışı bir kez döndürdü.
+- Gerçek SQL filtre/grup/projection/paging ve bigint/COALESCE kontrolü geçti;
+  saf DTO tracking oluşturmadı. Yeni context snapshot'ı fixture verilerinin
+  değişmediğini doğruladı. Doluluk bir/altı satırda tek sorgu; mevcut özet
+  4/24 enrollment için 5 sorgu, aktif saat yoksa 4. Önceki toplam bellekteydi;
+  SQL toplamı için ek bir sabit sorgunun maliyeti açıkça kabul edildi.
+- Full'de katalog, akademik uygunluk, state, batch/gerçek rollback, rowversion,
+  kontenjan, idempotency, waitlist/drop, Observer ve Identity/accounts/cookie/
+  JWT/refresh/reset/roles/resource-access/auth-abuse kontrolleri geçti.
+  Browser/OIDC/isolation/locking bağımsız modları yeniden çalıştırılmadı.
+- Model/snapshot hedefli kontrollerde uyumlu, pending migration yok.
+  Model/şema değişmedi; migration veya app DB update gerekmiyor.
+  App/lab test hedefi yapılmadı. Fixture/hesap/sertifika/anahtar ve API süreçleri
+  mevcut finally yollarıyla temizlendi. Bu koşulara ait dört izole DB ayrıca
+  aktif bağlantı olmadığı kontrol edilerek silindi; bağlantı zorla kapatılmadı.
+- Okuma sınırı: özetin ayrı sorguları/sayfa istekleri farklı commit anlarını
+  temsil edebilir; canlı sayaç-sayım farkı tek başına kalıcı invariant ihlali
+  kanıtı değildir. Yeni isolation/kilit yok. Büyük veri performansı, snapshot
+  tutarlılığı ve farklı açılış kredi/saat/atama yarışları çözülmüş sayılmadı.
+- README ve day45-sql-reports.md güncellendi. Mimari değişiklik olmadığından
+  ayrı ADR oluşturulmadı. Commit: feat: add accurate registration reporting queries.
+  Gerçek commit/push bilgisi son raporda; kendi hash'i için ek commit yok.

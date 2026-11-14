@@ -6,7 +6,12 @@ namespace UniversityRegistration.Endpoints;
 public static class TermRegistrationSummaryEndpoint
 {
     public static void MapTermRegistrationSummaryEndpoint(this WebApplication app) =>
-        app.MapGet("/students/{studentId:int}/terms/{termId:int}/registration-summary", GetAsync).WithStudentAccess(StudentAccessKind.Read, routeKey: "studentId");
+        app.MapGet("/students/{studentId:int}/terms/{termId:int}/registration-summary", GetAsync).WithStudentAccess(StudentAccessKind.Read, routeKey: "studentId")
+            .AddEndpointFilter(async (context, next) =>
+            {
+                context.HttpContext.Response.Headers.CacheControl = "no-store";
+                return await next(context);
+            });
 
     public static async Task<IResult> GetAsync(int studentId, int termId,
         TermRegistrationSummaryFacade facade, CancellationToken ct)

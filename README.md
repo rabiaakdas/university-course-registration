@@ -2618,3 +2618,35 @@ doğru aday ve tarihsel placement ilişkisi doğrulanır. Çift drop'ta iki baş
 idempotent create'te aynı201 yanıtları geçerlidir; her yarış bir başarı/bir ret değildir.
 [Kanıtlar, izin verilen sonuçlar ve sınırlar](docs/day44-concurrency-invariants.md).
 Üretim davranışı/model/paket değişikliği ve yeni migration yoktur.
+
+### Gün 45 — salt okunur kayıt raporları
+
+- Cookie StudentAffairs: GET /reports/terms/{termId}/occupancy ve /pending-approvals.
+  İkisi de page=1, pageSize=20 (1..100) alır; Id/advisor kimliği sırasıyla sayfalanır.
+  Pozitif fakat bulunmayan dönem boş items döndürür. Büyük/geçersiz offset 400.
+- Mevcut GET /students/{studentId}/terms/{termId}/registration-summary içindeki
+  activeCredits artık SQL bigint SUM ile hesaplanır; yanıt alanları değişmez.
+  Öğrenci kendi profili, Advisor yalnız güncel atanmış öğrencisi için okuyabilir.
+- Yönetim ve kişisel rapor yanıtları no-store; anonim 401, yanlış rol 403,
+  öğrenci kaynak ilişkisi yoksa 404. Bearer bu cookie-only yolları açmaz.
+- Public katalog değişmedi. GET raporları yazma/CSRF işlemi değildir.
+
+Mevcut HTTPS cookie girişinden sonra PowerShell (oturum değişkeni mevcut akıştaki $session):
+
+    Invoke-RestMethod "$base/reports/terms/$termId/occupancy?page=1&pageSize=20" -WebSession $session
+    Invoke-RestMethod "$base/reports/terms/$termId/pending-approvals?page=1&pageSize=20" -WebSession $session
+    Invoke-RestMethod "$base/students/$studentId/terms/$termId/registration-summary" -WebSession $session
+
+Doğrulama:
+
+    dotnet restore
+    dotnet build --no-restore
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode reports
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode summary
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode resource-access
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode full
+
+SQL örnekleri sql/app/report-*.sql altında; bağlanan SQL parametreleriyle çalışır,
+SQLCMD metin değişkeni gerektirmez. reports modu bunları izole DB'de gerçek
+SqlParameter değerleriyle yürütür. Kavramlar ve tutarlılık sınırları:
+[day45-sql-reports](docs/day45-sql-reports.md).

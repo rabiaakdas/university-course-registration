@@ -52,6 +52,7 @@ internal static class ResourceAccessChecks
         b.Services.AddScoped<IdempotentEnrollmentCreation>();
         b.Services.AddScoped<IAcademicEligibilityEvaluator,AcademicEligibility>();
         b.Services.AddScoped<TermRegistrationSummaryFacade>();
+        b.Services.AddScoped<RegistrationReports>();
         b.Services.AddScoped<EnrollmentApprovedPublisher>();
         b.Services.AddSingleton<Approvals>();
         b.Services.AddSingleton<IEnrollmentApprovedObserver>(sp=>sp.GetRequiredService<Approvals>());
@@ -150,6 +151,14 @@ internal static class ResourceAccessChecks
             start=counter.Reads;Check((await Send(ca.C,"GET",$"/students/{sa.Id}/enrollments")).Status==200,"larger list");Check(counter.Reads-start==small && small>0,"bounded list query count");
             var mint=await Send(ca.C,"POST","/accounts/dev-token",new{},ca.Csrf);Check(mint.Status==200,"mint");var access=mint.Json!["accessToken"]!.GetValue<string>();secrets.Add(access);secrets.Add(mint.Json["refreshToken"]!.GetValue<string>());
             foreach(var path in Reads(sa,eA.Id))Check((await Send(anon,"GET",path,bearer:access)).Status==401,"bearer cannot open cookie resources");
+            foreach(var suffix in new[]{"occupancy","pending-approvals"})
+            {
+                var path=$"/reports/terms/{term.Id}/{suffix}";
+                Check((await Send(anon,"GET",path,bearer:access)).Status==401,"bearer cannot open cookie reports");
+                foreach(var deniedClient in new[]{ca.C,cda.C,cn.C,ci.C})
+                    Check((await Send(deniedClient,"GET",path)).Status==403,"management reports require staff");
+                Check((await Send(cs.C,"GET",path)).Status==200,"staff report");
+            }
             Check((await Send(anon,"GET","/courses")).Status==200,"public catalog");
             Check((await Send(ca.C,"POST","/students",new{studentNumber=tag+"x",fullName="x",userId=a.Id,advisorUserId=da.Id},ca.Csrf)).Status==403,"provisioning staff only");
             var provision=await Send(cs.C,"POST","/students",new{studentNumber=tag+"p",fullName="Provision fixture",userId=staff.Id,advisorUserId=da.Id},cs.Csrf);

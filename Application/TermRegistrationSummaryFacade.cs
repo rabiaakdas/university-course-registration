@@ -30,8 +30,12 @@ public sealed class TermRegistrationSummaryFacade(UniversityDbContext db)
                           select new { e.Id, e.CourseOfferingId, c.Code, c.Name, c.Credits, e.Status, e.RejectionReason })
             .ToListAsync(ct);
         var active = rows.Where(e => e.Status is EnrollmentStatus.Submitted or EnrollmentStatus.Approved).ToArray();
-        long credits = 0;
-        foreach (var row in active) credits = checked(credits + (long)row.Credits);
+        var credits = await (from e in db.Enrollments
+                             join o in db.CourseOfferings on e.CourseOfferingId equals o.Id
+                             join c in db.Courses on o.CourseId equals c.Id
+                             where e.StudentId == studentId && o.AcademicTermId == termId
+                                 && (e.Status == EnrollmentStatus.Submitted || e.Status == EnrollmentStatus.Approved)
+                             select (long?)c.Credits).SumAsync(ct) ?? 0L;
         var activeIds = active.Select(e => e.CourseOfferingId).Distinct().Order().ToArray();
         var schedule = new List<ActiveScheduleDto>();
         if (activeIds.Length > 0)
