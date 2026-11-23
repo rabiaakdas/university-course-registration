@@ -111,6 +111,12 @@ internal static class ResourceAccessChecks
                 Check((await Send(anon,"GET",path)).Status==401,"anonymous");
                 Check((await Send(cm.C,"GET",path)).Status==404,"multirole has no bypass");
             }
+            var ownWaitlist=$"/students/{sa.Id}/waitlist";
+            Check((await Send(ca.C,"GET",ownWaitlist)).Status==200,"own waiting positions");
+            Check((await Send(cb.C,"GET",ownWaitlist)).Status==404,"other waiting positions denied");
+            Check((await Send(cda.C,"GET",ownWaitlist)).Status==403,"advisor cannot read student-only waiting positions");
+            Check((await Send(cn.C,"GET",ownWaitlist)).Status==403,"roleless waiting positions denied");
+            Check((await Send(anon,"GET",ownWaitlist)).Status==401,"anonymous waiting positions denied");
             var before=await Snapshot();var events=app.Services.GetRequiredService<Approvals>().Count;
             var denied=new (string Path,object Body)[]{("/enrollments",new{studentId=sb.Id,courseOfferingId=offerings[1].Id}),($"/students/{sb.Id}/enrollments/batch",new{studentId=sa.Id,courseOfferingIds=new[]{offerings[1].Id}}),($"/students/{sb.Id}/enrollments/eligibility",new{studentId=sa.Id,courseOfferingIds=new[]{offerings[1].Id}}),($"/enrollments/{eB.Id}/submit",new{studentId=sa.Id})};
             foreach(var d in denied) Check((await Send(ca.C,"POST",d.Path,d.Body,ca.Csrf)).Status==404,"IDOR/body mismatch "+d.Path);
@@ -151,6 +157,7 @@ internal static class ResourceAccessChecks
             start=counter.Reads;Check((await Send(ca.C,"GET",$"/students/{sa.Id}/enrollments")).Status==200,"larger list");Check(counter.Reads-start==small && small>0,"bounded list query count");
             var mint=await Send(ca.C,"POST","/accounts/dev-token",new{},ca.Csrf);Check(mint.Status==200,"mint");var access=mint.Json!["accessToken"]!.GetValue<string>();secrets.Add(access);secrets.Add(mint.Json["refreshToken"]!.GetValue<string>());
             foreach(var path in Reads(sa,eA.Id))Check((await Send(anon,"GET",path,bearer:access)).Status==401,"bearer cannot open cookie resources");
+            Check((await Send(anon,"GET",ownWaitlist,bearer:access)).Status==401,"bearer cannot read cookie-only waiting positions");
             foreach(var suffix in new[]{"occupancy","pending-approvals"})
             {
                 var path=$"/reports/terms/{term.Id}/{suffix}";

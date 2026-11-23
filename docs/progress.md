@@ -2669,3 +2669,54 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
 - README ve day45-sql-reports.md güncellendi. Mimari değişiklik olmadığından
   ayrı ADR oluşturulmadı. Commit: feat: add accurate registration reporting queries.
   Gerçek commit/push bilgisi son raporda; kendi hash'i için ek commit yok.
+
+## Gün 46 — Window functions ile toplu bekleme konumları
+- Başlangıçta main temizdi; mevcut WaitlistEndpoints, StudentAccess, gün45
+  raporları ve ilgili fixture'lar koddan incelendi. Önceki günler için yeni,
+  kanıtsız tamamlanma kaydı eklenmedi.
+- Application/WaitlistPositions.cs: yalnız ilgili açılışların Waiting kümesi
+  üzerinde ROW_NUMBER PARTITION BY CourseOfferingId/QueueNumber ve COUNT_BIG
+  OVER. Öğrenci filtresi ve sayfalama dış sorguda; dış ORDER BY açık.
+  Mevcut unique QueueNumber deterministik sıra verir; boşluklar geçerlidir.
+- EF Database.SqlQuery<WaitingPosition> parametreli unmapped DTO kullanır;
+  Position/TotalWaiting long. Yeni paket/model/index/repository yok.
+  EXISTS bütün ilgili partition'ları seçer; öğrenciyi window öncesi daraltmaz.
+  Saat gibi bire-çok JOIN yok; bir temel satır bir başvuru.
+- GET /students/{studentId}/waitlist eklendi: kendi Waiting başvurularını,
+  gerçek açılış konumunu ve toplamını sayfalı verir. Cookie Student+sahiplik,
+  no-store; 401/403/404 ve 400 sayfalama sınırları. Kişisel public liste yok.
+  Mevcut tekil GET'in COUNT hesabı/yanıtı korundu, no-store eklendi.
+  Join/cancel/yerleştirme/FIFO kilit kodu ve POST CSRF değiştirilmedi.
+- sql/app/window-functions-example.sql: iki CTE cohort'u, eşit puanlar,
+  ROW_NUMBER için Id eşitlik bozucu; RANK/DENSE_RANK yalnız puan sırası.
+  Açık ROWS frame, peer gruplu RANGE, LAG/LEAD ilk/son NULL.
+  Department veya başka üretim tablosu eklenmedi.
+- Restore/build başarılı:0 uyarı/0 hata. window-functions hedefli koşu exit0:
+  iki açılışta1/2/3, hedef öğrencide2/1, her toplam3; kapalı durumlar dışarıda,
+  boşluklar, sayfalama, sahiplik/rol/no-store, parametreli tek SQL ve tracking
+  olmaması doğrulandı. Yeni context fixture snapshot'ı değişmedi.
+  Learning SQL'de A:ROW_NUMBER1/2/3/4, RANK1/1/3/4, DENSE_RANK1/1/2/3;
+  ROWS10/30/60/100 ve RANGE30/30/60/100; LAG/LEAD sınırları birebir geçti.
+- İlgili waitlist ve reports modları da exit0. Mevcut tekil konum, katılım/
+  iptal/yeniden katılım, gerçek FK/filtered UNIQUE/CSRF ve gün45 raporları
+  korunuyor. Hedefli koşularda model/snapshot uyumlu, pending migration yok.
+- Full paket ardından bir kez çalıştı, exit0. Yeni window testleri ve geçerli
+  bearer ile cookie-only liste401, Advisor/rolsüz403, başka öğrenci404
+  kontrolleri de geçti. Eski katalog/rapor/özet, lifecycle, kontenjan,
+  idempotency, waitlist/drop, gerçek batch rollback, Observer ve hesap/
+  cookie/JWT/refresh/reset/roles/resource-access/auth-abuse korundu.
+  Test başarısızlığı veya assertion kaldırma olmadı.
+- Şema/model/index değişmedi; migration oluşturulmadı, app/lab DB'lerine
+  dokunulmadı. Dört koşunun fixture/hesap/anahtar/sertifika/süreçleri temizlendi;
+  bu çalışmaya ait dört izole DB aktif bağlantı yokluğu kontrol edilerek
+  ayrıca silindi. Mevcut bağlantılar zorla kapatılmadı.
+- README/day46-window-functions.md: GROUP BY ve window farkı; partition/order/
+  frame; filtre-sayfa sırası; bigint/long; CTE ve sıralama maliyeti; kod konumları.
+  Yeni mimari katman olmadığı için ayrı ADR eklenmedi.
+- Sınırlar: canlı konum sonraki istekte değişebilir; window hesabı concurrency
+  veya kontenjan koruması değildir. Büyük veri/indeks optimizasyonu, farklı
+  açılış kredi-saat/atama TOCTOU ve tüm okuma interleaving'leri test edilmedi
+  veya çözülmüş sayılmadı. Browser/OIDC/isolation/locking modları ayrıca
+  tekrarlanmadı. İndeks optimizasyonu48. gün kapsamına bırakıldı.
+- Commit: feat: calculate waitlist positions with SQL window functions.
+  Gerçek hash/push son raporda; kendi hash'i için ek commit yok.

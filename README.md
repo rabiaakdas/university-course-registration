@@ -2650,3 +2650,31 @@ SQL örnekleri sql/app/report-*.sql altında; bağlanan SQL parametreleriyle ça
 SQLCMD metin değişkeni gerektirmez. reports modu bunları izole DB'de gerçek
 SqlParameter değerleriyle yürütür. Kavramlar ve tutarlılık sınırları:
 [day45-sql-reports](docs/day45-sql-reports.md).
+
+### Gün 46 — toplu bekleme pozisyonları
+
+Kendi Waiting başvuruları: cookie Student sahipliğiyle
+GET /students/{studentId}/waitlist?page=1&pageSize=20.
+Sayfa 1+, boyut 1..100; büyük/geçersiz offset 400. Başka öğrenci 404,
+kimlik yok401, Student rolü yok403; bearer-only kabul edilmez.
+GET salt okuma olduğu için CSRF token istemez; join/cancel POST korumaları aynıdır.
+
+    Invoke-RestMethod "$base/students/$studentId/waitlist?page=1&pageSize=20" -WebSession $session
+
+Yanıt page/pageSize/items içerir. Her item yalnız çağıranın başvurusudur:
+id, courseOfferingId, queueNumber, joinedAtUtc, position, totalWaiting.
+Position/totalWaiting açılışın tüm Waiting satırları üzerinde hesaplanır;
+öğrenci filtresi ve sayfalama sonradır. Başvuru yoksa boş items.
+Kişisel GET yanıtları no-store. Mevcut tek başvuru GET/POST yanıtına toplam
+alanı eklenmedi; tekil COUNT yaklaşımı korundu.
+
+    dotnet restore
+    dotnet build --no-restore
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode window-functions
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode waitlist
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode reports
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode full
+
+sql/app/window-functions-example.sql yalnız CTE/VALUES/SELECT kullanır;
+izole test DB'de çalıştırılabilir. Ayrıntılar:
+[day46-window-functions](docs/day46-window-functions.md).

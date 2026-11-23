@@ -17,6 +17,8 @@ public static class WaitlistEndpoints
         app.MapPost("/students/{studentId:int}/waitlist", JoinAsync)
             .WithStudentAccess(StudentAccessKind.Manage, routeKey: "studentId")
             .AddEndpointFilter<CatalogAntiforgeryFilter>();
+        app.MapGet("/students/{studentId:int}/waitlist", ListAsync)
+            .WithStudentAccess(StudentAccessKind.Manage, routeKey: "studentId");
         app.MapGet("/students/{studentId:int}/waitlist/{entryId:long}", ReadAsync)
             .WithStudentAccess(StudentAccessKind.Manage, routeKey: "studentId");
         app.MapPost("/students/{studentId:int}/waitlist/{entryId:long}/cancel", CancelAsync)
@@ -57,8 +59,18 @@ public static class WaitlistEndpoints
                     y.CourseOfferingId == x.CourseOfferingId && y.Status == WaitlistStatus.Waiting && y.QueueNumber <= x.QueueNumber) : null))
             .SingleOrDefaultAsync(ct);
 
-    static async Task<IResult> ReadAsync(int studentId, long entryId, UniversityDbContext db, CancellationToken ct)
+    static async Task<IResult> ListAsync(int studentId, UniversityDbContext db, HttpContext http,
+        CancellationToken ct, int page = 1, int pageSize = 20)
     {
+        http.Response.Headers.CacheControl = "no-store";
+        var errors = WaitlistPositions.Validate(studentId, page, pageSize);
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+        return Results.Ok(new { page, pageSize, items = await WaitlistPositions.ReadAsync(db, studentId, page, pageSize, ct) });
+    }
+
+    static async Task<IResult> ReadAsync(int studentId, long entryId, UniversityDbContext db, HttpContext http, CancellationToken ct)
+    {
+        http.Response.Headers.CacheControl = "no-store";
         var result = await ResponseAsync(db, studentId, entryId, ct);
         return result is null ? Missing() : Results.Ok(result);
     }
