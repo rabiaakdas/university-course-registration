@@ -2678,3 +2678,22 @@ alanı eklenmedi; tekil COUNT yaklaşımı korundu.
 sql/app/window-functions-example.sql yalnız CTE/VALUES/SELECT kullanır;
 izole test DB'de çalıştırılabilir. Ayrıntılar:
 [day46-window-functions](docs/day46-window-functions.md).
+
+### Gün 47 — öğrenci programı yükleme ölçümü
+
+Mevcut `GET /students/{studentId}/terms/{termId}/registration-summary`
+korundu. Ders/kayıt DTO projection'ı ile saatlerin ayrı toplu sorgusu N+1 veya
+saat JOIN'i nedeniyle kredi/satır çoğalması üretmedi; üretim kodu değiştirilmedi.
+Mevcut `summary` modu genişletildi; ayrıca loading-performance modu eklenmedi.
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode summary
+```
+
+İzole LocalDB/HTTPS ölçümünde 4/24/25 kayıt için 5 SQL komutu, aktif kayıt
+olmayan örneklerde 4 komut ve sıfır tracked entity görüldü. Bu sayılar facade
+sorgularıdır; HTTP kimlik/kaynak yetkilendirme sorgularını kapsamaz.
+Kişisel yanıt no-store; Student sahipliği veya atanmış Advisor erişimi korunur.
+Detaylar: [day47-loading-performance](docs/day47-loading-performance.md).

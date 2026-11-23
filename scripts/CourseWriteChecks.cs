@@ -265,7 +265,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "observer") await ObserverChecks.Run(root, Db);
         else if (mode == "window-functions") await WindowFunctionChecks.Run(root, Db, catalogIdentity);
         else if (mode == "reports") await ReportsChecks.Run(root, Db, catalogIdentity);
-        else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe, async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); });
+        else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe, async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); }, identity: catalogIdentity);
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
         else await StateChecks.Run(Db, Send, StopApi, StartApi);
         await catalogIdentity.CleanupAsync();
@@ -412,7 +412,7 @@ try
     await DropPlacementChecks.Run(Db, catalogIdentity);
     await WindowFunctionChecks.Run(root, Db, catalogIdentity);
     await ReportsChecks.Run(root, Db, catalogIdentity);
-    await SummaryChecks.Run(Db, Send, prepareIdentity: async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); });
+    await SummaryChecks.Run(Db, Send, prepareIdentity: async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); }, identity: catalogIdentity);
     await ObserverChecks.Run(root, Db);
     await RepositoryChecks.Run(Db);
     await IdentityModelChecks.Run(Db);

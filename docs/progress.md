@@ -2720,3 +2720,31 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   tekrarlanmadı. İndeks optimizasyonu48. gün kapsamına bırakıldı.
 - Commit: feat: calculate waitlist positions with SQL window functions.
   Gerçek hash/push son raporda; kendi hash'i için ek commit yok.
+
+## Gün 47 — ilişkili veri yükleme / öğrenci programı
+
+- Mevcut TermRegistrationSummaryFacade incelendi: entity grafiği yerine DTO,
+  ayrı toplu saat sorgusu, SQL aktif kredi toplamı. N+1/saat JOIN çoğalması
+  gözlenmedi; üretim kodu/API/model değiştirilmedi. Include/AsSplitQuery,
+  lazy loading, repository, cache veya index eklenmedi; ADR gerekmedi.
+- SummaryChecks ve mevcut summary/full çağrısı genişletildi. Gerçek SQL
+  parametre/alan/filtre kontrolleri; saatsiz aktif açılış; Dropped dışlaması;
+  büyük fixture'ın bütün saatleri; HTTPS sahip/atanmış danışman erişimi ve
+  401/403/404/no-store. Eski assertion'lar korundu, yeni mod kopyalanmadı.
+- Restore/build: başarılı, 0 uyarı/0 hata. summary exit0. Facade ölçümleri:
+  4/24/25 kayıt için5 SQL, aktif olmayan0/1 kayıt için4; saatsiz aktif
+  örnekte2 kayıt/0 saat/5 SQL. Her durumda0 tracked entity. HTTP auth
+  sorguları bu komut sayılarına dahil değildir. Eksik öğrenci/dönem1/2 SQL.
+- Sabit beklenen kredi/saat/durum/öğrenci/dönem değerleri ve yeni context
+  snapshot'ları geçti. Saf okumalar veri değiştirmedi; Int64 toplam ve
+  çok saatli dersin tek kredi katkısı korundu. Süre ölçümü yapılmadı.
+- Üretim değişikliği olmadığından full yeniden çalıştırılmadı. Tüm güvenlik
+  modları, browser veya concurrency yarışları bugün yeniden doğrulanmadı.
+- Model/snapshot uyumlu ve pending migration yok; yeni migration yok.
+  Fixture/hesap/sertifika/anahtar/süreç temizliği geçti; bu koşunun izole DB'si
+  ayrıca silindi. App/lab ve önceki test DB'lerine dokunulmadı.
+- README ve day47-loading-performance.md: N+1, Include/projection/split query,
+  kod konumları ve gerçek ölçümler. Ayrı SELECT'ler snapshot garantisi vermez;
+  veri hacmi maliyeti, farklı açılış/atama yarışları çözülmüş sayılmadı.
+- Sıradaki gün48: indeks ve sorgu planı optimizasyonu.
+- Tek ilgili commit/push sonucu son raporda; kendi hash'i için ek commit yok.

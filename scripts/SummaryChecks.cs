@@ -11,7 +11,7 @@ internal static class SummaryChecks
 {
     static void Check(bool value, string label) { if (!value) throw new BehaviorFailure("Summary: " + label); }
     public static async Task Run(Func<UniversityDbContext> factory,
-        Func<string,string,object?,string?,Task<(int Status,JsonNode Body,string? Location)>> send, bool probe = false, Func<int,Task>? prepareIdentity = null)
+        Func<string,string,object?,string?,Task<(int Status,JsonNode Body,string? Location)>> send, bool probe = false, Func<int,Task>? prepareIdentity = null, CatalogTestIdentity? identity = null)
     {
         var tag="S19_"+Guid.NewGuid().ToString("N")[..8];
         var students=new List<Student>();var terms=new List<AcademicTerm>();var courses=new List<Course>();
@@ -23,6 +23,7 @@ internal static class SummaryChecks
             if(status!=EnrollmentStatus.Draft)Check(e.TrySubmit(),"fixture submit");
             if(status==EnrollmentStatus.Approved)Check(e.TryApprove(),"fixture approve");
             if(status==EnrollmentStatus.Rejected)Check(e.TryReject(" Synthetic reason "),"fixture reject");
+            if(status==EnrollmentStatus.Dropped)Check(e.TryDrop(),"fixture drop");
             enrollments.Add(e);return e;
         }
         void Slot(int offering,DayOfWeek day,TimeOnly start,TimeOnly end)=>slots.Add(new(){CourseOfferingId=offering,Day=day,StartsAt=start,EndsAt=end});
@@ -50,11 +51,24 @@ internal static class SummaryChecks
             Check(capture.Commands.Count==expectedReads && capture.Commands.All(c=>c.Text.TrimStart().StartsWith("SELECT",StringComparison.OrdinalIgnoreCase)),"bounded read-only SQL");
             var query=capture.Commands.Single(c=>c.Text.Contains("JOIN")&&c.Text.Contains("Courses")&&!c.Text.Contains("SUM("));
             Check(query.Text.Contains("WHERE")&&query.Text.Contains("StudentId")&&query.Text.Contains("AcademicTermId")&&query.Text.Contains("ORDER BY")&&!query.Text.Contains("CreatedAtUtc"),"filtered ordered enrollment projection");
+            Check(!query.Text.Contains("CourseOfferingTimeSlots") && !query.Text.Contains("RowVersion")
+                && !query.Text.Contains("Capacity") && !query.Text.Contains("OccupiedSeats")
+                && !query.Text.Contains("FullName") && !query.Text.Contains("UserId"),"enrollment projection avoids entity/private/unused fields and slot fan-out");
+            Check(capture.Commands.Single(c=>c.Text==query.Text).Parameters.Any(p=>p is int n && n==student)
+                && capture.Commands.Single(c=>c.Text==query.Text).Parameters.Any(p=>p is int n && n==term),"student/term SQL parameters");
+            var sum=capture.Commands.Single(c=>c.Text.Contains("SUM(")).Text;
+            Check(sum.Contains("bigint") && sum.Contains("WHERE") && sum.Contains("Status") && !sum.Contains("CourseOfferingTimeSlots"),"active SQL credit aggregate without slot multiplication");
             if(expectedReads==5)
             {
                 var schedule=capture.Commands.Single(c=>c.Text.Contains("CourseOfferingTimeSlots"));
                 Check(schedule.Text.Contains("WHERE")&&schedule.Text.Contains("ORDER BY")&&schedule.Text.Contains("%"),"filtered SQL Monday-first slot order");
+                var projection=schedule.Text[..schedule.Text.IndexOf("FROM",StringComparison.OrdinalIgnoreCase)];
+                Check(new[]{"CourseOfferingId","Day","StartsAt","EndsAt"}.All(projection.Contains)
+                    && !projection.Contains("JOIN") && !projection.Contains("Status") && !projection.Contains("StudentId")
+                    && !projection.Contains("Name") && !projection.Contains("].[Id]"),"only four slot DTO columns selected (Id only orders)");
             }
+            var data=((TermRegistrationSummaryResult.Found)result).Summary;
+            Console.WriteLine($"MEASURE summary: enrollments={data.Enrollments.Count}; schedule={data.ActiveSchedule.Count}; commands={capture.Commands.Count}; tracked={db.ChangeTracker.Entries().Count()}");
         }
         try
         {
@@ -78,7 +92,24 @@ internal static class SummaryChecks
             Slot(offerings[4].Id,DayOfWeek.Wednesday,new(6,0),new(7,0));
             await using(var db=factory()){db.AddRange(enrollments);db.AddRange(slots);await SeatCapacityChecks.SaveFixtureAsync(db);}
             if (prepareIdentity is not null) foreach (var student in students) await prepareIdentity(student.Id);
+            HttpClient? advisor=null;
+            if(identity is not null)
+                advisor=await identity.ForRequestAsync("POST",$"/enrollments/{enrollments[0].Id}/approve",null,null);
             var before=await Snapshot();var summary=await Get(students[0].Id,terms[0].Id);
+            if(identity is not null)
+            {
+                async Task Access(HttpClient client,int student,int expected)
+                {
+                    using var response=await client.GetAsync(Path(student,terms[0].Id));
+                    Check((int)response.StatusCode==expected,"summary access boundary "+expected);
+                    if(expected==200)Check(response.Headers.CacheControl?.NoStore==true,"summary no-store");
+                }
+                var owner=await identity.ForRequestAsync("GET",Path(students[0].Id,terms[0].Id),null,null);
+                using var anonymous=identity.AnonymousClient();
+                await Access(anonymous,students[0].Id,401);await Access(identity.Client,students[0].Id,403);
+                await Access(owner,students[0].Id,200);await Access(owner,students[1].Id,404);
+                await Access(advisor!,students[0].Id,200);await Access(advisor!,students[1].Id,404);
+            }
             Check(summary["studentId"]!.GetValue<int>()==students[0].Id&&summary["academicTermId"]!.GetValue<int>()==terms[0].Id,"identity");
             Check(summary["activeCredits"]!.GetValue<long>()==9,"multi-slot course counted once, active policy");
             Check(summary["counts"]!.AsObject().Count==5&&summary["counts"]!["dropped"]!.GetValue<int>()==0&&summary["counts"]!.AsObject().Where(p=>p.Key!="dropped").All(p=>p.Value!.GetValue<int>()==1),"four exact status counts");
@@ -115,6 +146,14 @@ internal static class SummaryChecks
             var inactive=await Get(students[2].Id,terms[0].Id);
             Check(inactive["counts"]!["draft"]!.GetValue<int>()==1&&inactive["activeCredits"]!.GetValue<long>()==0&&inactive["activeSchedule"]!.AsArray().Count==0&&inactive["unscheduledActiveOfferingIds"]!.AsArray().Count==0,"inactive-only with known slots excludes schedule");
             Check(inactiveBefore==await Snapshot(),"inactive read unchanged");
+            // Active enrollment with no slots still performs ONE empty slot query.
+            await using(var db=factory()){db.Add(NewEnrollment(students[2].Id,offerings[2].Id,EnrollmentStatus.Approved));await SeatCapacityChecks.SaveFixtureAsync(db);}
+            var noSlotsBefore=await Snapshot();await InspectSql(students[2].Id,terms[0].Id,5);
+            var noSlots=await Get(students[2].Id,terms[0].Id);
+            Check(noSlots["activeCredits"]!.GetValue<long>()==5 && noSlots["activeSchedule"]!.AsArray().Count==0
+                && noSlots["unscheduledActiveOfferingIds"]!.AsArray().Single()!.GetValue<int>()==offerings[2].Id,"active but unscheduled contract");
+            Check(noSlotsBefore==await Snapshot(),"unscheduled read unchanged");
+
             // More rows, including two sections of the same course and totals beyond Int32.
             var large=new Course{Code=tag+"L",Name="Wide credit fixture",Credits=int.MaxValue};courses.Add(large);
             await using(var db=factory()){db.Add(large);await db.SaveChangesAsync();}
@@ -128,7 +167,29 @@ internal static class SummaryChecks
             var expanded=await Get(students[0].Id,terms[0].Id);Check(expanded["enrollments"]!.AsArray().Count==24&&expanded["activeCredits"]!.GetValue<long>()==9+2L*int.MaxValue+18L*4,"same course sections each count, checked long total");
             var unscheduled=expanded["unscheduledActiveOfferingIds"]!.AsArray().Select(n=>n!.GetValue<int>()).ToArray();Check(unscheduled.Length==19&&unscheduled.SequenceEqual(unscheduled.Order()),"sorted unscheduled IDs");
             Check(expanded["activeSchedule"]!.AsArray().Take(3).Select(n=>n!["courseOfferingId"]!.GetValue<int>()).SequenceEqual(new[]{offerings[1].Id,extra[0].Id,extra[1].Id}.Order()),"equal weekday/start/end ordered by offering ID");
+            var expectedExpanded=expectedSlots.Concat(slots.Skip(tieStart)).OrderBy(s=>((int)s.Day+6)%7)
+                .ThenBy(s=>s.StartsAt).ThenBy(s=>s.EndsAt).ThenBy(s=>s.CourseOfferingId).ThenBy(s=>s.Id).ToArray();
+            var expandedSlots=expanded["activeSchedule"]!.AsArray();
+            Check(expandedSlots.Count==6,"all six expanded slots, no duplication or omission");
+            for(var i=0;i<expectedExpanded.Length;i++)
+                Check(expandedSlots[i]!["courseOfferingId"]!.GetValue<int>()==expectedExpanded[i].CourseOfferingId
+                    && expandedSlots[i]!["day"]!.GetValue<string>()==expectedExpanded[i].Day.ToString()
+                    && expandedSlots[i]!["startsAt"]!.Deserialize<TimeOnly>()==expectedExpanded[i].StartsAt
+                    && expandedSlots[i]!["endsAt"]!.Deserialize<TimeOnly>()==expectedExpanded[i].EndsAt,"expanded exact slot identity/time");
             Check(expandedBefore==await Snapshot(),"expanded read unchanged in fresh context");
+            var droppedOffering=new CourseOffering{CourseId=courses[0].Id,AcademicTermId=terms[0].Id,SectionCode="DROP",Capacity=40};
+            offerings.Add(droppedOffering);
+            await using(var db=factory()){db.Add(droppedOffering);await db.SaveChangesAsync();db.Add(NewEnrollment(students[0].Id,droppedOffering.Id,EnrollmentStatus.Dropped));await db.SaveChangesAsync();}
+            Slot(droppedOffering.Id,DayOfWeek.Friday,new(14,0),new(15,0));
+            await using(var db=factory()){db.Add(slots.Last());await db.SaveChangesAsync();}
+            var droppedBefore=await Snapshot();await InspectSql(students[0].Id,terms[0].Id,5);
+            var dropped=await Get(students[0].Id,terms[0].Id);
+            Check(dropped["enrollments"]!.AsArray().Count==25 && dropped["counts"]!["dropped"]!.GetValue<int>()==1
+                && dropped["activeCredits"]!.GetValue<long>()==9+2L*int.MaxValue+18L*4
+                && dropped["activeSchedule"]!.AsArray().Count==6
+                && !dropped["activeSchedule"]!.AsArray().Any(n=>n!["courseOfferingId"]!.GetValue<int>()==droppedOffering.Id)
+                && !dropped["unscheduledActiveOfferingIds"]!.AsArray().Any(n=>n!.GetValue<int>()==droppedOffering.Id),"Dropped listed but consumes no schedule or load");
+            Check(droppedBefore==await Snapshot(),"Dropped read unchanged");
             if(probe)Check(false,"controlled failure propagation");
             Console.WriteLine("PASS: summary real HTTP/SQL identities/statuses/9 credits/no multiplication; active-only schedule and unscheduled IDs; Monday/tick precision; 404/400/empty/repeat; five reads at 4 and 24 rows, four when empty; projection untracked; fresh-context no-write and Int64 total");
         }
