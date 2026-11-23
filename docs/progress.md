@@ -2748,3 +2748,32 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   veri hacmi maliyeti, farklı açılış/atama yarışları çözülmüş sayılmadı.
 - Sıradaki gün48: indeks ve sorgu planı optimizasyonu.
 - Tek ilgili commit/push sonucu son raporda; kendi hash'i için ek commit yok.
+
+## Gün 48 — SQL Server index / execution plan
+
+- Hedef: PlaceWaitingAsync'in açılış+Waiting+QueueNumber aralığı/TOP32 sayfası.
+  Mevcut birleşik index sırası, PK, unique QueueNumber ve filtered student/
+  offering koruması incelendi. Üretim sorgusu/eşleme değişmedi.
+- IndexPerformanceChecks ve tek index-performance modu eklendi. Gerçek EF
+  command/typed parametre yakalama, actual XML/IO/TIME, bir ısınma+üç ölçüm;
+  hint/cache temizliği yok.12.004 satırlık dağılımda küçük/yoğun/seyrek/son
+  sayfa bağımsız Id/StudentId/FIFO beklentileri geçti.
+- Aynı key'e INCLUDE adayı yalnız izole DB'de mevcut index'in yerine denendi;
+  duplicate index eklenmedi. Logical reads10/66/48/6 →2/2/2/2, bütün üç
+  ölçümde aynı. PK tamamlama erişimi kalktı; Sort/Scan operatörü yok.
+  Top tahmin2.83031, gerçek4/32/6/2. Süre son koşuda0–1ms, CPU çoğunlukla0,
+  adayda15/16ms örnekleri var; hız garantisi yok. İlk koşu süre0–3ms.
+- Karar: IO kazancı var, fakat bounded32 sayfa için gerçek iş yükü, yazma ve
+  depolama ölçülmedi; üretim index'ini genişletme ertelendi. ADR0048 kaydedildi.
+  Filtered aday, farklı key sıraları veya yaşam döngüsü yazma maliyeti ölçülmedi.
+- Restore/build0 uyarı/0 hata. İlk hedefli test derlemesinde yapıcı uyumsuzluğu
+  düzeltildi; ilk başarılı koşu ve plan-index izi/koşuya özel dosya temizliği
+  sonrası son hedefli koşu exit0. Model/snapshot uyumlu, migration yok.
+  Üretim değişmediğinden full/HTTP tekrar çalıştırılmadı.
+- Yeni context tüm başvuru alanlarını/durumları, enrollment yokluğunu ve
+  sayaçları doğruladı; okuma veri değiştirmedi. Fixture ve planlar finally'de
+  temizlendi, özgün index geri geldi. Yalnız bu iki koşunun test DB'leri ayrıca
+  kaldırıldı; app/lab ve eski test DB'lerine dokunulmadı.
+- README/day48 ve ADR: anahtar sırası, INCLUDE, unique/filtered kapsamı,
+  actual/tahmini satır, IO/CPU/süre farkı, plan yeniden kullanımı sınırı.
+  Sıradaki gün49; yeni kapsam sonraki görevde belirlenecek.

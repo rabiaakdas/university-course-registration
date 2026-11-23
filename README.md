@@ -2697,3 +2697,24 @@ olmayan örneklerde 4 komut ve sıfır tracked entity görüldü. Bu sayılar fa
 sorgularıdır; HTTP kimlik/kaynak yetkilendirme sorgularını kapsamaz.
 Kişisel yanıt no-store; Student sahipliği veya atanmış Advisor erişimi korunur.
 Detaylar: [day47-loading-performance](docs/day47-loading-performance.md).
+
+### Gün 48 — aday sorgusunun index ve plan ölçümü
+
+Üretimdeki bekleme listesi aday seçiminin `(CourseOfferingId, Status,
+QueueNumber)` index'i korundu. İzole kapsayıcı index deneyi logical reads'i
+azalttı; yazma/depolama ve gerçek iş yükü kazancı ölçülmediği için üretim
+index'i genişletilmedi. Yeni migration yok.
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode index-performance
+```
+
+Mod yalnız yeni izole LocalDB'de 12.004 sentetik başvuru kullanır. Gerçek EF
+SQL/parametrelerini, üç sıcak ölçümün IO/TIME sonuçlarını ve actual plan
+özetini yazdırır. Geçici XML planları `obj/day48-plans/<koşu>/` altında
+oluşturulup finally'de kaldırılır; fixture temizlenir ve özgün index geri gelir.
+Çalıştırıcı diğer DB modları gibi boş test DB'sini bırakır; bu günün çalışmasında
+koşuya ait DB'ler ayrıca kaldırıldı. App/lab hedeflenmez.
+[Ölçümler ve sınırlar](docs/day48-indexes-and-execution-plans.md).
