@@ -512,6 +512,28 @@ namespace UniversityRegistration.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("UniversityRegistration.Models.OfferingCapacityView", b =>
+                {
+                    b.Property<int>("AcademicTermId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("CalculatedActiveCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OfferingId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StoredOccupiedSeats")
+                        .HasColumnType("int");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("OfferingCapacityReport", "dbo");
+                });
+
             modelBuilder.Entity("UniversityRegistration.Models.RefreshSession", b =>
                 {
                     b.Property<Guid>("Id")

@@ -2815,3 +2815,49 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   App/lab/önceden mevcut DB'lere dokunulmadı; geçici çıktılar kaldırıldı.
 - README/day49/ADR0049: offset alternatifi, SQL bakım maliyeti, parçalı okuma
   ile yazma batching ayrımı, snapshot sınırı. Sıradaki gün50.
+
+## Gün 50 — DB nesneleri / en az yetki / backup-restore
+
+- OfferingCapacityReport view: açılış başına kapasite, COUNT_BIG Submitted1/
+  Approved2 ve ayrı StoredOccupiedSeats. Boş açılış0, saat JOIN çoğalması yok.
+  Keyless long/ToView; mevcut HTTP raporu/erişim sözleşmesi değişmedi.
+- EF aracıyla AddOfferingCapacityReportView migration/designer/snapshot üretildi.
+  Up ayrı CREATE VIEW batch'i, Down DROP VIEW. Yeni model dışında tablo/index
+  veya iş akışı değişmedi. Lab procedure/inline TVF aynı parametreli raporu
+  verdi; trigger yalnız deney tablosunda3 satırdan1 audit/9 toplam üretti.
+  Gerçek51050 sonrası önceki yazma/audit dahil açık transaction rollback geçti.
+- Dar roller: report yalnız view SELECT; catalog runtime Courses SELECT/INSERT
+  ve Code/Name/Credits UPDATE. db_owner/db_ddladmin yok. EXECUTE AS USER +
+  finally REVERT; tablo/DDL/sequence retleri doğrulandı. Bu tüm uygulama
+  runtime rolü değildir; Identity/enrollment/waitlist/UPDLOCK yetkileri yok.
+- Ortam IsLocalDB1, IsIntegratedSecurityOnly0. Genel ayar değiştirilmeden
+  geçici SQL login ile ayrı sınırlı bağlantıda gerçek EF katalog okuma,
+  insert/update+rowversion ve yetkisiz enrollment SELECT reddi geçti.
+  Bellek içi parola yazdırılmadı; user/login kaldırıldı; kalan login0.
+- İzole temiz kurulum, Down, önceki şemadaki5 durum/5 öğrenci/2 açılış/2 saatin
+  korunarak yükseltilmesi, ikinci update no-op ve model/snapshot geçti.
+  Sayaç1/hesaplanan2 farkı kasıtlı fixture ile görünür kaldı, sonra geri alındı.
+- COPY_ONLY/CHECKSUM backup, VERIFYONLY, FILELISTONLY'deki2 dosyaya ayrı MOVE
+  ile gerçek restore ve CHECKDB hata satırı yokluğu geçti. Hedef eski adı,
+  kaynak backup sonrası yeni adı taşıdı. View, ilişkiler, migration geçmişi
+  ve mevcut uygulama DTO okuması restore hedefinde doğrulandı.
+- Restore/build0 uyarı/0 hata. İlk test derlemesi SqlParameter tür çıkarımı,
+  ilk koşu RowCount keyword hatası verdi; düzeltildi. İkinci koşunun davranışı
+  başarılı, temizlik pool yüzünden exit3. Pooling=false sonrası hedefli koşu
+  tüm temizlikle exit0. Önceki üç DB/iki temp dizini kimlik/zaman/dosya
+  eşlemesiyle ayrıca temizlendi; bağlantılar zorla sonlandırılmadı.
+- App hedefi mevcut yapılandırmadan doğrulandı, çalışan uygulama exe'si yoktu.
+  Yalnız hedef view migration uygulandı; ikinci update no-op, model uyumlu,
+  view3 satır okunabildi. Ek app before/after checksum denemesi eski
+  System.Data.SqlClient encryption hatasında çalışmadı; komut akışındaki
+  yanıltıcı PASS geçerli kanıt değil. App veri karşılaştırması doğrulandı
+  denmiyor; migration yalnız CREATE VIEW ve izole veri koruma testi geçti.
+- Full bir kez exit0: mevcut katalog, rapor/summary, akademik geçişler,
+  kontenjan/idempotency/waitlist/drop, rollback/Observer, hesap/cookie/JWT/
+  refresh/reset/rol/sahiplik/auth-abuse kontrolleri korundu. Ayrı browser/OIDC
+  ve tüm laboratuvar modları yeniden çalıştırılmadı. Full DB ayrıca kaldırıldı.
+- README/day50/ADR0050 ve ayrı lab izin SQL'i eklendi. Mevcut .gitignore
+  *.bak/*.mdf/*.ndf/*.ldf ve obj kuralları yeterli; yedekler repo dışındaydı.
+  Temp dosya/hesap/login/süreç temizliği tamam; app/lab restore hedefi olmadı.
+- Sınırlar: yedek server login/anahtar/dış ayarları bütünüyle taşımaz; PITR,
+  RPO/RTO, production provisioning/backup hizmeti yok. Sıradaki gün51.

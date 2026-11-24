@@ -23,6 +23,7 @@ public class UniversityDbContext(DbContextOptions<UniversityDbContext> options) 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<OfferingCapacityView>().HasNoKey().ToView("OfferingCapacityReport", "dbo");
         modelBuilder.HasSequence<long>("WaitlistQueueNumbers").StartsAt(1).IncrementsBy(1);
         var waitlist = modelBuilder.Entity<WaitlistEntry>();
         waitlist.ToTable("WaitlistEntries", t =>

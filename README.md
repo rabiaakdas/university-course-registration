@@ -2742,3 +2742,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes
 Dapper yalnız geçici test projesinde2.1.66 olarak sabitlidir; uygulama paketi
 ve rapor uygulaması değişmedi. Parçalı okuma ve LINQ/raw SQL/Dapper karşılaştırması
 [day49 notunda](docs/day49-pagination-batching-and-data-access.md).
+
+### Gün 50 — DB nesneleri, dar izinler ve gerçek restore
+
+`dbo.OfferingCapacityReport` migration ile yönetilir: açılış/dönem/kapasite,
+`CalculatedActiveCount` (bigint/long) ve ayrı `StoredOccupiedSeats` alanları.
+Mevcut HTTP raporu değişmedi; yeni endpoint yok. EF keyless `ToView` yalnız
+okuma eşlemesidir; nesneyi migration oluşturur.
+
+```powershell
+dotnet restore
+dotnet build --no-restore
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode database-operations
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode full
+# Uygulama yazmaları durdurulmuş, yapılandırılmış hedef doğrulanmış olmalıdır:
+dotnet ef database update 20261124111639_AddOfferingCapacityReportView
+dotnet ef migrations has-pending-model-changes
+```
+
+Migration hesabı DDL yetkisi ister; runtime hesabına db_owner/db_ddladmin
+verilmez. `sql/app/database-operations-permissions-lab.sql` yalnız izole deney
+provisioning'idir; uygulama migration'ı veya tam runtime izin seti değildir.
+
+Database-operations yeni kaynak DB ve farklı, var olmayan restore hedefi
+oluşturur. Repo dışındaki benzersiz geçici dizinde COPY_ONLY/CHECKSUM yedek,
+VERIFYONLY, FILELISTONLY'deki tüm dosyalar için MOVE ve gerçek restore yapar.
+WITH REPLACE yok; app/lab hedef olamaz. LocalDB sahibinin dosya erişimi ve
+geçici SQL login oluşturma yetkisi gerekir; parola bellekte üretilip temizlenir.
+Deney sonunda yalnız sahipliği doğrulanmış DB/dosyalar kaldırılır. Bu bir
+production yedekleme hizmeti değildir. [Sonuçlar ve sınırlar](docs/day50-database-operations.md).

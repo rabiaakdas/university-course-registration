@@ -122,12 +122,14 @@ catch (Exception ex)
     return;
 }
 Console.WriteLine("Test DB: " + database);
-if (mode is "concurrency-lab" or "seat-capacity" or "isolation-lab" or "locking-lab" or "index-performance")
+if (mode is "concurrency-lab" or "seat-capacity" or "isolation-lab" or "locking-lab" or "index-performance" or "database-operations")
 {
     try
     {
         // Isolation owns a schema-free fresh DB; other labs retain their existing migration setup.
-        if (mode == "index-performance")
+        if (mode == "database-operations")
+        { await DatabaseOperationsChecks.Run(root, connection); }
+        else if (mode == "index-performance")
         { await IndexPerformanceChecks.Run(root, Db, probe); }
         else if (mode == "locking-lab")
         { await LockingLabChecks.Run(connection, probe); }
