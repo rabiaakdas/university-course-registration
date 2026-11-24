@@ -14,6 +14,7 @@ public static class CourseEndpoints
             Results.Ok(await db.Courses.OrderBy(c => c.Id)
                 .Select(c => new CourseListItemDto(c.Id, c.Code, c.Name)).ToListAsync(ct)));
         app.MapGet("/courses/catalog", CourseCatalogEndpoint.GetAsync);
+        app.MapGet("/courses/catalog/keyset", CourseCatalogEndpoint.GetKeysetAsync);
         app.MapGet("/courses/{id:int}", GetAsync);
         app.MapPost("/courses", CreateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();
         app.MapPut("/courses/{id:int}", UpdateAsync).RequireAuthorization(UniversityRoles.ManageCatalog).AddEndpointFilter<CatalogAntiforgeryFilter>();

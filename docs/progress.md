@@ -2777,3 +2777,41 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
 - README/day48 ve ADR: anahtar sırası, INCLUDE, unique/filtered kapsamı,
   actual/tahmini satır, IO/CPU/süre farkı, plan yeniden kullanımı sınırı.
   Sıradaki gün49; yeni kapsam sonraki görevde belirlenecek.
+
+## Gün 49 — offset/keyset, parçalı okuma ve veri erişimi
+
+- Public /courses/catalog/keyset eklendi; offset sözleşmesi korundu. Ortak
+  search/credits filtresi, Id artan, pozitif afterId, pageSize1..100, +1 satır
+  ile hasMore; nextAfterId devam yoksa null. COUNT/karmaşık cursor yok.
+- CourseKeysetQuery/Reader/Endpoint/DTO; raporlar üretimde LINQ kaldı.
+  PaginationChecks ve tek pagination modu:6000 ders, Id boşluğu,73'lük
+  parçalar, sonuçları biriktirmeden count/sum/sıra kontrolü ve cancellation.
+- Deneyde doluluk raporu LINQ/EF parametreli raw SQL/Dapper ile okundu.
+  Dapper2.1.66 yalnız test csproj'unda; üretime paket eklenmedi. Aynı iki
+  bağımsız DTO (%50/%0), boş dönem, NULL aggregate ve çok saatli ilişki geçti.
+- Restore/build0 hata/0 uyarı. Hedefli gerçek SQL/HTTPS başarılı. Boş cursor,
+  değişmezlik ve EF IO mesajlarının eksik yakalanması tamamlandı. Son incelemede
+  raw yüzde yuvarlaması kaldırıldı, append/offset assertion'ı eklendi;
+  son hedefli koşu exit0. Başarılı takımlar gerekçesiz tekrarlanmadı.
+- Derin offset5000 ve eşdeğer keyset20:56/3 logical reads (üçer ölçüm).
+  Actual plan scan/seek; sonuç aynı. Son süreler offset6.19/6.46/8.69ms,
+  keyset1.53/1.88/1.56ms. Boundary hazırlığı ve offset COUNT dahil değil.
+- Raporlar her biri10 logical reads; LINQ2.00/2.15/2.48ms,
+  raw1.16/0.99/1.20ms, Dapper0.66/0.53/0.54ms. EF IO gerçek tamamlanmış
+  command/parametre tekrarından, Stopwatch asıl tam okumadan. Genel hız
+  üstünlüğü yok; buffer/connection/timeout/cancellation sahipliği belgeli.
+- Önceki satır silinince offset atlama, keyset sınırının korunması; sonradan
+  eklenen büyük Id'nin iki yolda da görünmesi doğrulandı. Snapshot yok.
+- Full bir kez çalıştı, exit0; mevcut katalog, summary, rapor/waitlist,
+  lifecycle/kapasite/idempotency/rollback/Observer ve hesap/cookie/JWT/
+  refresh/reset/rol/ownership/auth-abuse kontrolleri geçti. Son hedefli
+  derleme aynı test exe kilidinde MSB3026 ile bekledi; sonra başarıyla bitti.
+  Browser/OIDC/isolation/locking ayrı modları yeniden çalıştırılmadı.
+- Yeni context read snapshot'ları değişmedi. Model/snapshot uyumlu, pending
+  migration yok; şema/index/migration değişmedi. Fixture ve süreçler temiz.
+  Beş test DB'sinin silinmesi önce otomatik incelemede sahiplik kanıtı nedeniyle
+  reddedildi; koşu logları ve sys.databases oluşturulma zamanları doğrulanıp
+  tarih sınırı da kontrol edilerek yalnız bu beş DB başarıyla kaldırıldı.
+  App/lab/önceden mevcut DB'lere dokunulmadı; geçici çıktılar kaldırıldı.
+- README/day49/ADR0049: offset alternatifi, SQL bakım maliyeti, parçalı okuma
+  ile yazma batching ayrımı, snapshot sınırı. Sıradaki gün50.

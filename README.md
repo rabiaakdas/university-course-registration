@@ -2718,3 +2718,27 @@ oluşturulup finally'de kaldırılır; fixture temizlenir ve özgün index geri 
 Çalıştırıcı diğer DB modları gibi boş test DB'sini bırakır; bu günün çalışmasında
 koşuya ait DB'ler ayrıca kaldırıldı. App/lab hedeflenmez.
 [Ölçümler ve sınırlar](docs/day48-indexes-and-execution-plans.md).
+
+### Gün 49 — keyset katalog ve veri erişimi deneyi
+
+Offset `GET /courses/catalog` değişmedi. Public alternatif:
+`GET /courses/catalog/keyset?search=MAT&credits=3&pageSize=20&afterId=123`.
+İlk istekte afterId gönderilmez. Yanıt: `items`, `hasMore`, `nextAfterId`.
+Devam yoksa nextAfterId null; items yalnız id/code/name içerir. afterId verilirse
+pozitif int olmalıdır (boş/bozuk değer400); silinmiş bir Id olabilir.
+pageSize1..100, varsayılan20. Filtreleri devam isteklerinde aynı tutun.
+
+```powershell
+$page = Invoke-RestMethod "$base/courses/catalog/keyset?pageSize=20"
+if ($page.hasMore) {
+    $next = Invoke-RestMethod "$base/courses/catalog/keyset?pageSize=20&afterId=$($page.nextAfterId)"
+}
+dotnet restore
+dotnet build --no-restore
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode pagination
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-course-writes.ps1 -Mode full
+```
+
+Dapper yalnız geçici test projesinde2.1.66 olarak sabitlidir; uygulama paketi
+ve rapor uygulaması değişmedi. Parçalı okuma ve LINQ/raw SQL/Dapper karşılaştırması
+[day49 notunda](docs/day49-pagination-batching-and-data-access.md).

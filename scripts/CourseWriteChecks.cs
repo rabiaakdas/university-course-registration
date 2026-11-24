@@ -234,7 +234,7 @@ async Task<(int Status, JsonNode Body, string? Location)> Send(string method, st
 }
 void DetailFields(JsonNode node, bool version = true) => Check(string.Join(',', node.AsObject().Select(p => p.Key).Order()) == (version ? "code,credits,id,name,rowVersion" : "code,credits,id,name"), "Detail field contract");
 
-if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc" or "course-version" or "idempotency" or "waitlist" or "drop-placement" or "concurrency-invariants" or "reports" or "window-functions")
+if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator" or "summary" or "observer" or "repository" or "identity-model" or "accounts" or "cookie" or "jwt" or "refresh" or "refresh-family" or "password-reset" or "roles" or "resource-access" or "auth-abuse" or "web-client" or "cors-lab" or "oidc" or "course-version" or "idempotency" or "waitlist" or "drop-placement" or "concurrency-invariants" or "reports" or "window-functions" or "pagination")
 {
     try
     {
@@ -266,6 +266,7 @@ if (mode is "core" or "specifications" or "eligibility" or "state" or "decorator
         else if (mode == "repository") await RepositoryChecks.Run(Db, probe);
         else if (mode == "observer") await ObserverChecks.Run(root, Db);
         else if (mode == "window-functions") await WindowFunctionChecks.Run(root, Db, catalogIdentity);
+        else if (mode == "pagination") await PaginationChecks.Run(Db, catalogIdentity);
         else if (mode == "reports") await ReportsChecks.Run(root, Db, catalogIdentity);
         else if (mode == "summary") await SummaryChecks.Run(Db, Send, probe, async id => { await catalogIdentity.ForRequestAsync("GET", $"/students/{id}", null, null); }, identity: catalogIdentity);
         else if (mode == "decorator") { await EligibilityChecks.Run(Db, Send); await StateChecks.Run(Db, Send, StopApi, StartApi); }
