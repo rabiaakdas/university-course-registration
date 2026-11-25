@@ -2861,3 +2861,22 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
   Temp dosya/hesap/login/süreç temizliği tamam; app/lab restore hedefi olmadı.
 - Sınırlar: yedek server login/anahtar/dış ayarları bütünüyle taşımaz; PITR,
   RPO/RTO, production provisioning/backup hizmeti yok. Sıradaki gün51.
+
+## Gün 51 — Docker image, multi-stage ve build context
+
+- Mevcut main temizdi; tek net10.0 web projesi, global.json SDK10.0.401
+  latestPatch ve Production/static başlangıç incelendi. Eski günler yeniden uygulanmadı.
+- Dockerfile: SDK restore/publish, ayrı ASP.NET runtime, exec ENTRYPOINT,
+  HTTP8080. .dockerignore: kaynak/wwwroot korunarak sır/test/build dışlama.
+- scripts/verify-container-image.ps1: Linux engine önkoşulu, iki build/restore
+  cache gözlemi, runtime/no-SDK ve dosya kontrolleri, Production loopback HTTP,
+  benzersiz kaynaklar ve finally temizliği; hata exit1.
+- Gerçek doğrulama: restore başarılı, Release build 0 uyarı/0 hata;
+  PowerShell parser başarılı. Docker CLI29.7.2 mevcut, desktop-linux engine
+  pipe bulunamadı. Hedefli betik önkoşulda exit1; image build/pull/cache,
+  container/runtime/HTTP testleri ÇALIŞTIRILMADI. Kaynak değişimi cache deneyi yok.
+- Docker kaynakları/geçici test dosyası oluşmadı. App/lab DB'sine dokunulmadı.
+  Üretim C#/model değişmedi; migration ve gereksiz full DB regresyonu yapılmadı.
+- README/day51/ADR0051 eklendi. LocalDB Linux bağlantısı değildir; HTTP statik
+  sonuç DB sağlığı/HTTPS login kanıtı olmayacak. Anahtar kalıcılığı/non-root/
+  shutdown ve production işletimi tamamlanmış sayılmıyor. Sıradaki gün52.

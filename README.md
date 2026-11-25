@@ -2771,3 +2771,32 @@ WITH REPLACE yok; app/lab hedef olamaz. LocalDB sahibinin dosya erişimi ve
 geçici SQL login oluşturma yetkisi gerekir; parola bellekte üretilip temizlenir.
 Deney sonunda yalnız sahipliği doğrulanmış DB/dosyalar kaldırılır. Bu bir
 production yedekleme hizmeti değildir. [Sonuçlar ve sınırlar](docs/day50-database-operations.md).
+
+### Gün 51 — Linux container image
+
+Ön koşul: çalışan Linux Docker engine (örneğin Docker Desktop Linux modu),
+image/NuGet indirmeleri için ağ erişimi. Yerel build için SDK 10.0.401
+(global.json latestPatch). Repo kökünden:
+
+```powershell
+docker build --progress=plain -t university-registration:day51 .
+docker run -d --name university-day51 -e ASPNETCORE_ENVIRONMENT=Production -p 127.0.0.1:18080:8080 university-registration:day51
+Invoke-WebRequest http://127.0.0.1:18080/ -UseBasicParsing
+docker logs university-day51
+docker stop university-day51
+docker rm university-day51
+# Tekrarlanabilir, kendini temizleyen hedefli kontrol:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-container-image.ps1
+```
+
+Örnek adı/portu boş olmalıdır; mevcut kaynakların üzerine yazmayın.
+`EXPOSE` port yayınlamaz; `127.0.0.1` eşlemesi erişimi yerel makineyle sınırlar.
+Multi-stage Dockerfile yalnız Release publish çıktısını runtime'a taşır.
+.dockerignore yerel sırları ve test/build çıktılarını context dışında tutar.
+HTTP kontrolü yalnız public statik dosyalar içindir: LocalDB Linux'a taşınmış
+olmaz, DB akışları gün 52'ye kalır. Secure cookie/CSRF ve HTTPS gereksinimleri
+korunur; HTTP üzerinden giriş çalıştırmak için güvenlik gevşetilmez.
+
+Yerel restore/build geçti. Docker daemon named pipe erişilemedi; image/cache/
+container/HTTP sonuçları henüz doğrulanmadı, kontrol betiği exit1 verdi.
+[Ayrıntılar ve sınırlar](docs/day51-docker-image.md), [karar](docs/adr/0051-container-image.md).
