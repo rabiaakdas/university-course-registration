@@ -1,0 +1,21 @@
+services:
+  db:
+    image: ${SQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest}
+    environment:
+      ACCEPT_EULA: ${ACCEPT_EULA:?Explicit license acceptance is required}
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD:?Prepare the local environment file}
+    volumes:
+      - sql-data:/var/opt/mssql
+  api:
+    image: ${API_IMAGE:-university-registration:day52}
+    build:
+      context: .
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: '8080'
+      ConnectionStrings__UniversityDatabase: 'Server=db,1433;Database=university_compose;User ID=university_runtime;Password=${SQL_RUNTIME_PASSWORD:?Prepare the runtime password};Encrypt=True;TrustServerCertificate=True;Connect Timeout=5'
+    ports:
+      - '127.0.0.1:${API_PORT:-18080}:8080'
+volumes:
+  sql-data:

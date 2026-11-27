@@ -2800,3 +2800,50 @@ korunur; HTTP üzerinden giriş çalıştırmak için güvenlik gevşetilmez.
 Yerel restore/build geçti. Docker daemon named pipe erişilemedi; image/cache/
 container/HTTP sonuçları henüz doğrulanmadı, kontrol betiği exit1 verdi.
 [Ayrıntılar ve sınırlar](docs/day51-docker-image.md), [karar](docs/adr/0051-container-image.md).
+
+### Gün 52 — Compose, ayrı SQL Server ve kalıcı veri
+
+Ön koşullar: çalışan **Linux x86-64** Docker engine, Compose v2+ (burada CLI
+v5.5.1), PowerShell 7, global.json ile uyumlu SDK ve NuGet/MCR erişimi.
+SQL Server 2022 Developer yalnız geliştirme/test içindir. Aşağıdaki
+`-AcceptSqlServerLicense`, [SQL Server container lisansını](https://learn.microsoft.com/sql/linux/install-upgrade/quickstart-install-docker)
+kabul ettiğinizi belirtir; üretim lisansı sağlamaz.
+
+Repo kökünde:
+
+```powershell
+# İki ayrı rastgele parola üretir; içerik terminale yazılmaz, mevcut dosya ezilmez.
+pwsh -NoProfile -File scripts/compose.ps1 -Action Init -AcceptSqlServerLicense
+# DB başlat -> gerçek SELECT ile hazır olmasını bekle -> migration -> runtime rolü:
+pwsh -NoProfile -File scripts/compose.ps1 -Action Setup
+# Kurulumu tekrar güvenli kontrol eder; başarısızsa API başlatmaz:
+pwsh -NoProfile -File scripts/compose.ps1 -Action Up
+Invoke-RestMethod http://127.0.0.1:18080/courses
+pwsh -NoProfile -File scripts/compose.ps1 -Action Logs
+pwsh -NoProfile -File scripts/compose.ps1 -Action Stop
+pwsh -NoProfile -File scripts/compose.ps1 -Action Down
+# AYRI, benzersiz test projesi: kendi test volume'ünü finally içinde SİLER.
+pwsh -NoProfile -File scripts/compose.ps1 -Action Verify -AcceptSqlServerLicense
+```
+
+Normal `Down` volume'ü **silmez**. Kalıcı veriyi korumak için normal kullanımda
+`down -v` çalıştırmayın. Test kullanıcının kalıcı Compose projesini kullanmaz.
+`.local/compose/local.env` Git/build context dışında kalır; erişimini kendi
+hesabınızla sınırlayın ve paylaşmayın. `compose.env.example` sır içermez.
+Dosyada API_PORT/image değerleri ayarlanabilir; çözümlenmiş `compose config`
+çıktısını paylaşmayın, doğrulamada `config --quiet` kullanın. Dosyadaki parolayı
+sonradan değiştirmek mevcut SQL volume'ündeki login parolasını değiştirmez.
+
+API `db:1433` ve sınırlı `university_runtime` hesabını kullanır. DB host portu
+açılmaz; kurulum SQL'i DB container'ındaki sqlcmd'ye stdin ile gönderilir.
+API yalnız `127.0.0.1:18080` üzerinden yayınlanır. Yerel DB'nin kendinden imzalı
+sertifikası için **yalnız bu Compose bağlantısında** Encrypt=True +
+TrustServerCertificate=True / sqlcmd -C kullanılır; production TLS çözümü değildir.
+HTTP public GET için uygundur; Secure cookie/CSRF veya HTTPS koşulları gevşetilmedi.
+Kimlik doğrulamalı HTTP yazma denenmez. Data Protection kalıcı volume'ü/TLS
+sertifika dağıtımı bu çalışmada kurulmadı.
+
+Gerçek durum: restore/build, model uyumu, offline migration SQL üretimi,
+Compose sessiz yapılandırma ve secret dosyası koruma kontrolleri geçti.
+Daemon erişilemedi; gerçek build/API→DB/volume/kesinti testleri çalıştırılmadı.
+[Deney ve sınırlar](docs/day52-compose.md), [ADR](docs/adr/0052-compose-database.md).

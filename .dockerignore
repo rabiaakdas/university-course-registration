@@ -45,3 +45,6 @@ README.md
 **/DataProtection-Keys
 **/outbox
 **/key-*.xml
+
+compose.yaml
+compose.env.example

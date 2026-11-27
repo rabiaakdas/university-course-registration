@@ -2880,3 +2880,26 @@ Gerçek hash/push sonucu son raporda; kendi hash'i için ek commit üretilmez.
 - README/day51/ADR0051 eklendi. LocalDB Linux bağlantısı değildir; HTTP statik
   sonuç DB sağlığı/HTTPS login kanıtı olmayacak. Anahtar kalıcılığı/non-root/
   shutdown ve production işletimi tamamlanmış sayılmıyor. Sıradaki gün52.
+
+## Gün 52 — Compose, network, volume ve dış yapılandırma
+
+- Mevcut gün51 Dockerfile ve temiz main doğrulandı; SDK/runtime değiştirilmedi.
+- compose.yaml: API + SQL Server2022 Developer, servis DNS'i db:1433,
+  loopback API portu, hosta kapalı DB, /var/opt/mssql named volume.
+- scripts/compose.ps1: açık Init/Setup/Up, host EF idempotent script + SQL
+  readiness; ayrı runtime login/rol, normal Down volume koruma. Verify ayrı
+  benzersiz kaynaklar, DB destekli GET, DML/sequence/lock izinleri, DDL reddi,
+  yeniden oluşturma/kesinti/ikinci setup ve finally temizliği için hazırlandı.
+- Gerçek kontroller: restore/Release build 0 uyarı/0 hata; parser geçti.
+  Geçici secret dosyası üretimi/ignore, config --quiet ve ikinci Init'in
+  dosyayı koruyan reddi geçti. EF model/snapshot farkı yok; mevcut idempotent
+  SQL üretildi ama uygulanmadı. Geçici env/SQL temizlendi.
+- Compose v5.5.1 mevcut; Linux daemon pipe erişilemiyor. Verify exit1;
+  gerçek image/build/DB başlangıcı, migration uygulama, runtime izin, API→DB,
+  volume kalıcılığı, ikinci DB update ve kesinti kontrolleri ÇALIŞTIRILMADI.
+- App/lab DB'lerine dokunulmadı; test Docker kaynakları oluşturulmadı.
+  Üretim C#/model değişmedi, full/DB regresyonu gereksiz tekrarlanmadı.
+- README/day52/ADR0052, ayrı provisioning SQL'i ve dar ignore kuralları eklendi.
+  Yerel DB TLS istisnası, env güven sınırı ve Developer lisansı açıklandı.
+  HTTPS auth yazmaları/tüm runtime akışları/kalıcı DP anahtarları doğrulanmış
+  değil. Sıradaki gün53; önceki günlerin eksik Docker kanıtları tamamlandı sayılmadı.
